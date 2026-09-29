@@ -18,9 +18,12 @@ from dataclasses import dataclass, replace
 
 try:
     import pywinctl
-except Exception as exc:  # dependente de ambiente (ex.: sem servidor grafico/X11)
+except (Exception, SystemExit) as exc:
+    # Depende do ambiente (ex.: sem X11). O `pymonctl`/`ewmhlib` chega a chamar
+    # `sys.exit(1)` quando o servidor grafico nao atende, por isso `SystemExit`
+    # tambem e tratado (nao e subclasse de `Exception`).
     pywinctl = None
-    _PYWINCTL_ERROR: Exception | None = exc
+    _PYWINCTL_ERROR: BaseException | None = exc
 else:
     _PYWINCTL_ERROR = None
 

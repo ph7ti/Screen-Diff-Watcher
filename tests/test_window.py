@@ -44,3 +44,11 @@ def test_window_queries_require_pywinctl(monkeypatch):
         window_module.find_window_by_handle(1)
     with pytest.raises(RuntimeError, match="pywinctl indisponivel"):
         window_module.list_app_windows()
+
+
+def test_pywinctl_error_chains_original_cause(monkeypatch):
+    monkeypatch.setattr(window_module, "pywinctl", None)
+    monkeypatch.setattr(window_module, "_PYWINCTL_ERROR", SystemExit(1))
+    with pytest.raises(RuntimeError) as excinfo:
+        window_module.list_windows()
+    assert isinstance(excinfo.value.__cause__, SystemExit)
