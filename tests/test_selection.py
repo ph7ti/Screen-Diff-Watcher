@@ -265,3 +265,35 @@ def test_selection_app_name_round_trips(tmp_path):
     assert loaded.app_name == "WhatsApp"
     assert loaded.window_title_hint == "WhatsApp Beta"
     assert loaded.mode == "light"
+
+
+def test_build_target_override_actions_and_masks():
+    selection = Selection(
+        window_handle=1,
+        origin_at_selection=(0, 0),
+        roi_relative=(1, 2, 3, 4),
+        mode="advanced",
+        overrides={
+            "actions": [{"name": "a", "steps": [{"activate": True}, {"click": {"x": 1, "y": 1}}]}],
+            "masks": [[1, 1, 2, 2]],
+            "rearm": False,
+        },
+    )
+    target = build_target(
+        selection, _profile(mode="advanced"), name="x"
+    )
+    assert target.rearm is False
+    assert target.masks == ((1, 1, 2, 2),)
+    assert target.actions[0].name == "a"
+
+
+def test_build_target_rejects_text_action_in_non_advanced():
+    selection = Selection(
+        window_handle=1,
+        origin_at_selection=(0, 0),
+        roi_relative=(1, 2, 3, 4),
+        mode="default",
+        overrides={"actions": [{"name": "a", "when": {"text_any": ["x"]}}]},
+    )
+    with pytest.raises(ValueError):
+        build_target(selection, _profile(mode="default"), name="x")

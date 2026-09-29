@@ -125,3 +125,46 @@ def test_profile_actions_parsed_in_advanced_mode():
     assert action.name == "a"
     assert action.text_any == ("x",)
     assert action.effective_severity_min == 1
+
+
+def test_parse_step_error_branches():
+    bad_steps = [
+        {"click": {"x": 1}},
+        {"click": {"x": 1, "y": 1, "clicks": 0}},
+        {"click": {"x": 1, "y": 1, "button": "top"}},
+        {"move": {"x": 1}},
+        {"move": {"x": 1, "y": 2, "ref": 3}},
+        {"key": {}},
+        {"type": {}},
+        {"wait": {"ms": -1}},
+        {"move": {"x": "a", "y": 1}},
+    ]
+    for step in bad_steps:
+        with pytest.raises(ActionError):
+            parse_actions([{"name": "x", "steps": [step]}])
+
+
+def test_parse_action_scalar_error_branches():
+    bad_actions = [
+        {"name": "x", "enabled": "yes"},
+        {"name": "x", "severity_min": True},
+        {"name": "x", "cooldown_s": "x"},
+        {"name": "x", "settle_s": "x"},
+        {"name": "x", "max_per_min": "x"},
+        {"name": "x", "when": 3},
+        {"name": "x", "steps": "x"},
+        {"name": "x", "steps": [3]},
+        {"name": "x", "when": {"text_any": 3}},
+        {"name": "x", "when": {"text_regex": "("}},
+    ]
+    for action in bad_actions:
+        with pytest.raises(ActionError):
+            parse_actions([action], mode="advanced")
+
+
+def test_parse_action_negative_limits_and_cooldown():
+    for field in ("cooldown_s", "settle_s"):
+        with pytest.raises(ActionError):
+            parse_actions([{"name": "x", field: -1}])
+    with pytest.raises(ActionError):
+        parse_actions([{"name": "x", "max_per_session": -1}])

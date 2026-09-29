@@ -255,3 +255,55 @@ def test_rehearsal_records_evidence(tmp_path, make_frame, solid):
     records = _records(audit)
     assert records[0]["mode"] == "rehearsal"
     assert records[0]["evidence"] == ["/tmp/alvo-0.png"]
+
+
+def test_build_dispatcher_none_without_actions():
+    from screen_watch.actions.dispatch import build_dispatcher
+    from screen_watch.config.schema import TargetConfig
+
+    target = TargetConfig(name="t", window_handle=1, roi_relative=(0, 0, 10, 10))
+    assert build_dispatcher(target) is None
+
+
+def test_build_dispatcher_wires_schedule_gate(monkeypatch, tmp_path):
+    from screen_watch.actions.dispatch import build_dispatcher
+    from screen_watch.config.schema import ScheduleOptions, TargetConfig
+
+    target = TargetConfig(
+        name="t",
+        window_handle=1,
+        roi_relative=(0, 0, 10, 10),
+        actions=(ActionSpec(name="a", steps=(ActionStep(kind="key", keys="a"),)),),
+        schedule=ScheduleOptions(enabled=True, days=("mon",), windows=("08:00-12:00",)),
+    )
+    monkeypatch.setattr("screen_watch.scheduler.schedule.is_open", lambda options, now=None: False)
+    dispatcher = build_dispatcher(target, audit=ActionAudit(tmp_path / "a.jsonl"))
+    assert dispatcher is not None
+    assert dispatcher.is_schedule_open() is False
+    assert "desarmado" in dispatcher.arming.label()
+
+
+def test_dispatcher_ignores_unchanged_result(tmp_path, make_frame, solid):
+    dispatcher, arming, backend, audit = _dispatcher(tmp_path, (_key_action(),))
+    changed = ComparisonResult(
+        changed=False, score=0.0, threshold=0.1, strategy="advanced", severity=0
+    )
+    assert dispatcher.on_result(changed, make_frame(solid(10), rect=(0, 0, 10, 10))) is False
+    assert not audit.path.exists()
+
+
+def test_dispatcher_schedule_error_is_safe(tmp_path):
+    from screen_watch.actions.arming import ArmingController
+    from screen_watch.actions.dispatch import ActionDispatcher
+    from screen_watch.actions.runner import ActionRunner
+
+    def boom():
+        raise RuntimeError("clock")
+
+    dispatcher = ActionDispatcher(
+        (ActionSpec(name="a"),),
+        arming=ArmingController(),
+        runner=ActionRunner(sleep=lambda seconds: None),
+        schedule_open=boom,
+    )
+    assert dispatcher.is_schedule_open() is True

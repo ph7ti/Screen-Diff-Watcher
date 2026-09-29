@@ -166,3 +166,46 @@ def test_session_records_baseline_then_change(make_frame, solid):
     session(make_frame(solid(200), sequence=3))
 
     assert recorder.calls == [("baseline", "t"), ("change", "t")]
+
+
+def test_record_hooks_honor_flags(tmp_path, make_frame, solid):
+    recorder = EvidenceRecorder(
+        backend_factory=_FakeBackend, dir=tmp_path, on_baseline=False, on_change=False
+    )
+    frame = make_frame(solid(10), rect=(0, 0, 20, 20))
+    assert recorder.record_baseline(frame, "alvo") is None
+    assert recorder.record_change(frame, "alvo") is None
+    assert not list(tmp_path.rglob("*.png"))
+
+
+def test_capture_without_bounds_on_backend(tmp_path, make_frame, solid):
+    class _NoBounds:
+        def __init__(self):
+            self.captured = []
+
+        def capture(self, rect):
+            self.captured.append(rect)
+            return np.zeros((max(1, rect[3]), max(1, rect[2]), 3), dtype=np.uint8)
+
+        def close(self):
+            pass
+
+    recorder = EvidenceRecorder(backend_factory=_NoBounds, dir=tmp_path)
+    frame = make_frame(solid(10), rect=(5, 6, 20, 20))
+    assert recorder.capture(frame, "change", "alvo") is not None
+
+
+def test_from_options_enabled_builds_recorder(tmp_path):
+    recorder = EvidenceRecorder.from_options(EvidenceOptions(enabled=True, dir=str(tmp_path)))
+    assert recorder is not None
+    assert recorder.base_dir == tmp_path
+
+
+def test_target_name_is_sanitized(tmp_path, make_frame, solid):
+    recorder = EvidenceRecorder(backend_factory=_FakeBackend, dir=tmp_path)
+    frame = make_frame(solid(10), rect=(0, 0, 20, 20))
+    path = recorder.record_action(frame, "al vo/1", step=2)
+    assert path is not None
+    assert path.parent.name == "al_vo_1"
+    assert path.name.endswith("_action-2.png")
+

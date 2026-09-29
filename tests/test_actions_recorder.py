@@ -1,8 +1,17 @@
 from __future__ import annotations
 
+import sys
+
+import pytest
 import yaml
 
-from screen_watch.actions.recorder import StepRecorder, convert_point, point_in_rect
+from screen_watch.actions.recorder import (
+    StepRecorder,
+    convert_point,
+    point_in_rect,
+    record_interactively,
+)
+from screen_watch.platform.input import InputUnavailable
 
 
 def test_point_in_rect_boundaries():
@@ -45,7 +54,9 @@ def test_step_recorder_raw_steps():
 def test_step_recorder_without_rects_uses_screen():
     recorder = StepRecorder()
     recorder.add_click(7, 8)
+    recorder.add_move(9, 10)
     assert recorder.raw_steps()[0]["click"]["ref"] == "screen"
+    assert recorder.raw_steps()[1]["move"]["ref"] == "screen"
 
 
 def test_to_yaml_snippet_is_parseable_and_has_activate():
@@ -65,3 +76,11 @@ def test_to_yaml_snippet_is_parseable_and_has_activate():
     assert actions[0].name == "teste"
     assert actions[0].steps[0].kind == "activate"
     assert actions[0].steps[1].kind == "click"
+
+
+def test_record_interactively_without_pynput(monkeypatch):
+    monkeypatch.setitem(sys.modules, "pynput", None)
+    with pytest.raises(InputUnavailable):
+        record_interactively(
+            roi_rect=(0, 0, 10, 10), window_rect=(0, 0, 10, 10), status=lambda *args: None
+        )

@@ -364,3 +364,69 @@ def test_remove_target_keeps_other_top_level_keys(tmp_path):
     raw = yaml.safe_load(path.read_text(encoding="utf-8"))
     assert raw["generation"] == 7
     assert raw["targets"] == []
+
+
+def test_default_config_has_humanize_and_no_actions():
+    config = config_from_dict(default_config_dict())
+    profile = config.resolve()
+    assert profile.defaults.humanize.mouse_steps == 24
+    assert profile.actions == ()
+
+
+def test_override_parser_error_branches():
+    from screen_watch.config.loader import parse_alerts, parse_overrides, parse_rects
+
+    for bad in (
+        3,
+        {"mode": "turbo"},
+        {"poll_interval_s": 0.1},
+        {"rearm": "x"},
+        {"masks": "x"},
+        {"alerts": 1},
+        {"actions": 1},
+    ):
+        with pytest.raises(ConfigError):
+            parse_overrides(bad)
+    with pytest.raises(ConfigError):
+        parse_rects(3)
+    with pytest.raises(ConfigError):
+        parse_alerts(3)
+
+
+def test_v2_top_level_section_error_branches():
+    with pytest.raises(ConfigError):
+        config_from_dict({"version": 2, "profile": "default"})
+    with pytest.raises(ConfigError):
+        config_from_dict({"version": 2, "profile": "default", "profiles": []})
+    with pytest.raises(ConfigError):
+        config_from_dict({"version": 2, "profile": "x", "profiles": {"default": {}}})
+    with pytest.raises(ConfigError):
+        config_from_dict({"version": 2, "profiles": {"default": 3}})
+    with pytest.raises(ConfigError):
+        config_from_dict({"version": "x"})
+    with pytest.raises(ConfigError):
+        config_from_dict({"targets": 3})
+
+
+def test_v2_nested_section_error_branches():
+    def raw(**top):
+        data = {"version": 2, "profile": "default", "profiles": {"default": {}}}
+        data.update(top)
+        return data
+
+    with pytest.raises(ConfigError):
+        config_from_dict(raw(evidence=3))
+    with pytest.raises(ConfigError):
+        config_from_dict(raw(ui=3))
+    with pytest.raises(ConfigError):
+        config_from_dict(raw(ui={"hotkeys": 3}))
+    with pytest.raises(ConfigError):
+        config_from_dict(raw(ui={"arm_durations_min": [0]}))
+    with pytest.raises(ConfigError):
+        config_from_dict(raw(schedule=3))
+    with pytest.raises(ConfigError):
+        config_from_dict(raw(schedule={"windows": ["25:00-10:00"]}))
+    with pytest.raises(ConfigError):
+        config_from_dict(raw(schedule={"windows": ["10:00"]}))
+    with pytest.raises(ConfigError):
+        config_from_dict(_v2_dict(defaults={"humanize": 3}))

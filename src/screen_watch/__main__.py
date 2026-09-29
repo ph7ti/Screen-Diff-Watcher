@@ -67,7 +67,7 @@ def _cmd_validate_config(args: argparse.Namespace) -> int:
 
 
 def _validate_selections() -> int:
-    from screen_watch.config.loader import parse_overrides
+    from screen_watch.config.loader import parse_actions, parse_overrides
     from screen_watch.persistence.selection import load_selection
     from screen_watch.platform.paths import selections_dir
 
@@ -76,7 +76,11 @@ def _validate_selections() -> int:
     for path in paths:
         try:
             selection = load_selection(path)
-            parse_overrides(selection.overrides)
+            overrides = parse_overrides(selection.overrides)
+            actions_raw = overrides.get("actions")
+            if actions_raw is not None:
+                mode = overrides.get("mode", selection.mode)
+                parse_actions(actions_raw, "overrides.actions", mode=mode)
         except (OSError, ValueError) as exc:
             print(f"selecao invalida {path.name}: {exc}")
             failures += 1

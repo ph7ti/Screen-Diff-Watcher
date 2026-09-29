@@ -86,3 +86,21 @@ def test_start_then_reject_second_start(monkeypatch):
     controller.stop()
     assert controller.running is False
     assert events.get_nowait()["kind"] == "stopped"
+
+
+def test_actions_property_and_rebaseline():
+    controller = MonitorController(new_event_queue())
+    assert controller.actions is None
+
+    calls: list[bool] = []
+
+    class FakeSession:
+        actions = "dispatcher"
+
+        def request_rebaseline(self):
+            calls.append(True)
+
+    controller._session = FakeSession()
+    assert controller.actions == "dispatcher"
+    controller.rebaseline()
+    assert calls == [True]

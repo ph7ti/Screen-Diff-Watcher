@@ -80,16 +80,14 @@ def test_check_monitor_scales_warns_on_unsuitable_monitor(monkeypatch, capsys):
 
 
 def _write_selection(path, **extra):
-    dump_selection(
-        path,
-        Selection(
-            window_handle=9,
-            origin_at_selection=(0, 0),
-            roi_relative=(1, 2, 30, 40),
-            mode="light",
-            **extra,
-        ),
-    )
+    fields = {
+        "window_handle": 9,
+        "origin_at_selection": (0, 0),
+        "roi_relative": (1, 2, 30, 40),
+        "mode": "light",
+    }
+    fields.update(extra)
+    dump_selection(path, Selection(**fields))
 
 
 # -- resolucao de selecao --------------------------------------------------
@@ -396,3 +394,245 @@ def test_test_alert_runs_with_mocked_capture(monkeypatch, tmp_path):
     log_path = tmp_path / "logs" / "alerts.jsonl"
     assert log_path.exists()
     assert log_path.read_text(encoding="utf-8").strip()
+
+
+def _v2_with(mode="advanced", **top):
+    raw = {
+        "version": 2,
+        "profile": "default",
+        "profiles": {"default": {"defaults": {"mode": mode}}},
+    }
+    raw.update(top)
+    return raw
+
+
+def test_resolve_run_target_carries_schedule(monkeypatch, tmp_path):
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    config_path = tmp_path / "config.yaml"
+    save_config(
+        config_path,
+        _v2_with(
+            schedule={"enabled": True, "days": ["mon"], "windows": ["08:00-12:00"]}
+        ),
+    )
+    selection_path = tmp_path / "demo.json"
+    _write_selection(selection_path)
+    args = argparse.Namespace(
+        selection=str(selection_path), target=None, config=str(config_path), profile=None
+    )
+    target = cli._resolve_run_target(args)
+    assert target.schedule.enabled is True
+    assert target.schedule.windows == ("08:00-12:00",)
+
+
+def test_resolve_run_target_invalid_profile_is_config_error(monkeypatch, tmp_path):
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    config_path = tmp_path / "config.yaml"
+    save_config(config_path, _v2_with())
+    selection_path = tmp_path / "demo.json"
+    _write_selection(selection_path)
+    args = argparse.Namespace(
+        selection=str(selection_path), target=None, config=str(config_path), profile="nao_existe"
+    )
+    with pytest.raises(ConfigError) as excinfo:
+        cli._resolve_run_target(args)
+    assert "profile inexistente" in str(excinfo.value)
+
+
+def test_test_alert_invalid_profile_reports_error(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    config_path = tmp_path / "config.yaml"
+    save_config(config_path, _v2_with())
+    selection_path = tmp_path / "demo.json"
+    _write_selection(selection_path)
+    args = argparse.Namespace(
+        config=str(config_path), selection=str(selection_path), target=None, profile="nao_existe"
+    )
+    assert cli._cmd_test_alert(args) == 1
+    assert "profile inexistente" in capsys.readouterr().out
+
+
+def test_validate_selections_rejects_bad_override_action(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    (tmp_path / "selections").mkdir()
+    _write_selection(
+        tmp_path / "selections" / "demo.json",
+        overrides={"actions": [{"name": "ruim", "steps": [{"teleport": {}}]}]},
+    )
+    config_path = tmp_path / "config.yaml"
+    save_config(config_path, _v2_with())
+
+    args = argparse.Namespace(config=str(config_path), selections=True)
+    assert cli._cmd_validate_config(args) == 1
+    out = capsys.readouterr().out
+    assert "teleport" in out
+
+
+def test_validate_selections_accepts_valid_override_action(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    (tmp_path / "selections").mkdir()
+    _write_selection(
+        tmp_path / "selections" / "demo.json",
+        mode="advanced",
+        overrides={
+            "actions": [{"name": "ok", "steps": [{"activate": True}, {"click": {"x": 1, "y": 1}}]}]
+        },
+    )
+    config_path = tmp_path / "config.yaml"
+    save_config(config_path, _v2_with())
+
+    args = argparse.Namespace(config=str(config_path), selections=True)
+    assert cli._cmd_validate_config(args) == 0
+    assert "1/1" in capsys.readouterr().out
+
+
+def test_run_starts_and_stops_loop(monkeypatch, tmp_path):
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    (tmp_path / "selections").mkdir()
+    _write_selection(tmp_path / "selections" / "demo.json")
+    monkeypatch.setattr(cli, "is_wayland", lambda: False)
+    monkeypatch.setattr(cli, "_check_monitor_scales", lambda rect: None)
+    monkeypatch.setattr("screen_watch.platform.window.find_window_by_handle", lambda handle: _FakeWindow())
+    monkeypatch.setattr("screen_watch.app.evidence_recorder", lambda config: None)
+
+    class FakeLoop:
+        running = False
+
+        def start(self):
+            pass
+
+        def join(self, timeout=None):
+            pass
+
+        def stop(self, timeout=None):
+            pass
+
+    monkeypatch.setattr("screen_watch.app.MonitorSession", lambda target, recorder=None: object())
+    monkeypatch.setattr("screen_watch.app.build_loop", lambda target, session, **kw: FakeLoop())
+
+    args = argparse.Namespace(
+        selection="demo", target=None, config=str(tmp_path / "absent.yaml"), profile=None
+    )
+    assert cli._cmd_run(args) == 0
+
+
+def test_test_action_dry_run(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    (tmp_path / "selections").mkdir()
+    _write_selection(
+        tmp_path / "selections" / "demo.json",
+        mode="advanced",
+        overrides={
+            "actions": [{"name": "a", "steps": [{"activate": True}, {"click": {"x": 1, "y": 1}}]}]
+        },
+    )
+    config_path = tmp_path / "config.yaml"
+    save_config(
+        config_path,
+        _v2_with(evidence={"enabled": False, "dir": str(tmp_path / "caps")}),
+    )
+    monkeypatch.setattr(cli, "_capture_target_roi", _fake_capture)
+
+    class FakeRecorder:
+        def record_action(self, frame, name, step=0):
+            return f"/x/{name}-{step}.png"
+
+    monkeypatch.setattr(
+        "screen_watch.app.evidence_recorder", lambda config, force_enabled=False: FakeRecorder()
+    )
+    args = argparse.Namespace(
+        config=str(config_path), selection="demo", target=None, profile=None, armed=False, dry_run=True
+    )
+    assert cli._cmd_test_action(args) == 0
+    assert "ensaio" in capsys.readouterr().out
+
+
+def test_test_action_armed_executes(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    (tmp_path / "selections").mkdir()
+    _write_selection(
+        tmp_path / "selections" / "demo.json",
+        mode="advanced",
+        overrides={
+            "actions": [{"name": "a", "settle_s": 0, "steps": [{"key": {"keys": "ctrl+s"}}]}]
+        },
+    )
+    config_path = tmp_path / "config.yaml"
+    save_config(config_path, _v2_with())
+    monkeypatch.setattr(cli, "_capture_target_roi", _fake_capture)
+
+    class FakeInput:
+        def __init__(self):
+            self.pressed = []
+
+        def press(self, keys):
+            self.pressed.append(keys)
+
+    fake = FakeInput()
+    monkeypatch.setattr("screen_watch.platform.input.default_backend", lambda: fake)
+    args = argparse.Namespace(
+        config=str(config_path), selection="demo", target=None, profile=None, armed=True, dry_run=False
+    )
+    assert cli._cmd_test_action(args) == 0
+    assert fake.pressed == ["ctrl+s"]
+    assert "armado" in capsys.readouterr().out
+
+
+def test_test_evidence_writes(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    (tmp_path / "selections").mkdir()
+    _write_selection(tmp_path / "selections" / "demo.json")
+    config_path = tmp_path / "config.yaml"
+    save_config(
+        config_path,
+        _v2_with(evidence={"enabled": False, "dir": str(tmp_path / "caps")}),
+    )
+    monkeypatch.setattr(cli, "_capture_target_roi", _fake_capture)
+
+    class FakeRecorder:
+        def capture(self, frame, kind, name):
+            return f"/x/{name}-{kind}.png"
+
+    monkeypatch.setattr(
+        "screen_watch.app.evidence_recorder", lambda config, force_enabled=False: FakeRecorder()
+    )
+    args = argparse.Namespace(config=str(config_path), selection="demo", target=None, profile=None)
+    assert cli._cmd_test_evidence(args) == 0
+    out = capsys.readouterr().out
+    assert "baseline" in out and "change" in out
+
+
+def test_record_actions_writes_snippet(monkeypatch, tmp_path):
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    (tmp_path / "selections").mkdir()
+    _write_selection(tmp_path / "selections" / "demo.json")
+    monkeypatch.setattr("screen_watch.platform.window.find_window_by_handle", lambda handle: _FakeWindow())
+
+    class FakeRecorder:
+        def to_yaml(self, name):
+            return f"actions:\n- name: {name}\n"
+
+    monkeypatch.setattr(
+        "screen_watch.actions.recorder.record_interactively", lambda **kw: FakeRecorder()
+    )
+    out_path = tmp_path / "snippet.yaml"
+    args = argparse.Namespace(selection="demo", target=None, name="teste", out=str(out_path))
+    assert cli._cmd_record_actions(args) == 0
+    assert "name: teste" in out_path.read_text(encoding="utf-8")
+
+
+def test_record_actions_without_input_reports_error(monkeypatch, tmp_path, capsys):
+    from screen_watch.platform.input import InputUnavailable
+
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    (tmp_path / "selections").mkdir()
+    _write_selection(tmp_path / "selections" / "demo.json")
+    monkeypatch.setattr("screen_watch.platform.window.find_window_by_handle", lambda handle: _FakeWindow())
+
+    def boom(**kwargs):
+        raise InputUnavailable("sem pynput")
+
+    monkeypatch.setattr("screen_watch.actions.recorder.record_interactively", boom)
+    args = argparse.Namespace(selection="demo", target=None, name=None, out=None)
+    assert cli._cmd_record_actions(args) == 1
+    assert "sem pynput" in capsys.readouterr().out

@@ -13,6 +13,7 @@ from screen_watch.alerts.protocol import Notifier
 from screen_watch.capture.frame import Frame
 from screen_watch.compare.pipeline import MODE_STAGES, ComparePipeline
 from screen_watch.compare.protocol import ComparisonResult
+from screen_watch.config.loader import ConfigError
 from screen_watch.config.schema import (
     AlertOptions,
     AppConfig,
@@ -132,7 +133,7 @@ def profile_from_config(
 ) -> ProfileOptions:
     """Resolve o perfil a usar, com fallback para o YAML v1 legado (doc, secao 12).
 
-    `ValueError`/`KeyError` do perfil explicito sobem para o CLI/GUI mostrarem
+    Perfil explicito inexistente levanta `ConfigError` para o CLI/GUI mostrarem
     mensagem clara sem stacktrace.
     """
     if config is None or config.legacy or not config.profiles:
@@ -140,7 +141,7 @@ def profile_from_config(
     name = profile_name or config.profile
     profile = config.profiles.get(name)
     if profile is None:
-        raise ValueError(f"profile inexistente: {name!r}")
+        raise ConfigError(f"profile inexistente: {name!r}")
     return profile
 
 
