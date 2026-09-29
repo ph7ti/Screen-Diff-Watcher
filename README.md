@@ -21,7 +21,8 @@ Implementado:
 - Camada de alertas (`alerts/`): som (com fallback `winsound`), popup, Telegram, log JSONL
   e `AlertChain` com cooldown; `dispatch` devolve `DispatchOutcome`
   (`FIRED`/`SUPPRESSED_COOLDOWN`/`BELOW_MIN`/`NONE_ENABLED`/`FAILED`) para o re-arm.
-- Agendamento (`scheduler/loop.py`): `threading.Thread` + `Event.wait`.
+- Agendamento (`scheduler/loop.py`): `threading.Thread` + `Event.wait`. A janela de horário
+  (`scheduler/schedule.py::is_open`, função pura) suspende **apenas as ações** fora do horário.
 - Config (`config/`): schema v2 global (perfis `profiles`, `ui`, `schedule`, `evidence`) +
   loader YAML com defaults `advanced`, `rearm: true`, `lang="por+eng"`, `upscale=2`, validação de
   tipos com mensagem clara e gravação atômica com backup. O YAML v1 (`targets:`) ainda carrega por
@@ -34,8 +35,8 @@ Implementado:
   guarda de foco e auditoria em `logs/actions.jsonl`. Backend `pynput` no extra opcional `input`.
 - CLI (`__main__.py`): `init-config`, `validate-config` (`--selections`), `list-selections`,
   `migrate-config` (`--dry-run`), `list-windows`, `show-paths`, `probe-dpi`, `select-manual`
-  (coordenadas), `select` (overlay), `test-alert`, `test-evidence`, `test-action`, `compare-modes`
-  (calibração), `run`, `gui`.
+  (coordenadas), `select` (overlay), `test-alert`, `test-evidence`, `test-action`, `record-actions`,
+  `compare-modes` (calibração), `run`, `gui`.
 - Overlay de seleção (`gui/`): `overlay_geometry.py` (conversões lógico↔físico, sem Qt) e
   `overlay.py` (PyQt6, uma janela por monitor).
 - GUI mínima + tray (`gui/`): `main_window.py` (lista de seleções, iniciar/parar, status/último
@@ -262,6 +263,38 @@ python -m screen_watch test-action --selection painel --armed    # executa de ve
 Cada gatilho (ensaio, execução, suspensão) vira uma linha em `logs/actions.jsonl` com passos,
 resultado, duração, motivo e os caminhos das evidências.
 
+## Perfis e agendador
+
+Com mais de um perfil no YAML, a janela mostra um seletor **Perfil** (e o tray, um submenu
+equivalente). A troca vale **no próximo start** — o loop ativo não muda; a UI e o `state.json`
+registram o perfil escolhido. No CLI, use `--profile NOME` em `run`/`test-alert`/`test-action`/
+`compare-modes`/`gui`.
+
+```yaml
+schedule:
+  enabled: true
+  days: [mon, tue, wed, thu, fri]
+  windows: ["08:00-12:00", "13:30-18:00"]   # janelas que cruzam a meia-noite sao aceitas
+  timezone: local
+```
+
+Fora da janela de horário o monitoramento e os alertas seguem normais, mas as **ações** ficam
+suspensas (registrado como `suspended_schedule` na auditoria; o tooltip do status mostra "fora do
+horário (ações suspensas)").
+
+## Gravador de ações
+
+Com o extra `input`, `record-actions` escuta cliques e teclas e gera um snippet pronto para colar
+em `actions:`:
+
+```powershell
+python -m screen_watch record-actions --selection painel --out snippet.yaml
+```
+
+A gravação começa ao pressionar `F9` e termina em `F10`. Os cliques são convertidos de coordenadas
+absolutas para `ref: roi`/`window` (ou `screen` se caírem fora da janela) e o snippet já inclui um
+passo `activate` e o bloco `when` comentado, para você revisar antes de armar.
+
 ## Calibração (Etapa D)
 
 `compare-modes` captura o ROI, espera `--delay` segundos (altere o painel nesse intervalo) e mede
@@ -291,7 +324,8 @@ inicia/para. O tray oferece mostrar/ocultar, minimizar, iniciar/parar e sair.
 
 Cada item da lista mostra o **nome do aplicativo**, a **região monitorada** e o **modo** — por
 exemplo `Seleção WhatsApp — Região 120,340 400x80 — advanced`. Há um **seletor de modo**
-(`light`/`default`/`advanced`) que vale para a próxima execução e é gravado no JSON da seleção.
+(`light`/`default`/`advanced`) que vale para a próxima execução e é gravado no JSON da seleção, e um
+seletor de **Perfil** (aplica no próximo start; o tray tem submenu equivalente).
 
 O botão **Remover** apaga um ou mais JSONs de seleção selecionados (seleção múltipla com
 Ctrl/Shift).

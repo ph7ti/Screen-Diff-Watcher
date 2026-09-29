@@ -212,19 +212,9 @@ def _resolve_selection_path(value: str | None) -> Path:
     raise ConfigError("nenhuma selecao disponivel; crie uma com 'select' ou 'select-manual'")
 
 
-def _load_profile(config_path, profile_name: str | None, selection_name: str):
-    from screen_watch.app import profile_from_config
-    from screen_watch.config.loader import ConfigError, load_config
-
-    try:
-        config = load_config(config_path)
-    except ConfigError:
-        config = None
-    return profile_from_config(config, profile_name, selection_name)
-
-
 def _resolve_run_target(args: argparse.Namespace):
-    """Target resolvido a partir de uma selecao + perfil (doc, secao 12)."""
+    """Target resolvido a partir de uma selecao + perfil + agendador (doc, secao 12)."""
+    from screen_watch.app import profile_from_config
     from screen_watch.config.loader import ConfigError
     from screen_watch.persistence.selection import build_target, load_selection
 
@@ -237,9 +227,11 @@ def _resolve_run_target(args: argparse.Namespace):
         selection = load_selection(path)
     except (OSError, ValueError) as exc:
         raise ConfigError(f"selecao invalida ({path}): {exc}") from exc
+    config = _load_config_or_none(args.config)
     name = path.stem
-    profile = _load_profile(args.config, getattr(args, "profile", None), name)
-    return build_target(selection, profile, name=name)
+    profile = profile_from_config(config, getattr(args, "profile", None), name)
+    schedule = getattr(config, "schedule", None) if config is not None else None
+    return build_target(selection, profile, name=name, schedule=schedule)
 
 
 def _load_config_or_none(config_path):
@@ -500,6 +492,47 @@ def _cmd_test_action(args: argparse.Namespace) -> int:
             failures += 1
     print(f"auditoria: {audit.path}")
     return 0 if not failures else 1
+
+
+def _cmd_record_actions(args: argparse.Namespace) -> int:
+    """Grava cliques/teclas do usuario e gera um snippet de `actions:` (plano, F3-T4)."""
+    from screen_watch.actions.recorder import record_interactively
+    from screen_watch.capture.resolver import resolve
+    from screen_watch.config.loader import ConfigError
+    from screen_watch.persistence.selection import load_selection
+    from screen_watch.platform.input import InputUnavailable
+    from screen_watch.platform.window import find_window_by_handle
+
+    value = getattr(args, "selection", None) or getattr(args, "target", None)
+    try:
+        path = _resolve_selection_path(value)
+        selection = load_selection(path)
+    except (ConfigError, OSError, ValueError) as exc:
+        print(f"erro: {exc}")
+        return 1
+
+    info = find_window_by_handle(selection.window_handle)
+    if info is None or not info.exists:
+        print("janela nao encontrada; refaca a selecao (o handle muda ao reiniciar o app)")
+        return 1
+    abs_rect = resolve(info, selection.roi_relative)
+    if abs_rect is None:
+        print("ROI invalida (fora da janela ou degenerada)")
+        return 1
+
+    try:
+        recorder = record_interactively(roi_rect=abs_rect, window_rect=info.rect)
+    except InputUnavailable as exc:
+        print(str(exc))
+        return 1
+
+    snippet = recorder.to_yaml(args.name or path.stem)
+    if args.out:
+        Path(args.out).write_text(snippet, encoding="utf-8")
+        print(f"snippet gravado em: {args.out}")
+    else:
+        print(snippet)
+    return 0
 
 
 def _cmd_compare_modes(args: argparse.Namespace) -> int:
@@ -836,6 +869,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_act.add_argument("--armed", action="store_true", help="executa de verdade (default: ensaio)")
     p_act.add_argument("--dry-run", action="store_true", help="apenas ensaia (default)")
     p_act.set_defaults(func=_cmd_test_action)
+
+    p_rec = sub.add_parser(
+        "record-actions", help="grava cliques/teclas e gera um snippet de actions: (Fase 3)"
+    )
+    p_rec.add_argument("--selection", default=None, help="selecao JSON (nome ou caminho)")
+    p_rec.add_argument("--target", default=None, help="deprecado; alias de --selection")
+    p_rec.add_argument("--name", default=None, help="nome da acao no snippet (default: stem)")
+    p_rec.add_argument("--out", default=None, help="arquivo de saida (default: stdout)")
+    p_rec.set_defaults(func=_cmd_record_actions)
 
     p_cmp = sub.add_parser(
         "compare-modes", help="mede score/severidade/tempo por modo no ROI atual (calibracao)"

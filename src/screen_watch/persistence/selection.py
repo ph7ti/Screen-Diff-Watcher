@@ -14,7 +14,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from screen_watch.config.schema import AlertOptions, CompareOptions, ProfileOptions, TargetConfig
+from screen_watch.config.schema import (
+    AlertOptions,
+    CompareOptions,
+    ProfileOptions,
+    ScheduleOptions,
+    TargetConfig,
+)
 
 Rect = tuple[int, int, int, int]
 Point = tuple[int, int]
@@ -112,6 +118,7 @@ def build_target(
     *,
     name: str,
     mode: str | None = None,
+    schedule=None,
 ) -> TargetConfig:
     """Resolve selecao + perfil (+ overrides) em `TargetConfig` (doc, secao 12.3).
 
@@ -157,6 +164,7 @@ def build_target(
         alerts=overrides.get("alerts", profile.alerts),
         actions=actions,
         humanize=defaults.humanize,
+        schedule=schedule or ScheduleOptions(),
     )
 
 

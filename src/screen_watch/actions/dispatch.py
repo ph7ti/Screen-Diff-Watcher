@@ -54,6 +54,14 @@ class ActionDispatcher:
     def arming(self) -> ArmingController:
         return self._arming
 
+    def is_schedule_open(self) -> bool:
+        if self._schedule_open is None:
+            return True
+        try:
+            return bool(self._schedule_open())
+        except Exception:  # pragma: no cover - horario nunca deve derrubar o loop
+            return True
+
     def on_result(self, result: ComparisonResult, frame: Frame) -> bool:
         """True se alguma acao executada pediu re-baseline (doc, F2-T4)."""
         if not result.changed:
@@ -164,9 +172,12 @@ def build_dispatcher(
     if not actions:
         return None
     from screen_watch.actions.audit import ActionAudit  # noqa: PLC0415
+    from screen_watch.scheduler.schedule import gate  # noqa: PLC0415
 
     arming = arming or ArmingController()
     runner = runner or ActionRunner(humanize=getattr(target, "humanize", None))
+    if schedule_open is None:
+        schedule_open = gate(getattr(target, "schedule", None))
     return ActionDispatcher(
         actions,
         arming=arming,

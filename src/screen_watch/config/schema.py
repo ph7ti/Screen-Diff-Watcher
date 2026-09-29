@@ -138,6 +138,7 @@ class TargetConfig:
     alerts: tuple[AlertOptions, ...] = ()
     actions: tuple[ActionSpec, ...] = ()
     humanize: HumanizeOptions = field(default_factory=HumanizeOptions)
+    schedule: ScheduleOptions = field(default_factory=ScheduleOptions)
 
 
 @dataclass(frozen=True)

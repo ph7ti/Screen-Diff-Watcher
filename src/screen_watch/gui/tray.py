@@ -31,7 +31,7 @@ def _icon_image():
     return image
 
 
-def start_tray(events, arm_durations=(1, 5, 15, 30)) -> object | None:
+def start_tray(events, arm_durations=(1, 5, 15, 30), profiles=("default",)) -> object | None:
     """Sobe o tray em thread separada. Devolve o Icon ou None se indisponivel."""
     try:
         import pystray  # noqa: PLC0415
@@ -57,6 +57,16 @@ def start_tray(events, arm_durations=(1, 5, 15, 30)) -> object | None:
             for minutes in arm_durations
         ]
     )
+
+    def push_profile(name: str):
+        def _callback(_icon, _item):
+            events.put({"kind": "profile", "name": name})
+
+        return _callback
+
+    profile_menu = pystray.Menu(
+        *[pystray.MenuItem(name, push_profile(name)) for name in profiles]
+    )
     menu = pystray.Menu(
         pystray.MenuItem("Mostrar/ocultar", push_tray("toggle")),
         pystray.MenuItem("Minimizar para o tray", push_tray("minimize")),
@@ -67,6 +77,7 @@ def start_tray(events, arm_durations=(1, 5, 15, 30)) -> object | None:
         pystray.MenuItem("Desarmar acoes", push_action("disarm")),
         pystray.MenuItem("Armar por...", arm_menu),
         pystray.MenuItem("Re-armar baseline", push_action("rearm")),
+        pystray.MenuItem("Perfil", profile_menu),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Sair", push_tray("quit")),
     )

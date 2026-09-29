@@ -813,6 +813,18 @@ verdade para reconstruir a ROI a cada tick.
 ao iniciar `run`/GUI com sucesso. O YAML é regravado de forma atômica (temp + `os.replace`) com
 backup `config.yaml.bak`; `state.json` é atômico, sem backup.
 
+### 12.5 Agendador, perfis na UI e gravador
+
+- **Perfis na UI**: seletor na janela + submenu no tray; a troca vale no próximo start e persiste em
+  `state.json.profile` (`--profile` no CLI).
+- **Agendador** (`scheduler/schedule.py::is_open`, função pura): fora da janela de horário apenas as
+  ações são suspensas (`suspended_schedule`); captura, comparação e alertas seguem.
+- **Gravador** (`actions/recorder.py` + `record-actions`): com o extra `input`, captura cliques/teclas
+  (F9 inicia, F10 encerra), converte coordenadas absolutas para `ref: roi`/`window`/`screen` e gera um
+  snippet de `actions:` com `when` comentado.
+- **Testes/validação**: `is_open` com relógio falso, conversão do gravador sem listener real e troca
+  de perfil (próximo start).
+
 
 ---
 

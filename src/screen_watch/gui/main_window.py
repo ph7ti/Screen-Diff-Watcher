@@ -99,6 +99,16 @@ class MainWindow(QMainWindow):
         mode_row.addStretch(1)
         layout.addLayout(mode_row)
 
+        profile_row = QHBoxLayout()
+        profile_row.addWidget(QLabel("Perfil:"))
+        self.profile_combo = QComboBox()
+        self.profile_combo.currentTextChanged.connect(self._profile_changed)
+        profile_row.addWidget(self.profile_combo)
+        self.profile_note = QLabel("")
+        profile_row.addWidget(self.profile_note)
+        profile_row.addStretch(1)
+        layout.addLayout(profile_row)
+
         buttons = QHBoxLayout()
         self.btn_start = QPushButton("Iniciar")
         self.btn_stop = QPushButton("Parar")
@@ -165,11 +175,55 @@ class MainWindow(QMainWindow):
             item.setData(TARGET_ROLE, (kind, value))
             self.list.addItem(item)
 
+        self._populate_profiles()
         self._append(
             f"carregado: {len(self._entries)} selecao(oes) — perfil {self._profile_label()}"
         )
         if self.list.count():
             self.list.setCurrentRow(0)
+
+    def _populate_profiles(self) -> None:
+        if self._config is not None and not self._config.legacy and self._config.profiles:
+            names = list(self._config.profiles.keys())
+            default = self._profile or self._config.profile
+        else:
+            names = ["default"]
+            default = self._profile or "default"
+        if default not in names:
+            names.insert(0, default)
+        self._profile_combo_update(names, default)
+
+    def _profile_combo_update(self, names, current) -> None:
+        self.profile_combo.blockSignals(True)
+        self.profile_combo.clear()
+        self.profile_combo.addItems(names)
+        self.profile_combo.setCurrentText(current)
+        self.profile_combo.blockSignals(False)
+        self._profile = current
+
+    def profile_names(self) -> tuple[str, ...]:
+        names = [self.profile_combo.itemText(i) for i in range(self.profile_combo.count())]
+        return tuple(names) or ("default",)
+
+    def _profile_changed(self, name: str) -> None:
+        if not name:
+            return
+        self._profile = name
+        from screen_watch.platform.paths import update_state
+
+        update_state(profile=name)
+        pending = "(aplicará no próximo start)" if self._controller.running else ""
+        self.profile_note.setText(pending)
+        self._append(f"perfil -> {name} {pending}".strip())
+        self._update_action_status()
+
+    def _select_profile(self, name: str) -> None:
+        index = self.profile_combo.findText(name)
+        if index < 0:
+            self._profile_combo_update([*self.profile_names(), name], name)
+        else:
+            self.profile_combo.setCurrentIndex(index)
+        self._profile_changed(name)
 
     def _profile_label(self) -> str:
         if self._config is None or self._config.legacy or not self._config.profiles:
@@ -215,7 +269,8 @@ class MainWindow(QMainWindow):
 
         selection = load_selection(value)
         profile = profile_from_config(self._config, self._profile, Path(value).stem)
-        return build_target(selection, profile, name=Path(value).stem, mode=mode)
+        schedule = self._config.schedule if self._config is not None and not self._config.legacy else None
+        return build_target(selection, profile, name=Path(value).stem, mode=mode, schedule=schedule)
 
     # -- acoes -------------------------------------------------------------
     def _item_changed(self, _current, _previous) -> None:
@@ -429,6 +484,8 @@ class MainWindow(QMainWindow):
             self._handle_tray(event.get("action"))
         elif kind == "action":
             self._handle_action(event)
+        elif kind == "profile":
+            self._select_profile(str(event.get("name") or ""))
 
     def _handle_action(self, event: dict) -> None:
         dispatcher = self._controller.actions
@@ -461,7 +518,10 @@ class MainWindow(QMainWindow):
         if dispatcher is None:
             self.status.setToolTip("acoes: nenhuma configurada")
             return
-        self.status.setToolTip(f"acoes: {dispatcher.arming.label()}")
+        parts = [f"acoes: {dispatcher.arming.label()}"]
+        if not dispatcher.is_schedule_open():
+            parts.append("fora do horario (acoes suspensas)")
+        self.status.setToolTip(" — ".join(parts))
 
     def _handle_tray(self, action) -> None:
         if action == "toggle":
@@ -510,7 +570,9 @@ def run_gui(config_path, profile: str | None = None) -> int:
     events = new_event_queue()
     controller = MonitorController(events)
     window = MainWindow(controller, config_path, profile=profile, on_quit=app.quit)
-    tray = start_tray(events, arm_durations=window.arm_durations())
+    tray = start_tray(
+        events, arm_durations=window.arm_durations(), profiles=window.profile_names()
+    )
     window.show()
     try:
         return int(app.exec())

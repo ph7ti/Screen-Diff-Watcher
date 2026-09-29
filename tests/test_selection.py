@@ -193,6 +193,15 @@ def test_build_target_keeps_compare_options_from_profile():
     assert build_target(selection, profile, name="x").compare_options.light.threshold == 3.0
 
 
+def test_build_target_carries_schedule():
+    from screen_watch.config.schema import ScheduleOptions
+
+    schedule = ScheduleOptions(enabled=True, days=("mon",), windows=("08:00-12:00",))
+    selection = Selection(window_handle=1, origin_at_selection=(0, 0), roi_relative=(1, 2, 3, 4))
+    target = build_target(selection, _profile(), name="x", schedule=schedule)
+    assert target.schedule is schedule
+
+
 def test_from_target_config_copies_fields():
     target = TargetConfig(
         name="painel",
