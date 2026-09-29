@@ -1,0 +1,1 @@
+"""Loop de monitoramento cancelavel."""

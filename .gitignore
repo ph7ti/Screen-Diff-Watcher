@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.env
+.pytest_cache/
+.ruff_cache/
+*.log
+
+# Runtime output / user data (may contain tokens or screen content)
+*.selection.json
+screen_watch.yaml
+screen_watch.local.yaml
