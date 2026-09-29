@@ -37,7 +37,9 @@ class MonitorController:
             raise RuntimeError("ja existe um target em execucao")
         from screen_watch.app import MonitorSession, build_loop  # noqa: PLC0415
 
-        self._session = MonitorSession(target, on_result=self._on_result, recorder=recorder)
+        self._session = MonitorSession(
+            target, on_result=self._on_result, recorder=recorder, on_action=self._on_action
+        )
         self._loop = build_loop(
             target, self._session, on_event=self._on_event, on_error=self._on_error
         )
@@ -67,6 +69,11 @@ class MonitorController:
 
     def _on_event(self, name: str, payload: dict) -> None:
         self.events.put({"kind": "event", "name": name, "payload": payload})
+
+    def _on_action(self, payload: dict) -> None:
+        # `action_event` e proprio das acoes; `kind == "action"` sao comandos de
+        # tray/hotkey (evita eco/loop entre os dois canais).
+        self.events.put({"kind": "action_event", "payload": payload})
 
     def _on_error(self, exc: Exception) -> None:
         self.events.put({"kind": "error", "message": str(exc)})

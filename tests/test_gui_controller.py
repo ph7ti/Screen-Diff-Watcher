@@ -41,6 +41,18 @@ def test_publishes_event_and_error():
     assert "boom" in second["message"]
 
 
+def test_publishes_action_event():
+    events = new_event_queue()
+    controller = MonitorController(events)
+
+    controller._on_action({"mode": "armed", "action": "a", "executed": True})
+
+    event = events.get_nowait()
+    assert event["kind"] == "action_event"
+    assert event["payload"]["action"] == "a"
+    assert event["payload"]["executed"] is True
+
+
 def test_stop_without_start_is_safe():
     controller = MonitorController(new_event_queue())
     assert controller.running is False
@@ -63,9 +75,10 @@ def test_start_then_reject_second_start(monkeypatch):
             self.running = False
 
     class FakeSession:
-        def __init__(self, target, on_result=None, recorder=None):
+        def __init__(self, target, on_result=None, recorder=None, on_action=None):
             self.target = target
             self.recorder = recorder
+            self.on_action = on_action
 
     import screen_watch.app as app
 

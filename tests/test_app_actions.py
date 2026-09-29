@@ -116,3 +116,23 @@ def test_monitor_session_request_rebaseline_next_frame(make_frame, solid):
 def test_monitor_session_without_actions_has_none(make_frame, solid):
     session = MonitorSession(_target())
     assert session.actions is None
+
+
+def test_monitor_session_action_event_plumbing(monkeypatch, tmp_path, make_frame, solid):
+    from screen_watch.actions.protocol import ActionSpec, ActionStep
+
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    events: list[dict] = []
+    target = _target(
+        actions=(
+            ActionSpec(name="a", settle_s=0.0, steps=(ActionStep(kind="key", keys="a"),)),
+        )
+    )
+    session = MonitorSession(target, on_action=events.append)
+    session.chain.dispatch = lambda result, frame: DispatchOutcome.FIRED
+
+    session(make_frame(solid(100), sequence=1))
+    session(make_frame(solid(250), sequence=2))
+
+    assert events and events[0]["mode"] == "rehearsal"
+    assert events[0]["action"] == "a"

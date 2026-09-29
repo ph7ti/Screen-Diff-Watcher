@@ -270,6 +270,30 @@ python -m screen_watch test-action --selection painel --armed    # executa de ve
 Cada gatilho (ensaio, execução, suspensão) vira uma linha em `logs/actions.jsonl` com passos,
 resultado, duração, motivo e os caminhos das evidências.
 
+### Seleção de ações por sessão e log ao vivo
+
+Abaixo da lista de seleções, o checklist **"Ações da sessão (aplicam no próximo start)"** mostra
+todas as ações resolvidas da seleção/perfil atuais, com um contador "N de M selecionadas" e um
+resumo (`[x]`/`[ ]`) no log. A escolha é **por nome de seleção** e persiste em
+`state.json["action_selection"][seleção]`:
+
+- **sem escolha salva** → todas as ações habilitadas rodam;
+- **lista vazia** (tudo desmarcado) → nenhuma roda: a sessão **só monitora** (os alertas continuam).
+
+Trocar o subconjunto vale **no próximo start** (mesma regra de perfil/modo); a sessão em execução
+não muda. No CLI, `--actions` sobrepõe o subconjunto salvo **sem persistir**:
+
+```powershell
+python -m screen_watch run --selection painel --actions reprocessar,confirmar   # lista a,b
+python -m screen_watch run --selection painel --actions none                    # so monitora
+python -m screen_watch list-actions --selection painel                          # confere sem iniciar
+```
+
+`run` imprime o resumo das ações escolhidas e, durante a execução, uma linha por gatilho no
+console (`[acao] ensaio|armed <nome> -> ok|falhou (motivo)|ensaio`). Na GUI, o mesmo evento aparece
+no log. A auditoria em `logs/actions.jsonl` continua sendo a fonte de verdade; a linha ao vivo é
+efêmera e respeita o `cooldown_s`.
+
 ## Perfis e agendador
 
 Com mais de um perfil no YAML, a janela mostra um seletor **Perfil** (e o tray, um submenu

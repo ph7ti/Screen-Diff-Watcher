@@ -10,10 +10,12 @@ perfil para este alvo. Selecoes v1 continuam carregando sem overrides.
 from __future__ import annotations
 
 import json
+from collections.abc import Collection
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from screen_watch.actions.protocol import ActionSpec
 from screen_watch.config.schema import (
     AlertOptions,
     CompareOptions,
@@ -112,6 +114,46 @@ def from_target_config(target: TargetConfig) -> Selection:
     )
 
 
+def _resolve_mode(selection: Selection, overrides: dict[str, Any], mode: str | None) -> str:
+    from screen_watch.config.loader import ConfigError  # noqa: PLC0415
+    from screen_watch.config.schema import VALID_MODES  # noqa: PLC0415
+
+    resolved = mode or overrides.get("mode") or selection.mode
+    if resolved not in VALID_MODES:
+        raise ConfigError(f"mode invalido: {resolved!r}; use um de {VALID_MODES}")
+    return resolved
+
+
+def _actions_for_overrides(overrides: dict[str, Any], profile: ProfileOptions, mode: str):
+    """Overrides > perfil, mantendo a validacao OCR/mode (doc, secao 12.3)."""
+    from screen_watch.config.loader import ConfigError, parse_actions  # noqa: PLC0415
+
+    actions_raw = overrides.get("actions")
+    actions = (
+        parse_actions(actions_raw, "overrides.actions", mode=mode)
+        if actions_raw is not None
+        else profile.actions
+    )
+    for action in actions:
+        if action.needs_ocr and mode != "advanced":
+            raise ConfigError(
+                f"acao {action.name!r}: filtros text_* exigem mode 'advanced' (OCR); "
+                f"selecao esta em {mode!r}"
+            )
+    return actions
+
+
+def resolve_actions(
+    selection: Selection, profile: ProfileOptions, mode: str | None = None
+) -> tuple[ActionSpec, ...]:
+    """Acoes resolvidas (overrides > perfil) sem aplicar o filtro de sessao."""
+    from screen_watch.config.loader import parse_overrides  # noqa: PLC0415
+
+    overrides = parse_overrides(selection.overrides)
+    resolved_mode = _resolve_mode(selection, overrides, mode)
+    return _actions_for_overrides(overrides, profile, resolved_mode)
+
+
 def build_target(
     selection: Selection,
     profile: ProfileOptions,
@@ -119,37 +161,23 @@ def build_target(
     name: str,
     mode: str | None = None,
     schedule=None,
+    action_filter: Collection[str] | None = None,
 ) -> TargetConfig:
     """Resolve selecao + perfil (+ overrides) em `TargetConfig` (doc, secao 12.3).
 
     `overrides` da selecao **substituem** os valores do perfil, nao somam.
     `mode` explicito (seletor da GUI) ganha precedencia sobre ambos.
+    `action_filter` (nomes escolhidos na sessao) so reduz a lista; `None` = todas.
     """
-    from screen_watch.config.loader import (  # noqa: PLC0415
-        ConfigError,
-        parse_actions,
-        parse_overrides,
-    )
-    from screen_watch.config.schema import VALID_MODES  # noqa: PLC0415
+    from screen_watch.actions.selection import filter_actions  # noqa: PLC0415
+    from screen_watch.config.loader import parse_overrides  # noqa: PLC0415
 
     defaults = profile.defaults
     overrides = parse_overrides(selection.overrides)
-    resolved_mode = mode or overrides.get("mode") or selection.mode
-    if resolved_mode not in VALID_MODES:
-        raise ConfigError(f"mode invalido: {resolved_mode!r}; use um de {VALID_MODES}")
-
-    actions_raw = overrides.get("actions")
-    actions = (
-        parse_actions(actions_raw, "overrides.actions", mode=resolved_mode)
-        if actions_raw is not None
-        else profile.actions
-    )
-    for action in actions:
-        if action.needs_ocr and resolved_mode != "advanced":
-            raise ConfigError(
-                f"acao {action.name!r}: filtros text_* exigem mode 'advanced' (OCR); "
-                f"selecao esta em {resolved_mode!r}"
-            )
+    resolved_mode = _resolve_mode(selection, overrides, mode)
+    actions = _actions_for_overrides(overrides, profile, resolved_mode)
+    if action_filter is not None:
+        actions = filter_actions(actions, action_filter)
     return TargetConfig(
         name=name,
         window_handle=selection.window_handle,

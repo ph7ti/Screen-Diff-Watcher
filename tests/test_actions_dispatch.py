@@ -59,7 +59,9 @@ def _result(severity=3, text=None):
     )
 
 
-def _dispatcher(tmp_path, actions, *, clock=None, schedule_open=None, recorder=None):
+def _dispatcher(
+    tmp_path, actions, *, clock=None, schedule_open=None, recorder=None, on_event=None
+):
     clock = clock or FakeClock()
     backend = FakeBackend()
     runner = ActionRunner(
@@ -79,6 +81,7 @@ def _dispatcher(tmp_path, actions, *, clock=None, schedule_open=None, recorder=N
         target_name="alvo",
         audit=audit,
         recorder=recorder,
+        on_event=on_event,
         schedule_open=schedule_open,
         clock=clock,
     )
@@ -255,6 +258,52 @@ def test_rehearsal_records_evidence(tmp_path, make_frame, solid):
     records = _records(audit)
     assert records[0]["mode"] == "rehearsal"
     assert records[0]["evidence"] == ["/tmp/alvo-0.png"]
+
+
+def test_on_event_receives_rehearsal_payload(tmp_path, make_frame, solid):
+    events: list[dict] = []
+    dispatcher, arming, backend, audit = _dispatcher(
+        tmp_path, (_key_action(),), on_event=events.append
+    )
+    frame = make_frame(solid(10), rect=(0, 0, 10, 10))
+
+    dispatcher.on_result(_result(), frame)
+
+    assert events and events[0]["mode"] == "rehearsal"
+    assert events[0]["action"] == "a"
+
+
+def test_on_event_receives_armed_payload(tmp_path, make_frame, solid):
+    events: list[dict] = []
+    dispatcher, arming, backend, audit = _dispatcher(
+        tmp_path, (_key_action(),), on_event=events.append
+    )
+    arming.arm()
+    frame = make_frame(solid(10), rect=(0, 0, 10, 10))
+
+    dispatcher.on_result(_result(), frame)
+
+    assert events[0]["mode"] == "armed"
+    assert events[0]["executed"] is True
+
+
+def test_build_dispatcher_passes_on_event(tmp_path, make_frame, solid):
+    from screen_watch.actions.dispatch import build_dispatcher
+    from screen_watch.config.schema import TargetConfig
+
+    events: list[dict] = []
+    target = TargetConfig(
+        name="t",
+        window_handle=1,
+        roi_relative=(0, 0, 10, 10),
+        actions=(ActionSpec(name="a", settle_s=0.0, steps=(ActionStep(kind="key", keys="a"),)),),
+    )
+    dispatcher = build_dispatcher(
+        target, audit=ActionAudit(tmp_path / "a.jsonl"), on_event=events.append
+    )
+    dispatcher.on_result(_result(), make_frame(solid(10), rect=(0, 0, 10, 10)))
+
+    assert events and events[0]["mode"] == "rehearsal"
 
 
 def test_build_dispatcher_none_without_actions():

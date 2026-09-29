@@ -16,6 +16,7 @@ from screen_watch.persistence.selection import (
     dump_selection,
     from_target_config,
     load_selection,
+    resolve_actions,
     to_target_config,
 )
 
@@ -297,3 +298,52 @@ def test_build_target_rejects_text_action_in_non_advanced():
     )
     with pytest.raises(ValueError):
         build_target(selection, _profile(mode="default"), name="x")
+
+
+def _actions_selection() -> Selection:
+    return Selection(
+        window_handle=1,
+        origin_at_selection=(0, 0),
+        roi_relative=(1, 2, 3, 4),
+        mode="advanced",
+        overrides={
+            "actions": [
+                {"name": "a", "steps": [{"activate": True}]},
+                {"name": "b", "steps": [{"activate": True}]},
+            ]
+        },
+    )
+
+
+def test_resolve_actions_uses_overrides():
+    actions = resolve_actions(_actions_selection(), _profile(mode="advanced"))
+    assert [action.name for action in actions] == ["a", "b"]
+
+
+def test_resolve_actions_rejects_text_in_non_advanced():
+    selection = Selection(
+        window_handle=1,
+        origin_at_selection=(0, 0),
+        roi_relative=(1, 2, 3, 4),
+        mode="default",
+        overrides={"actions": [{"name": "a", "when": {"text_any": ["x"]}}]},
+    )
+    with pytest.raises(ValueError):
+        resolve_actions(selection, _profile(mode="default"))
+
+
+def test_build_target_applies_action_filter():
+    selection = _actions_selection()
+
+    filtered = build_target(
+        selection, _profile(mode="advanced"), name="x", action_filter=("b",)
+    )
+    assert [action.name for action in filtered.actions] == ["b"]
+
+    none_selected = build_target(
+        selection, _profile(mode="advanced"), name="x", action_filter=()
+    )
+    assert none_selected.actions == ()
+
+    unfiltered = build_target(selection, _profile(mode="advanced"), name="x")
+    assert [action.name for action in unfiltered.actions] == ["a", "b"]

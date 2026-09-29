@@ -226,6 +226,16 @@ def _resolve_selection_path(value: str | None) -> Path:
     raise ConfigError("nenhuma selecao disponivel; crie uma com 'select' ou 'select-manual'")
 
 
+def _action_filter_for(args: argparse.Namespace, name: str):
+    """Filtro de acoes: `--actions` (one-shot) > subconjunto salvo da selecao > todas."""
+    from screen_watch.actions.selection import load_action_selection, parse_action_names
+
+    raw = getattr(args, "actions", None)
+    if raw is not None:
+        return parse_action_names(raw)
+    return load_action_selection(name)
+
+
 def _resolve_run_target(args: argparse.Namespace):
     """Target resolvido a partir de uma selecao + perfil + agendador (doc, secao 12)."""
     from screen_watch.app import profile_from_config
@@ -245,7 +255,13 @@ def _resolve_run_target(args: argparse.Namespace):
     name = path.stem
     profile = profile_from_config(config, getattr(args, "profile", None), name)
     schedule = getattr(config, "schedule", None) if config is not None else None
-    return build_target(selection, profile, name=name, schedule=schedule)
+    return build_target(
+        selection,
+        profile,
+        name=name,
+        schedule=schedule,
+        action_filter=_action_filter_for(args, name),
+    )
 
 
 def _load_config_or_none(config_path):
@@ -291,9 +307,10 @@ def _cmd_run(args: argparse.Namespace) -> int:
     from screen_watch.app import evidence_recorder
 
     recorder = evidence_recorder(_load_config_or_none(args.config))
-    session = MonitorSession(target, recorder=recorder)
+    session = MonitorSession(target, recorder=recorder, on_action=_print_action_event)
     loop = build_loop(target, session, on_event=_print_event, on_error=_print_error)
     print(f"monitorando {target.name!r} (handle={target.window_handle}) a cada {target.poll_interval_s}s")
+    _print_actions_summary(target)
     loop.start()
     try:
         while loop.running:
@@ -811,6 +828,58 @@ def _print_error(exc: Exception) -> None:
     print(f"[erro] {exc}", file=sys.stderr)
 
 
+def _print_action_event(payload: dict) -> None:
+    action = payload.get("action") or "?"
+    mode = payload.get("mode") or "?"
+    if mode == "armed":
+        result = "ok" if payload.get("executed") else f"falhou ({payload.get('reason') or '?'})"
+    elif mode == "rehearsal":
+        result = "ensaio"
+    else:
+        result = payload.get("reason") or "?"
+    print(f"[acao] {mode} {action} -> {result}")
+
+
+def _print_actions_summary(target) -> None:
+    from screen_watch.actions.summary import describe_actions
+
+    if not target.actions:
+        print("acoes: nenhuma selecionada (a sessao so monitora)")
+        return
+    lines = describe_actions(target.actions)
+    print(f"acoes ({len(lines)}):")
+    for line in lines:
+        print(f"  {line}")
+
+
+def _cmd_list_actions(args: argparse.Namespace) -> int:
+    """Lista as acoes resolvidas da selecao, marcando o subconjunto salvo (doc, 11.4)."""
+    from screen_watch.actions.selection import load_action_selection
+    from screen_watch.actions.summary import describe_actions
+    from screen_watch.app import profile_from_config
+    from screen_watch.config.loader import ConfigError
+    from screen_watch.persistence.selection import load_selection, resolve_actions
+
+    deprecated = getattr(args, "target", None)
+    try:
+        path = _resolve_selection_path(getattr(args, "selection", None) or deprecated)
+        selection = load_selection(path)
+        config = _load_config_or_none(args.config)
+        profile = profile_from_config(config, getattr(args, "profile", None), path.stem)
+        actions = resolve_actions(selection, profile)
+    except (ConfigError, OSError, ValueError) as exc:
+        print(f"erro: {exc}")
+        return 1
+
+    if not actions:
+        print(f"selecao {path.stem!r} nao tem acoes configuradas")
+        return 0
+    saved = load_action_selection(path.stem)
+    for line in describe_actions(actions, saved):
+        print(line)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="screen-watch", description="Screen Diff Watcher")
     parser.add_argument("--verbose", action="store_true", help="log de debug")
@@ -855,6 +924,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--profile", default=None, help="perfil ativo (default: o do YAML)")
     p_run.add_argument("--selection", default=None, help="selecao JSON (nome ou caminho)")
     p_run.add_argument("--target", default=None, help="deprecado; alias de --selection")
+    p_run.add_argument(
+        "--actions",
+        default=None,
+        help="subconjunto de acoes (a,b; 'all'/'none'); one-shot, nao persiste",
+    )
     p_run.set_defaults(func=_cmd_run)
 
     p_test = sub.add_parser("test-alert", help="dispara um alerta sintetico com o ROI atual")
@@ -882,7 +956,21 @@ def build_parser() -> argparse.ArgumentParser:
     p_act.add_argument("--target", default=None, help="deprecado; alias de --selection")
     p_act.add_argument("--armed", action="store_true", help="executa de verdade (default: ensaio)")
     p_act.add_argument("--dry-run", action="store_true", help="apenas ensaia (default)")
+    p_act.add_argument(
+        "--actions",
+        default=None,
+        help="subconjunto de acoes (a,b; 'all'/'none'); one-shot, nao persiste",
+    )
     p_act.set_defaults(func=_cmd_test_action)
+
+    p_listact = sub.add_parser(
+        "list-actions", help="lista as acoes resolvidas da selecao e o subconjunto salvo"
+    )
+    p_listact.add_argument("--config", default=str(config_path()))
+    p_listact.add_argument("--profile", default=None, help="perfil ativo (default: o do YAML)")
+    p_listact.add_argument("--selection", default=None, help="selecao JSON (nome ou caminho)")
+    p_listact.add_argument("--target", default=None, help="deprecado; alias de --selection")
+    p_listact.set_defaults(func=_cmd_list_actions)
 
     p_rec = sub.add_parser(
         "record-actions", help="grava cliques/teclas e gera um snippet de actions: (Fase 3)"

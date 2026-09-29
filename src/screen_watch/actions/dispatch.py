@@ -37,6 +37,7 @@ class ActionDispatcher:
         target_name: str = "",
         audit=None,
         recorder=None,
+        on_event: Callable[[dict], None] | None = None,
         schedule_open: Callable[[], bool] | None = None,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
@@ -46,6 +47,7 @@ class ActionDispatcher:
         self._target_name = target_name
         self._audit = audit
         self._recorder = recorder
+        self._on_event = on_event
         self._schedule_open = schedule_open
         self._clock = clock
         self._last_fire: dict[str, float] = {}
@@ -155,6 +157,8 @@ class ActionDispatcher:
     def _record(self, payload: dict) -> None:
         if self._audit is not None:
             self._audit.record(payload)
+        if self._on_event is not None:
+            self._on_event(dict(payload))
 
 
 def build_dispatcher(
@@ -162,6 +166,7 @@ def build_dispatcher(
     *,
     recorder=None,
     audit=None,
+    on_event: Callable[[dict], None] | None = None,
     schedule_open: Callable[[], bool] | None = None,
     runner: ActionRunner | None = None,
     arming: ArmingController | None = None,
@@ -185,6 +190,7 @@ def build_dispatcher(
         target_name=getattr(target, "name", ""),
         audit=audit if audit is not None else ActionAudit(),
         recorder=recorder,
+        on_event=on_event,
         schedule_open=schedule_open,
         clock=clock,
     )

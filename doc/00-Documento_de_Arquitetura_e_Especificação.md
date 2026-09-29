@@ -724,6 +724,14 @@ que faria e grava evidências, sem clicar.
   (`suspended_schedule`); monitoramento e alertas seguem.
 - **Auditoria**: `logs/actions.jsonl` (ensaio, execução, suspensão, motivo,
   duração e caminhos das evidências).
+- **Seleção por sessão**: checklist na GUI (e `--actions` no CLI, one-shot) reduz
+  o subconjunto por **nome de ação**; aplica só no próximo `build_target`. O estado
+  fica em `state.json["action_selection"][seleção]` (chave ausente = todas, lista
+  vazia = nenhuma). `resolve_actions` mantém a validação OCR/mode; o filtro apenas
+  subtrai nomes (nunca reabilita `enabled: false`).
+- **Log ao vivo**: cada gatilho emite um payload efêmero (`ActionDispatcher.on_event`
+  → `MonitorSession.on_action` → `kind: "action_event"` na fila da GUI, distinto de
+  `action` = comandos de tray/hotkey); a fonte de verdade continua sendo o JSONL.
 - **Backend**: `pynput` como extra opcional (`pip install -e ".[input]"`), import
   preguiçoso em `platform/input.py`; sem ele, hotkeys caem para tray-only e a
   execução real falha com mensagem clara. Wayland/elevação seguem fora de escopo.
@@ -809,8 +817,9 @@ verdade para reconstruir a ROI a cada tick.
 ### 12.4 Estado, app-data e gravação
 
 `platform/paths.py` centraliza `app_home()`, `config_path()`, `selections_dir()`, `logs_dir()` e
-`state_path()`. `state.json` guarda `{"last_selection": "...", "profile": "..."}` e é atualizado
-ao iniciar `run`/GUI com sucesso. O YAML é regravado de forma atômica (temp + `os.replace`) com
+`state_path()`. `state.json` guarda `{"last_selection": "...", "profile": "...",
+"action_selection": {"<seleção>": ["nome-da-acao", ...]}}` e é atualizado ao iniciar `run`/GUI com
+sucesso (a chave `action_selection` é opcional e retrocompatível: ausente = todas as ações). O YAML é regravado de forma atômica (temp + `os.replace`) com
 backup `config.yaml.bak`; `state.json` é atômico, sem backup.
 
 A pasta de prints efetiva vem de `evidence/recorder.py::captures_dir(options)` (`evidence.dir`
@@ -829,6 +838,11 @@ associação/utilitário — o botão "Abrir pasta de prints" da GUI e "Abrir YA
 - **Gravador** (`actions/recorder.py` + `record-actions`): com o extra `input`, captura cliques/teclas
   (F9 inicia, F10 encerra), converte coordenadas absolutas para `ref: roi`/`window`/`screen` e gera um
   snippet de `actions:` com `when` comentado.
+- **Seleção de ações na UI**: checklist "Ações da sessão" (`describe_action`/`describe_actions` em
+  `actions/summary.py`) + contador "N de M"; persiste por nome de seleção
+  (`actions/selection.py::load_action_selection`/`save_action_selection`) e vale no próximo start.
+  No CLI, `--actions a,b|all|none` (one-shot, não persiste, precede o salvo) e `list-actions` para
+  conferir; `run` imprime o resumo e as linhas ao vivo `[acao] <mode> <nome> -> ok|falhou|ensaio`.
 - **Testes/validação**: `is_open` com relógio falso, conversão do gravador sem listener real e troca
   de perfil (próximo start).
 

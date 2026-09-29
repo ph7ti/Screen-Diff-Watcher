@@ -185,6 +185,7 @@ class MonitorSession:
         on_result: ResultCallback | None = None,
         recorder: object | None = None,
         actions: object | None = None,
+        on_action: Callable[[dict], None] | None = None,
     ) -> None:
         self.target = target
         self.pipeline = build_pipeline(target.mode, target.compare_options)
@@ -197,7 +198,7 @@ class MonitorSession:
         if actions is None:
             from screen_watch.actions.dispatch import build_dispatcher  # noqa: PLC0415
 
-            actions = build_dispatcher(target, recorder=recorder)
+            actions = build_dispatcher(target, recorder=recorder, on_event=on_action)
         self.actions = actions
 
     def __call__(self, frame: Frame) -> None:

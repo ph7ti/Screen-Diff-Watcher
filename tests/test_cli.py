@@ -514,7 +514,10 @@ def test_run_starts_and_stops_loop(monkeypatch, tmp_path):
         def stop(self, timeout=None):
             pass
 
-    monkeypatch.setattr("screen_watch.app.MonitorSession", lambda target, recorder=None: object())
+    monkeypatch.setattr(
+        "screen_watch.app.MonitorSession",
+        lambda target, recorder=None, on_action=None: object(),
+    )
     monkeypatch.setattr("screen_watch.app.build_loop", lambda target, session, **kw: FakeLoop())
 
     args = argparse.Namespace(
@@ -626,6 +629,107 @@ def test_record_actions_writes_snippet(monkeypatch, tmp_path):
     args = argparse.Namespace(selection="demo", target=None, name="teste", out=str(out_path))
     assert cli._cmd_record_actions(args) == 0
     assert "name: teste" in out_path.read_text(encoding="utf-8")
+
+
+def test_parser_accepts_actions_and_list_actions():
+    parser = cli.build_parser()
+    assert parser.parse_args(["run", "--actions", "a,b"]).actions == "a,b"
+    assert parser.parse_args(["test-action", "--actions", "none"]).actions == "none"
+    assert parser.parse_args(["list-actions", "--selection", "demo"]).func is cli._cmd_list_actions
+
+
+def _actions_selection(tmp_path):
+    path = tmp_path / "demo.json"
+    _write_selection(
+        path,
+        mode="advanced",
+        overrides={
+            "actions": [
+                {"name": "a", "steps": [{"activate": True}]},
+                {"name": "b", "steps": [{"activate": True}]},
+            ]
+        },
+    )
+    return path
+
+
+def test_resolve_run_target_applies_actions_flag(monkeypatch, tmp_path):
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    selection_path = _actions_selection(tmp_path)
+    args = argparse.Namespace(
+        selection=str(selection_path),
+        target=None,
+        config=str(tmp_path / "absent.yaml"),
+        profile=None,
+        actions="b",
+    )
+
+    target = cli._resolve_run_target(args)
+
+    assert [action.name for action in target.actions] == ["b"]
+
+
+def test_resolve_run_target_actions_none(monkeypatch, tmp_path):
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    selection_path = _actions_selection(tmp_path)
+    args = argparse.Namespace(
+        selection=str(selection_path),
+        target=None,
+        config=str(tmp_path / "absent.yaml"),
+        profile=None,
+        actions="none",
+    )
+
+    assert cli._resolve_run_target(args).actions == ()
+
+
+def test_resolve_run_target_uses_saved_action_selection(monkeypatch, tmp_path):
+    from screen_watch.actions.selection import save_action_selection
+
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    selection_path = _actions_selection(tmp_path)
+    save_action_selection("demo", ["a"])
+    args = argparse.Namespace(
+        selection=str(selection_path),
+        target=None,
+        config=str(tmp_path / "absent.yaml"),
+        profile=None,
+        actions=None,
+    )
+
+    target = cli._resolve_run_target(args)
+
+    assert [action.name for action in target.actions] == ["a"]
+
+
+def test_list_actions_prints_marks(monkeypatch, tmp_path, capsys):
+    from screen_watch.actions.selection import save_action_selection
+
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    (tmp_path / "selections").mkdir()
+    _actions_selection(tmp_path / "selections")
+    save_action_selection("demo", ["b"])
+
+    args = argparse.Namespace(
+        config=str(tmp_path / "absent.yaml"), selection="demo", target=None, profile=None
+    )
+    assert cli._cmd_list_actions(args) == 0
+
+    out = capsys.readouterr().out
+    assert "[x] b" in out
+    assert "[ ] a" in out
+
+
+def test_list_actions_without_actions(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    (tmp_path / "selections").mkdir()
+    _write_selection(tmp_path / "selections" / "demo.json")
+
+    args = argparse.Namespace(
+        config=str(tmp_path / "absent.yaml"), selection="demo", target=None, profile=None
+    )
+    assert cli._cmd_list_actions(args) == 0
+    assert "nao tem acoes" in capsys.readouterr().out
 
 
 def test_record_actions_without_input_reports_error(monkeypatch, tmp_path, capsys):

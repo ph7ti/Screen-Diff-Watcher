@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 
-from PyQt6.QtCore import QTimer
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (
     QAbstractItemView,
@@ -32,6 +32,7 @@ from screen_watch.gui.labels import selection_label
 
 POLL_MS = 200
 TARGET_ROLE = 1
+ACTION_NAME_ROLE = 2
 MODES = ("light", "default", "advanced")
 
 
@@ -65,6 +66,7 @@ class MainWindow(QMainWindow):
         self._on_quit = on_quit
         self._entries: list[tuple[str, object]] = []
         self._active_name = ""
+        self._actions_stem: str | None = None
         self._hotkeys: object | None = None
 
         self._timer = QTimer(self)
@@ -107,6 +109,14 @@ class MainWindow(QMainWindow):
         profile_row.addWidget(self.profile_note)
         profile_row.addStretch(1)
         layout.addLayout(profile_row)
+
+        layout.addWidget(QLabel("Acoes da sessao (aplicam no proximo start)"))
+        self.action_list = QListWidget()
+        self.action_list.setMaximumHeight(140)
+        self.action_list.itemChanged.connect(self._actions_changed)
+        layout.addWidget(self.action_list)
+        self.action_count = QLabel("")
+        layout.addWidget(self.action_count)
 
         buttons = QHBoxLayout()
         self.btn_start = QPushButton("Iniciar")
@@ -183,6 +193,7 @@ class MainWindow(QMainWindow):
         )
         if self.list.count():
             self.list.setCurrentRow(0)
+        self._populate_actions()
 
     def _populate_profiles(self) -> None:
         if self._config is not None and not self._config.legacy and self._config.profiles:
@@ -218,6 +229,8 @@ class MainWindow(QMainWindow):
         self.profile_note.setText(pending)
         self._append(f"perfil -> {name} {pending}".strip())
         self._update_action_status()
+        self._populate_actions()
+        self._print_action_summary()
 
     def _select_profile(self, name: str) -> None:
         index = self.profile_combo.findText(name)
@@ -272,16 +285,140 @@ class MainWindow(QMainWindow):
         selection = load_selection(value)
         profile = profile_from_config(self._config, self._profile, Path(value).stem)
         schedule = self._config.schedule if self._config is not None and not self._config.legacy else None
-        return build_target(selection, profile, name=Path(value).stem, mode=mode, schedule=schedule)
+        return build_target(
+            selection,
+            profile,
+            name=Path(value).stem,
+            mode=mode,
+            schedule=schedule,
+            action_filter=self._checked_action_names(),
+        )
 
     # -- acoes -------------------------------------------------------------
     def _item_changed(self, _current, _previous) -> None:
         selected = self._selected()
         if selected is None:
+            self._populate_actions()
             return
         self.mode_combo.blockSignals(True)
         self.mode_combo.setCurrentText(self._entry_mode(selected))
         self.mode_combo.blockSignals(False)
+        self._populate_actions()
+        self._print_action_summary()
+
+    def _action_check_states(self) -> dict[str, bool]:
+        states: dict[str, bool] = {}
+        for index in range(self.action_list.count()):
+            item = self.action_list.item(index)
+            name = item.data(ACTION_NAME_ROLE)
+            if name is not None:
+                states[str(name)] = item.checkState() == Qt.CheckState.Checked
+        return states
+
+    def _checked_action_names(self) -> tuple[str, ...] | None:
+        if self.action_list.count() == 0:
+            return None
+        names: list[str] = []
+        for index in range(self.action_list.count()):
+            item = self.action_list.item(index)
+            if item.checkState() == Qt.CheckState.Checked:
+                name = item.data(ACTION_NAME_ROLE)
+                if name is not None:
+                    names.append(str(name))
+        return tuple(names)
+
+    def _populate_actions(self) -> None:
+        from screen_watch.actions.selection import load_action_selection
+        from screen_watch.actions.summary import format_action
+        from screen_watch.app import profile_from_config
+        from screen_watch.persistence.selection import load_selection, resolve_actions
+
+        previous = self._action_check_states()
+        self.action_list.blockSignals(True)
+        self.action_list.clear()
+        selected = self._selected()
+        if selected is None:
+            self._actions_stem = None
+            self.action_list.setEnabled(False)
+            self.action_count.setText("nenhuma selecao")
+            self.action_list.blockSignals(False)
+            return
+        _kind, value = selected
+        stem = Path(value).stem
+        same = stem == self._actions_stem
+        try:
+            selection = load_selection(value)
+            profile = profile_from_config(self._config, self._profile, stem)
+            actions = resolve_actions(selection, profile, self.mode_combo.currentText() or None)
+        except Exception as exc:
+            self._actions_stem = stem
+            self.action_list.setEnabled(False)
+            self.action_count.setText(f"acoes indisponiveis: {exc}")
+            self.action_list.blockSignals(False)
+            return
+        saved = None if same else load_action_selection(stem)
+        self._actions_stem = stem
+        self.action_list.setEnabled(True)
+        for action in actions:
+            if action.name in previous:
+                checked = previous[action.name]
+            else:
+                checked = saved is None or action.name in saved
+            item = QListWidgetItem(format_action(action))
+            item.setData(ACTION_NAME_ROLE, action.name)
+            item.setCheckState(Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked)
+            self.action_list.addItem(item)
+        self.action_list.blockSignals(False)
+        self._update_action_count()
+
+    def _update_action_count(self) -> None:
+        total = self.action_list.count()
+        if total == 0:
+            self.action_count.setText("nenhuma acao configurada")
+            return
+        checked = sum(
+            1
+            for index in range(total)
+            if self.action_list.item(index).checkState() == Qt.CheckState.Checked
+        )
+        text = f"{checked} de {total} selecionadas"
+        if checked == 0:
+            text += " — nenhuma acao selecionada (a sessao so monitora)"
+        self.action_count.setText(text)
+
+    def _actions_changed(self, _item) -> None:
+        selected = self._selected()
+        if selected is None:
+            return
+        _kind, value = selected
+        from screen_watch.actions.selection import save_action_selection
+
+        try:
+            save_action_selection(Path(value).stem, self._checked_action_names() or ())
+        except OSError as exc:
+            self._append(f"nao foi possivel salvar a selecao de acoes: {exc}")
+        self._update_action_count()
+
+    def _print_action_summary(self) -> None:
+        from screen_watch.actions.summary import describe_actions
+        from screen_watch.app import profile_from_config
+        from screen_watch.persistence.selection import load_selection, resolve_actions
+
+        selected = self._selected()
+        if selected is None:
+            return
+        _kind, value = selected
+        stem = Path(value).stem
+        try:
+            selection = load_selection(value)
+            profile = profile_from_config(self._config, self._profile, stem)
+            actions = resolve_actions(selection, profile, self.mode_combo.currentText() or None)
+        except Exception as exc:
+            self._append(f"acoes indisponiveis: {exc}")
+            return
+        self._append(f"acoes de {stem}: {len(actions)}")
+        for line in describe_actions(actions, self._checked_action_names()):
+            self._append(line)
 
     def _mode_changed(self, mode: str) -> None:
         selected = self._selected()
@@ -334,6 +471,7 @@ class MainWindow(QMainWindow):
         update_state(**fields)
         self.status.setText(f"monitorando {target.name!r} ({target.mode})")
         self._set_running(True)
+        self._print_action_summary()
 
     def _stop(self) -> None:
         self._controller.stop()
@@ -501,8 +639,21 @@ class MainWindow(QMainWindow):
             self._handle_tray(event.get("action"))
         elif kind == "action":
             self._handle_action(event)
+        elif kind == "action_event":
+            self._handle_action_event(event.get("payload") or {})
         elif kind == "profile":
             self._select_profile(str(event.get("name") or ""))
+
+    def _handle_action_event(self, payload: dict) -> None:
+        action = payload.get("action") or "?"
+        mode = payload.get("mode") or "?"
+        if mode == "armed":
+            status = "ok" if payload.get("executed") else f"falhou ({payload.get('reason') or '?'})"
+        elif mode == "rehearsal":
+            status = "ensaio"
+        else:
+            status = payload.get("reason") or "?"
+        self._append(f"acoes: {mode} {action} -> {status}")
 
     def _handle_action(self, event: dict) -> None:
         dispatcher = self._controller.actions
