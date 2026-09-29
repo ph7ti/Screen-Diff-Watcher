@@ -813,6 +813,13 @@ verdade para reconstruir a ROI a cada tick.
 ao iniciar `run`/GUI com sucesso. O YAML é regravado de forma atômica (temp + `os.replace`) com
 backup `config.yaml.bak`; `state.json` é atômico, sem backup.
 
+A pasta de prints efetiva vem de `evidence/recorder.py::captures_dir(options)` (`evidence.dir`
+quando configurado, senão `%TEMP%/screen_watch/captures`) e `ensure_captures_dir` a cria se faltar;
+`show-paths` imprime-a como `capturas:` (com nota de override). Abrir pasta/arquivo é feito
+exclusivamente por `platform/shell.py::open_path` (best-effort): `os.startfile` no Windows,
+`open`/`xdg-open` nos demais, devolvendo `False` com `log.warning` quando não há
+associação/utilitário — o botão "Abrir pasta de prints" da GUI e "Abrir YAML" usam esse helper.
+
 ### 12.5 Agendador, perfis na UI e gravador
 
 - **Perfis na UI**: seletor na janela + submenu no tray; a troca vale no próximo start e persiste em

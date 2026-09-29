@@ -30,6 +30,22 @@ def default_captures_dir() -> Path:
     return Path(tempfile.gettempdir()) / CAPTURES_DIRNAME / CAPTURES_SUBDIR
 
 
+def _resolve_dir(directory: str | Path | None) -> Path:
+    return Path(directory) if directory else default_captures_dir()
+
+
+def captures_dir(options: EvidenceOptions | None = None) -> Path:
+    """Pasta efetiva das evidencias: `evidence.dir` quando configurado, senao a padrao."""
+    return _resolve_dir(getattr(options, "dir", None))
+
+
+def ensure_captures_dir(options: EvidenceOptions | None = None) -> Path:
+    """Como `captures_dir`, mas cria a pasta (com os pais) se ainda nao existir."""
+    directory = captures_dir(options)
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
+
+
 def _default_backend_factory() -> object:
     from screen_watch.capture.mss_backend import MssCaptureBackend  # noqa: PLC0415
 
@@ -56,7 +72,7 @@ class EvidenceRecorder:
         per_step: bool = False,
     ) -> None:
         self._backend_factory = backend_factory or _default_backend_factory
-        self.base_dir = Path(dir) if dir else default_captures_dir()
+        self.base_dir = _resolve_dir(dir)
         self.keep_per_target = max(0, int(keep_per_target))
         self.max_total_mb = max(0, int(max_total_mb))
         self.on_baseline = bool(on_baseline)

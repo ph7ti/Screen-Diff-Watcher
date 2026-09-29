@@ -6,7 +6,6 @@ iniciar/parar no `MonitorController` e consome eventos da fila via `QTimer`.
 
 from __future__ import annotations
 
-import os
 from dataclasses import replace
 from pathlib import Path
 
@@ -120,6 +119,7 @@ class MainWindow(QMainWindow):
         self.btn_reload = QPushButton("Recarregar")
         self.btn_minimize = QPushButton("Minimizar para o tray")
         self.btn_open = QPushButton("Abrir YAML")
+        self.btn_open_captures = QPushButton("Abrir pasta de prints")
         self.btn_start.clicked.connect(self._start)
         self.btn_stop.clicked.connect(self._stop)
         self.btn_rearm.clicked.connect(self._rearm)
@@ -128,6 +128,7 @@ class MainWindow(QMainWindow):
         self.btn_reload.clicked.connect(self._reload)
         self.btn_minimize.clicked.connect(self.hide)
         self.btn_open.clicked.connect(self._open_yaml)
+        self.btn_open_captures.clicked.connect(self._open_captures)
         for button in (
             self.btn_start,
             self.btn_stop,
@@ -137,6 +138,7 @@ class MainWindow(QMainWindow):
             self.btn_reload,
             self.btn_minimize,
             self.btn_open,
+            self.btn_open_captures,
         ):
             buttons.addWidget(button)
         layout.addLayout(buttons)
@@ -435,14 +437,29 @@ class MainWindow(QMainWindow):
         self._reload()
 
     def _open_yaml(self) -> None:
-        path = str(self._config_path)
-        if not Path(path).exists():
+        path = self._config_path
+        if not path.exists():
             QMessageBox.warning(self, "Screen Diff Watcher", f"config nao encontrado: {path}")
             return
-        try:
-            os.startfile(path)  # type: ignore[attr-defined]  # Windows
-        except AttributeError:
+        from screen_watch.platform.shell import open_path
+
+        if not open_path(path):
             self._append(f"abra manualmente: {path}")
+
+    def _open_captures(self) -> None:
+        from screen_watch.evidence.recorder import ensure_captures_dir
+        from screen_watch.platform.shell import open_path
+
+        options = None
+        if self._config is not None and not self._config.legacy:
+            options = self._config.evidence
+        try:
+            directory = ensure_captures_dir(options)
+        except OSError as exc:
+            self._append(f"nao foi possivel criar a pasta de prints: {exc}")
+            return
+        if not open_path(directory):
+            self._append(f"abra manualmente: {directory}")
 
     # -- eventos -----------------------------------------------------------
     def _set_running(self, running: bool) -> None:

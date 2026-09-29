@@ -205,6 +205,13 @@ cada gravação. Para validar a configuração sem esperar um evento real:
 python -m screen_watch test-evidence --selection painel   # grava baseline+change e imprime caminhos
 ```
 
+A janela tem o botão **Abrir pasta de prints**, que abre a pasta efetiva (`evidence.dir` quando
+configurado, senão `%TEMP%/screen_watch/captures`) no gerenciador de arquivos — criando-a se ainda
+não existir. O mesmo caminho aparece em `python -m screen_watch show-paths` (linha `capturas:`,
+com nota quando há override). Abrir pasta/arquivo passa sempre por `platform/shell.py::open_path`
+(`os.startfile` no Windows, `open`/`xdg-open` nos demais); se não houver associação/utilitário, a
+GUI apenas registra "abra manualmente: <caminho>".
+
 Falhas ao gravar (permissão, disco, janela fora da tela) apenas geram `log.warning`; o
 monitoramento continua.
 

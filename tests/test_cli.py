@@ -216,6 +216,13 @@ def test_parser_accepts_gui_and_show_paths():
     assert parser.parse_args(["show-paths"]).func is cli._cmd_show_paths
 
 
+def test_show_paths_includes_captures(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    assert cli._cmd_show_paths(argparse.Namespace()) == 0
+    out = capsys.readouterr().out
+    assert "capturas:" in out
+
+
 def test_parser_accepts_list_selections_and_migrate():
     parser = cli.build_parser()
     assert parser.parse_args(["list-selections"]).func is cli._cmd_list_selections

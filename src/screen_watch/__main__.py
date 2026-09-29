@@ -156,6 +156,8 @@ def _cmd_migrate_config(args: argparse.Namespace) -> int:
 
 
 def _cmd_show_paths(_args: argparse.Namespace) -> int:
+    from screen_watch.config.loader import ConfigError, load_config
+    from screen_watch.evidence.recorder import captures_dir
     from screen_watch.platform import paths
 
     family = paths.package_family_name()
@@ -165,6 +167,14 @@ def _cmd_show_paths(_args: argparse.Namespace) -> int:
     print(f"selections: {paths.selections_dir()}")
     print(f"state: {paths.state_path()}")
     print(f"logs: {paths.logs_dir()}")
+
+    options = None
+    try:
+        options = load_config(paths.config_path()).evidence
+    except ConfigError:
+        options = None
+    note = " (override evidence.dir)" if getattr(options, "dir", None) else ""
+    print(f"capturas: {captures_dir(options)}{note}")
     return 0
 
 

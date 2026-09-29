@@ -201,6 +201,24 @@ def test_from_options_enabled_builds_recorder(tmp_path):
     assert recorder.base_dir == tmp_path
 
 
+def test_captures_dir_prefers_options_dir(tmp_path):
+    from screen_watch.evidence.recorder import captures_dir, default_captures_dir
+
+    assert captures_dir(EvidenceOptions(dir=str(tmp_path))) == tmp_path
+    assert captures_dir(None) == default_captures_dir()
+    assert captures_dir(EvidenceOptions()) == default_captures_dir()
+
+
+def test_ensure_captures_dir_creates_missing_parents(tmp_path):
+    from screen_watch.evidence.recorder import ensure_captures_dir
+
+    target = tmp_path / "a" / "b"
+    created = ensure_captures_dir(EvidenceOptions(dir=str(target)))
+
+    assert created == target
+    assert target.is_dir()
+
+
 def test_target_name_is_sanitized(tmp_path, make_frame, solid):
     recorder = EvidenceRecorder(backend_factory=_FakeBackend, dir=tmp_path)
     frame = make_frame(solid(10), rect=(0, 0, 20, 20))
