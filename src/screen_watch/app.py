@@ -183,6 +183,7 @@ class MonitorSession:
         target: TargetConfig,
         on_result: ResultCallback | None = None,
         recorder: object | None = None,
+        actions: object | None = None,
     ) -> None:
         self.target = target
         self.pipeline = build_pipeline(target.mode, target.compare_options)
@@ -191,8 +192,20 @@ class MonitorSession:
         self._on_result = on_result
         self._recorder = recorder
         self._initialized = False
+        self._pending_rebaseline = False
+        if actions is None:
+            from screen_watch.actions.dispatch import build_dispatcher  # noqa: PLC0415
+
+            actions = build_dispatcher(target, recorder=recorder)
+        self.actions = actions
 
     def __call__(self, frame: Frame) -> None:
+        if self._pending_rebaseline:
+            self._pending_rebaseline = False
+            self.pipeline.initialize(frame)
+            self._initialized = True
+            self._record("record_baseline", frame)
+            return
         if not self._initialized:
             self.pipeline.initialize(frame)  # primeiro frame = baseline
             self._initialized = True
@@ -205,12 +218,19 @@ class MonitorSession:
         if self._on_result is not None:
             self._on_result(result, outcome)
         self._record("record_change", frame)
-        if self.rearm and outcome in _REARM_OUTCOMES:
+        rebaseline = False
+        if self.actions is not None:
+            rebaseline = bool(self.actions.on_result(result, frame))
+        if rebaseline or (self.rearm and outcome in _REARM_OUTCOMES):
             self.pipeline.initialize(frame)
 
     def rebaseline_now(self, frame: Frame) -> None:
         """Re-arma o baseline manualmente (tray/botao/hotkey re-arm)."""
         self.pipeline.initialize(frame)
+
+    def request_rebaseline(self) -> None:
+        """Pede re-baseline no proximo frame (thread-safe; chamado pela GUI)."""
+        self._pending_rebaseline = True
 
     def _record(self, method: str, frame: Frame) -> None:
         if self._recorder is None:

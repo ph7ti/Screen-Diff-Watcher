@@ -24,6 +24,14 @@ class MonitorController:
     def running(self) -> bool:
         return self._loop is not None and self._loop.running
 
+    @property
+    def actions(self):
+        return getattr(self._session, "actions", None)
+
+    def rebaseline(self) -> None:
+        if self._session is not None:
+            self._session.request_rebaseline()
+
     def start(self, target: TargetConfig, recorder: object | None = None) -> None:
         if self.running:
             raise RuntimeError("ja existe um target em execucao")

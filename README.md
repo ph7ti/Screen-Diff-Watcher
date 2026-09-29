@@ -29,10 +29,13 @@ Implementado:
   seleção v2 (com `overrides`) e `state.json` (`platform/paths.py`) para a última seleção/perfil.
 - Evidências (`evidence/`): `EvidenceRecorder` grava prints da janela inteira (baseline/change) em
   `%TEMP%`, com retenção por contagem e por MB; desabilitado por padrão.
+- Ações pseudo-humanas (`actions/`): passos `activate`/`click`/`move`/`type`/`key`/`wait`,
+  ensaio (dry-run) por padrão, armado/temporizado (`ArmingController`), limites por minuto/sessão,
+  guarda de foco e auditoria em `logs/actions.jsonl`. Backend `pynput` no extra opcional `input`.
 - CLI (`__main__.py`): `init-config`, `validate-config` (`--selections`), `list-selections`,
   `migrate-config` (`--dry-run`), `list-windows`, `show-paths`, `probe-dpi`, `select-manual`
-  (coordenadas), `select` (overlay), `test-alert`, `test-evidence`, `compare-modes` (calibração),
-  `run`, `gui`.
+  (coordenadas), `select` (overlay), `test-alert`, `test-evidence`, `test-action`, `compare-modes`
+  (calibração), `run`, `gui`.
 - Overlay de seleção (`gui/`): `overlay_geometry.py` (conversões lógico↔físico, sem Qt) e
   `overlay.py` (PyQt6, uma janela por monitor).
 - GUI mínima + tray (`gui/`): `main_window.py` (lista de seleções, iniciar/parar, status/último
@@ -117,6 +120,8 @@ lista as disponíveis e sai com erro. `--target` ainda funciona como alias depre
 - `simpleaudio` não tem wheel confiável para Python 3.13; instale com `pip install -e ".[sound]"`
   se o seu ambiente suportar. Sem ele, o som cai para `winsound` no Windows (e
   `MessageBeep()` quando não há `alert.wav`).
+- Ações pseudo-humanas exigem `pynput` (`pip install -e ".[input]"`). Sem ele, as ações permanecem
+  em ensaio e as hotkeys globais ficam indisponíveis (tray-only).
 - O token do Telegram vem da variável de ambiente `TELEGRAM_BOT_TOKEN` (nunca do YAML).
 
 ## Escala de tela (DPI)
@@ -201,6 +206,61 @@ python -m screen_watch test-evidence --selection painel   # grava baseline+chang
 
 Falhas ao gravar (permissão, disco, janela fora da tela) apenas geram `log.warning`; o
 monitoramento continua.
+
+## Ações pseudo-humanas (opt-in)
+
+As ações são **opt-in e desarmadas por padrão**: em modo ensaio o app só registra o que faria (e
+grava evidências), sem clicar. A execução real exige armar via tray, hotkey ou "armar por N min".
+`Esc` aborta na hora. O backend de entrada (`pynput`) é um extra opcional:
+
+```powershell
+python -m pip install -e ".[input]"
+```
+
+```yaml
+profiles:
+  default:
+    actions:
+      - name: reprocessar
+        enabled: true
+        severity_min: 1
+        cooldown_s: 30
+        when:
+          changed: true
+          text_any: ["erro", "falha"]   # exige mode: advanced (OCR)
+        settle_s: 1.5
+        rebaseline: false               # default: baseline permanece apos a acao
+        max_per_min: 6
+        max_per_session: 100
+        steps:
+          - activate: true              # obrigatorio quando houver cliques
+          - click: { x: 380, y: 40, ref: roi, button: left, clicks: 1 }
+          - wait:  { ms: 400 }
+          - key:   { keys: "ctrl+s" }
+          - type:  { text: "abc", interval_ms: 60 }
+ui:
+  hotkeys: { arm: "<ctrl>+<alt>+a", disarm: "<ctrl>+<alt>+d", toggle: "<ctrl>+<alt>+space",
+             rearm: "<ctrl>+<alt>+r", abort: "<esc>" }
+  arm_durations_min: [1, 5, 15, 30]
+```
+
+`ref` é relativo à ROI (`roi`), à janela (`window`) ou absoluto na tela (`screen`). O passo `click`
+exige um `activate` antes: o app foca a janela e confere `isActive`, abortando se o foco mudou. Como
+a execução é síncrona na thread do loop, captura/comparação pausam durante a sequência.
+
+Arme/desarme por: itens do tray ("Armar ações"/"Desarmar ações"/"Armar por N min"), botão
+**Re-armar** na janela (re-arma o baseline na hora), ou hotkeys globais (quando o extra `input`
+está instalado; sem ele a GUI avisa e fica tray-only).
+
+Para testar sem esperar um evento real:
+
+```powershell
+python -m screen_watch test-action --selection painel            # ensaio (default)
+python -m screen_watch test-action --selection painel --armed    # executa de verdade
+```
+
+Cada gatilho (ensaio, execução, suspensão) vira uma linha em `logs/actions.jsonl` com passos,
+resultado, duração, motivo e os caminhos das evidências.
 
 ## Calibração (Etapa D)
 

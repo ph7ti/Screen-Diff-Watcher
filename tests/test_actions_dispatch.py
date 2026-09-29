@@ -1,0 +1,257 @@
+from __future__ import annotations
+
+import json
+
+from screen_watch.actions.arming import ArmingController
+from screen_watch.actions.audit import ActionAudit
+from screen_watch.actions.dispatch import ActionDispatcher
+from screen_watch.actions.protocol import ActionSpec, ActionStep
+from screen_watch.actions.runner import ActionRunner
+from screen_watch.compare.protocol import ComparisonResult
+from screen_watch.config.schema import HumanizeOptions
+
+
+class FakeBackend:
+    def __init__(self):
+        self.moves: list[tuple[int, int]] = []
+        self.clicks: list[tuple[int, int, str, int]] = []
+        self.keys: list[str] = []
+        self.typed: list[tuple[str, int]] = []
+
+    def move(self, x, y):
+        self.moves.append((x, y))
+
+    def click(self, x, y, *, button="left", clicks=1):
+        self.clicks.append((x, y, button, clicks))
+
+    def press(self, keys):
+        self.keys.append(keys)
+
+    def type_text(self, text, *, interval_ms=60):
+        self.typed.append((text, interval_ms))
+
+
+class FakeClock:
+    def __init__(self):
+        self.t = 1000.0
+
+    def __call__(self):
+        return self.t
+
+    def advance(self, seconds):
+        self.t += seconds
+
+
+class FakeRecorder:
+    def __init__(self, per_step=False):
+        self.per_step = per_step
+        self.calls: list[tuple[str, int]] = []
+
+    def record_action(self, frame, name, step=0):
+        self.calls.append((name, step))
+        return f"/tmp/{name}-{step}.png"
+
+
+def _result(severity=3, text=None):
+    detail = {"current_text": text} if text is not None else {}
+    return ComparisonResult(
+        changed=True, score=1.0, threshold=0.1, strategy="advanced", severity=severity, detail=detail
+    )
+
+
+def _dispatcher(tmp_path, actions, *, clock=None, schedule_open=None, recorder=None):
+    clock = clock or FakeClock()
+    backend = FakeBackend()
+    runner = ActionRunner(
+        backend_factory=lambda: backend,
+        humanize=HumanizeOptions(mouse_steps=1, jitter_px=0, wait_jitter_ms=0, seed=1),
+        clock=clock,
+        sleep=lambda seconds: None,
+        activate=lambda handle: True,
+        is_active=lambda handle: True,
+    )
+    arming = ArmingController()
+    audit = ActionAudit(tmp_path / "actions.jsonl")
+    dispatcher = ActionDispatcher(
+        actions,
+        arming=arming,
+        runner=runner,
+        target_name="alvo",
+        audit=audit,
+        recorder=recorder,
+        schedule_open=schedule_open,
+        clock=clock,
+    )
+    return dispatcher, arming, backend, audit
+
+
+def _records(audit) -> list[dict]:
+    if not audit.path.exists():
+        return []
+    return [json.loads(line) for line in audit.path.read_text(encoding="utf-8").splitlines()]
+
+
+def _key_action(**extra) -> ActionSpec:
+    return ActionSpec(
+        name=extra.pop("name", "a"),
+        settle_s=0.0,
+        steps=(ActionStep(kind="key", keys="a"),),
+        **extra,
+    )
+
+
+def test_text_filter_matches_and_rehearses(tmp_path, make_frame, solid):
+    action = _key_action(when_severity_min=1, text_any=("erro",))
+    dispatcher, arming, backend, audit = _dispatcher(tmp_path, (action,))
+    frame = make_frame(solid(10), rect=(0, 0, 10, 10))
+
+    dispatcher.on_result(_result(text="ERRO 500"), frame)
+
+    records = _records(audit)
+    assert records and records[0]["mode"] == "rehearsal"
+    assert backend.keys == []
+
+
+def test_text_filter_rejects_non_match(tmp_path, make_frame, solid):
+    action = _key_action(text_any=("falha",))
+    dispatcher, arming, backend, audit = _dispatcher(tmp_path, (action,))
+    frame = make_frame(solid(10), rect=(0, 0, 10, 10))
+
+    dispatcher.on_result(_result(text="tudo ok"), frame)
+
+    assert _records(audit) == []
+
+
+def test_severity_gate(tmp_path, make_frame, solid):
+    action = _key_action(severity_min=2)
+    dispatcher, arming, backend, audit = _dispatcher(tmp_path, (action,))
+    frame = make_frame(solid(10), rect=(0, 0, 10, 10))
+
+    dispatcher.on_result(_result(severity=1), frame)
+
+    assert _records(audit) == []
+
+
+def test_armed_executes_and_audits(tmp_path, make_frame, solid):
+    action = _key_action()
+    dispatcher, arming, backend, audit = _dispatcher(tmp_path, (action,))
+    arming.arm()
+    frame = make_frame(solid(10), rect=(0, 0, 10, 10))
+
+    dispatcher.on_result(_result(), frame)
+
+    records = _records(audit)
+    assert records[0]["mode"] == "armed"
+    assert records[0]["executed"] is True
+    assert backend.keys == ["a"]
+
+
+def test_suspended_schedule_skips_even_armed(tmp_path, make_frame, solid):
+    action = _key_action()
+    dispatcher, arming, backend, audit = _dispatcher(
+        tmp_path, (action,), schedule_open=lambda: False
+    )
+    arming.arm()
+    frame = make_frame(solid(10), rect=(0, 0, 10, 10))
+
+    dispatcher.on_result(_result(), frame)
+
+    records = _records(audit)
+    assert records[0]["mode"] == "skipped"
+    assert records[0]["reason"] == "suspended_schedule"
+    assert backend.keys == []
+
+
+def test_cooldown_blocks_second_trigger(tmp_path, make_frame, solid):
+    action = _key_action(cooldown_s=30.0)
+    clock = FakeClock()
+    dispatcher, arming, backend, audit = _dispatcher(tmp_path, (action,), clock=clock)
+    arming.arm()
+    frame = make_frame(solid(10), rect=(0, 0, 10, 10))
+
+    dispatcher.on_result(_result(), frame)
+    clock.advance(10)
+    dispatcher.on_result(_result(), frame)
+
+    assert len(_records(audit)) == 1
+    clock.advance(30)
+    dispatcher.on_result(_result(), frame)
+    assert len(_records(audit)) == 2
+
+
+def test_disabled_action_ignored(tmp_path, make_frame, solid):
+    action = _key_action(enabled=False)
+    dispatcher, arming, backend, audit = _dispatcher(tmp_path, (action,))
+    arming.arm()
+    frame = make_frame(solid(10), rect=(0, 0, 10, 10))
+
+    dispatcher.on_result(_result(), frame)
+
+    assert _records(audit) == []
+    assert backend.keys == []
+
+
+def test_rebaseline_only_when_opted_in(tmp_path, make_frame, solid):
+    action = _key_action(rebaseline=True)
+    dispatcher, arming, backend, audit = _dispatcher(tmp_path, (action,))
+    arming.arm()
+    frame = make_frame(solid(10), rect=(0, 0, 10, 10))
+
+    assert dispatcher.on_result(_result(), frame) is True
+
+    action2 = _key_action(name="b", rebaseline=False)
+    dispatcher2, arming2, _, _ = _dispatcher(tmp_path, (action2,))
+    arming2.arm()
+    assert dispatcher2.on_result(_result(), frame) is False
+
+
+def test_evidence_per_step(tmp_path, make_frame, solid):
+    action = ActionSpec(
+        name="a",
+        settle_s=0.0,
+        steps=(ActionStep(kind="key", keys="a"), ActionStep(kind="key", keys="b")),
+    )
+    recorder = FakeRecorder(per_step=True)
+    dispatcher, arming, backend, audit = _dispatcher(
+        tmp_path, (action,), recorder=recorder
+    )
+    arming.arm()
+    frame = make_frame(solid(10), rect=(0, 0, 10, 10))
+
+    dispatcher.on_result(_result(), frame)
+
+    assert recorder.calls == [("alvo", 0), ("alvo", 1)]
+
+
+def test_evidence_per_batch(tmp_path, make_frame, solid):
+    action = ActionSpec(
+        name="a",
+        settle_s=0.0,
+        steps=(ActionStep(kind="key", keys="a"), ActionStep(kind="key", keys="b")),
+    )
+    recorder = FakeRecorder(per_step=False)
+    dispatcher, arming, backend, audit = _dispatcher(
+        tmp_path, (action,), recorder=recorder
+    )
+    arming.arm()
+    frame = make_frame(solid(10), rect=(0, 0, 10, 10))
+
+    dispatcher.on_result(_result(), frame)
+
+    assert recorder.calls == [("alvo", 0)]
+
+
+def test_rehearsal_records_evidence(tmp_path, make_frame, solid):
+    action = _key_action()
+    recorder = FakeRecorder(per_step=False)
+    dispatcher, arming, backend, audit = _dispatcher(
+        tmp_path, (action,), recorder=recorder
+    )
+    frame = make_frame(solid(10), rect=(0, 0, 10, 10))
+
+    dispatcher.on_result(_result(), frame)
+
+    assert recorder.calls == [("alvo", 0)]
+    records = _records(audit)
+    assert records[0]["mode"] == "rehearsal"
+    assert records[0]["evidence"] == ["/tmp/alvo-0.png"]

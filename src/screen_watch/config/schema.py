@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from screen_watch.actions.protocol import ActionSpec
+
 Rect = tuple[int, int, int, int]
 Point = tuple[int, int]
 
@@ -60,6 +62,17 @@ class AlertOptions:
 
 
 @dataclass(frozen=True)
+class HumanizeOptions:
+    """Ruido pseudo-humano (doc, secao 12.2); `seed` so para testes deterministicos."""
+
+    mouse_steps: int = 24
+    key_interval_ms: int = 60
+    jitter_px: int = 3
+    wait_jitter_ms: int = 150
+    seed: int | None = None
+
+
+@dataclass(frozen=True)
 class GlobalDefaults:
     """Valores padrao de um perfil (doc, secao 12.2)."""
 
@@ -67,14 +80,16 @@ class GlobalDefaults:
     poll_interval_s: float = 2.0
     rearm: bool = True
     compare_options: CompareOptions = field(default_factory=CompareOptions)
+    humanize: HumanizeOptions = field(default_factory=HumanizeOptions)
 
 
 @dataclass(frozen=True)
 class ProfileOptions:
-    """Um perfil nomeado: defaults + alertas (+ acoes nas fases seguintes)."""
+    """Um perfil nomeado: defaults + alertas + acoes."""
 
     defaults: GlobalDefaults = field(default_factory=GlobalDefaults)
     alerts: tuple[AlertOptions, ...] = ()
+    actions: tuple[ActionSpec, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -121,6 +136,8 @@ class TargetConfig:
     masks: tuple[Rect, ...] = ()
     compare_options: CompareOptions = field(default_factory=CompareOptions)
     alerts: tuple[AlertOptions, ...] = ()
+    actions: tuple[ActionSpec, ...] = ()
+    humanize: HumanizeOptions = field(default_factory=HumanizeOptions)
 
 
 @dataclass(frozen=True)

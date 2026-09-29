@@ -31,7 +31,7 @@ def _icon_image():
     return image
 
 
-def start_tray(events) -> object | None:
+def start_tray(events, arm_durations=(1, 5, 15, 30)) -> object | None:
     """Sobe o tray em thread separada. Devolve o Icon ou None se indisponivel."""
     try:
         import pystray  # noqa: PLC0415
@@ -39,18 +39,36 @@ def start_tray(events) -> object | None:
         log.warning("pystray indisponivel, tray desabilitado: %s", exc)
         return None
 
-    def push(action: str):
+    def push_tray(action: str):
         def _callback(_icon, _item):
             events.put({"kind": "tray", "action": action})
 
         return _callback
 
+    def push_action(action: str, **extra):
+        def _callback(_icon, _item):
+            events.put({"kind": "action", "action": action, **extra})
+
+        return _callback
+
+    arm_menu = pystray.Menu(
+        *[
+            pystray.MenuItem(f"{minutes} min", push_action("arm_for", minutes=minutes))
+            for minutes in arm_durations
+        ]
+    )
     menu = pystray.Menu(
-        pystray.MenuItem("Mostrar/ocultar", push("toggle")),
-        pystray.MenuItem("Minimizar para o tray", push("minimize")),
-        pystray.MenuItem("Iniciar", push("start")),
-        pystray.MenuItem("Parar", push("stop")),
-        pystray.MenuItem("Sair", push("quit")),
+        pystray.MenuItem("Mostrar/ocultar", push_tray("toggle")),
+        pystray.MenuItem("Minimizar para o tray", push_tray("minimize")),
+        pystray.MenuItem("Iniciar", push_tray("start")),
+        pystray.MenuItem("Parar", push_tray("stop")),
+        pystray.Menu.SEPARATOR,
+        pystray.MenuItem("Armar acoes", push_action("arm")),
+        pystray.MenuItem("Desarmar acoes", push_action("disarm")),
+        pystray.MenuItem("Armar por...", arm_menu),
+        pystray.MenuItem("Re-armar baseline", push_action("rearm")),
+        pystray.Menu.SEPARATOR,
+        pystray.MenuItem("Sair", push_tray("quit")),
     )
     icon = pystray.Icon("screen_watch", _icon_image(), "Screen Diff Watcher", menu)
     thread = threading.Thread(target=icon.run, name="screen-watch-tray", daemon=True)

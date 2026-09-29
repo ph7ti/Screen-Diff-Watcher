@@ -119,6 +119,33 @@ def find_window_by_handle(handle: int) -> WindowInfo | None:
     return None
 
 
+def activate_window(handle: int) -> bool:
+    """Traz a janela para o primeiro plano (usado pelo passo `activate`)."""
+    for win in _require_pywinctl().getAllWindows():
+        try:
+            info = _to_info(win)
+        except Exception:
+            continue
+        if info.handle == handle:
+            try:
+                return bool(win.activate())
+            except Exception:
+                return False
+    return False
+
+
+def is_window_active(handle: int) -> bool:
+    """True se `handle` e a janela em foco (guarda contra foco roubado)."""
+    for win in _require_pywinctl().getAllWindows():
+        try:
+            info = _to_info(win)
+        except Exception:
+            continue
+        if info.handle == handle:
+            return _flag(win, "isActive")
+    return False
+
+
 def app_window_label(info: WindowInfo) -> str:
     """Rotulo do seletor: nome do app primeiro, depois o titulo da janela."""
     name = info.app_name or info.title or "(sem titulo)"

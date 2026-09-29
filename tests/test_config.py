@@ -248,6 +248,25 @@ def test_v2_bad_defaults_poll_interval_raises():
         config_from_dict(raw)
 
 
+def test_v2_parses_humanize():
+    raw = _v2_dict()
+    raw["profiles"]["default"]["defaults"]["humanize"] = {
+        "mouse_steps": 5,
+        "jitter_px": 1,
+        "seed": 7,
+    }
+    humanize = config_from_dict(raw).resolve().defaults.humanize
+    assert humanize.mouse_steps == 5
+    assert humanize.jitter_px == 1
+    assert humanize.seed == 7
+
+
+def test_v2_bad_humanize_mouse_steps_raises():
+    raw = _v2_dict(defaults={"humanize": {"mouse_steps": 0}})
+    with pytest.raises(ConfigError):
+        config_from_dict(raw)
+
+
 def test_unsupported_version_raises():
     with pytest.raises(ConfigError):
         config_from_dict({"version": 3, "profiles": {}})

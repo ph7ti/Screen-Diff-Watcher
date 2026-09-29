@@ -118,7 +118,11 @@ def build_target(
     `overrides` da selecao **substituem** os valores do perfil, nao somam.
     `mode` explicito (seletor da GUI) ganha precedencia sobre ambos.
     """
-    from screen_watch.config.loader import ConfigError, parse_overrides  # noqa: PLC0415
+    from screen_watch.config.loader import (  # noqa: PLC0415
+        ConfigError,
+        parse_actions,
+        parse_overrides,
+    )
     from screen_watch.config.schema import VALID_MODES  # noqa: PLC0415
 
     defaults = profile.defaults
@@ -126,6 +130,19 @@ def build_target(
     resolved_mode = mode or overrides.get("mode") or selection.mode
     if resolved_mode not in VALID_MODES:
         raise ConfigError(f"mode invalido: {resolved_mode!r}; use um de {VALID_MODES}")
+
+    actions_raw = overrides.get("actions")
+    actions = (
+        parse_actions(actions_raw, "overrides.actions", mode=resolved_mode)
+        if actions_raw is not None
+        else profile.actions
+    )
+    for action in actions:
+        if action.needs_ocr and resolved_mode != "advanced":
+            raise ConfigError(
+                f"acao {action.name!r}: filtros text_* exigem mode 'advanced' (OCR); "
+                f"selecao esta em {resolved_mode!r}"
+            )
     return TargetConfig(
         name=name,
         window_handle=selection.window_handle,
@@ -138,6 +155,8 @@ def build_target(
         masks=overrides.get("masks", selection.masks),
         compare_options=defaults.compare_options,
         alerts=overrides.get("alerts", profile.alerts),
+        actions=actions,
+        humanize=defaults.humanize,
     )
 
 

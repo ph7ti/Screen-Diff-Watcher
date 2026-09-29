@@ -419,6 +419,89 @@ def _cmd_test_evidence(args: argparse.Namespace) -> int:
     return 0 if baseline is not None and change is not None else 1
 
 
+def _cmd_test_action(args: argparse.Namespace) -> int:
+    """Executa/ensaias as acoes da selecao sobre o ROI atual (plano, F2-T9)."""
+    import time
+
+    from screen_watch.actions.arming import ArmingController
+    from screen_watch.actions.audit import ActionAudit
+    from screen_watch.actions.runner import ActionRunner, describe_step
+    from screen_watch.app import evidence_recorder
+    from screen_watch.capture.frame import Frame
+    from screen_watch.config.loader import ConfigError
+
+    try:
+        target = _resolve_run_target(args)
+    except ConfigError as exc:
+        print(f"erro: {exc}")
+        return 1
+    if not target.actions:
+        print(f"selecao {target.name!r} nao tem acoes configuradas")
+        return 1
+    try:
+        rgb, abs_rect, info = _capture_target_roi(target)
+    except Exception as exc:
+        print(f"falha ao capturar ROI: {exc}")
+        return 1
+
+    frame = Frame(
+        rgb=rgb,
+        timestamp=time.time(),
+        absolute_rect=abs_rect,
+        window_rect=info.rect,
+        window_handle=info.handle,
+        sequence=1,
+    )
+    recorder = evidence_recorder(_load_config_or_none(args.config), force_enabled=True)
+    audit = ActionAudit()
+    arming = ArmingController()
+    if args.armed:
+        arming.arm()
+    runner = ActionRunner(humanize=target.humanize)
+
+    failures = 0
+    mode = "armado" if args.armed else "ensaio (dry-run)"
+    print(f"alvo={target.name!r} modo={mode}")
+    for action in target.actions:
+        if not action.enabled:
+            print(f"[desabilitada] {action.name}")
+            continue
+        descriptions = [describe_step(step) for step in action.steps]
+        if not arming.is_armed():
+            evidence: list[str] = []
+            if recorder is not None:
+                path = recorder.record_action(frame, target.name)
+                if path:
+                    evidence.append(str(path))
+            audit.record(
+                {
+                    "mode": "rehearsal",
+                    "action": action.name,
+                    "steps": descriptions,
+                    "evidence": evidence,
+                }
+            )
+            print(f"[ensaio] {action.name}: {', '.join(descriptions) or '(sem passos)'}")
+            continue
+        run = runner.run(action, frame, arming=arming)
+        audit.record(
+            {
+                "mode": "armed",
+                "action": action.name,
+                "executed": run.executed,
+                "steps": list(run.steps),
+                "duration_s": round(run.duration_s, 3),
+                "reason": run.reason,
+            }
+        )
+        status = "ok" if run.executed else f"falhou ({run.reason})"
+        print(f"[armado] {action.name}: {status}")
+        if not run.executed:
+            failures += 1
+    print(f"auditoria: {audit.path}")
+    return 0 if not failures else 1
+
+
 def _cmd_compare_modes(args: argparse.Namespace) -> int:
     """Mede score/severidade/tempo de cada modo no ROI atual (calibracao, Etapa D)."""
     import time
@@ -742,6 +825,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_ev.add_argument("--selection", default=None, help="selecao JSON (nome ou caminho)")
     p_ev.add_argument("--target", default=None, help="deprecado; alias de --selection")
     p_ev.set_defaults(func=_cmd_test_evidence)
+
+    p_act = sub.add_parser(
+        "test-action", help="ensaias/executa as acoes da selecao no ROI atual (Fase 2)"
+    )
+    p_act.add_argument("--config", default=str(config_path()))
+    p_act.add_argument("--profile", default=None, help="perfil ativo (default: o do YAML)")
+    p_act.add_argument("--selection", default=None, help="selecao JSON (nome ou caminho)")
+    p_act.add_argument("--target", default=None, help="deprecado; alias de --selection")
+    p_act.add_argument("--armed", action="store_true", help="executa de verdade (default: ensaio)")
+    p_act.add_argument("--dry-run", action="store_true", help="apenas ensaia (default)")
+    p_act.set_defaults(func=_cmd_test_action)
 
     p_cmp = sub.add_parser(
         "compare-modes", help="mede score/severidade/tempo por modo no ROI atual (calibracao)"

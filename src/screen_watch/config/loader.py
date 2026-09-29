@@ -20,6 +20,8 @@ from typing import Any
 
 import yaml
 
+from screen_watch.actions.plan import ActionError
+from screen_watch.actions.plan import parse_actions as _parse_actions_raw
 from screen_watch.config.schema import (
     VALID_DAYS,
     VALID_MODES,
@@ -31,6 +33,7 @@ from screen_watch.config.schema import (
     DefaultOptions,
     EvidenceOptions,
     GlobalDefaults,
+    HumanizeOptions,
     LightOptions,
     ProfileOptions,
     ScheduleOptions,
@@ -130,11 +133,20 @@ def parse_alerts(raw: Any, field_name: str = "alerts") -> tuple[AlertOptions, ..
     return tuple(_parse_alert(item, i, field_name) for i, item in enumerate(raw))
 
 
+def parse_actions(raw: Any, prefix: str = "actions", mode: str | None = None):
+    """Parse de acoes convertendo `ActionError` em `ConfigError`."""
+    try:
+        return _parse_actions_raw(raw, prefix=prefix, mode=mode)
+    except ActionError as exc:
+        raise ConfigError(str(exc)) from exc
+
+
 def parse_overrides(raw: Any) -> dict[str, Any]:
     """Normaliza os `overrides` de uma selecao (doc, secao 12.3).
 
     Valores ausentes nao entram no dicionario; os presentes sao convertidos e
-    validados aqui para nao falhar em runtime. `actions` fica cru ate a Fase 2.
+    validados aqui para nao falhar em runtime. `actions` fica cru (o parse exige
+    o mode resolvido, feito em `build_target`).
     """
     if raw is None:
         return {}
@@ -239,6 +251,25 @@ def _parse_target(raw: Any) -> TargetConfig:
     )
 
 
+def _parse_humanize(raw: Any) -> HumanizeOptions:
+    raw = raw or {}
+    if not isinstance(raw, dict):
+        raise ConfigError("defaults.humanize deve ser um mapeamento")
+    seed = raw.get("seed")
+    options = HumanizeOptions(
+        mouse_steps=_as_int(raw.get("mouse_steps", 24), "defaults.humanize.mouse_steps"),
+        key_interval_ms=_as_int(raw.get("key_interval_ms", 60), "defaults.humanize.key_interval_ms"),
+        jitter_px=_as_int(raw.get("jitter_px", 3), "defaults.humanize.jitter_px"),
+        wait_jitter_ms=_as_int(raw.get("wait_jitter_ms", 150), "defaults.humanize.wait_jitter_ms"),
+        seed=None if seed is None else _as_int(seed, "defaults.humanize.seed"),
+    )
+    if options.mouse_steps < 1:
+        raise ConfigError("defaults.humanize.mouse_steps deve ser >= 1")
+    if options.key_interval_ms < 0 or options.jitter_px < 0 or options.wait_jitter_ms < 0:
+        raise ConfigError("defaults.humanize: key_interval_ms/jitter_px/wait_jitter_ms devem ser >= 0")
+    return options
+
+
 def _parse_defaults(raw: Any) -> GlobalDefaults:
     raw = raw or {}
     if not isinstance(raw, dict):
@@ -248,6 +279,7 @@ def _parse_defaults(raw: Any) -> GlobalDefaults:
         poll_interval_s=_as_interval(raw.get("poll_interval_s", 2.0), "defaults.poll_interval_s"),
         rearm=_as_bool(raw.get("rearm", True), "defaults.rearm"),
         compare_options=_parse_compare_options(raw.get("compare_options")),
+        humanize=_parse_humanize(raw.get("humanize")),
     )
 
 
@@ -255,9 +287,11 @@ def _parse_profile(raw: Any, name: str) -> ProfileOptions:
     raw = raw or {}
     if not isinstance(raw, dict):
         raise ConfigError(f"profiles.{name} deve ser um mapeamento")
+    defaults = _parse_defaults(raw.get("defaults"))
     return ProfileOptions(
-        defaults=_parse_defaults(raw.get("defaults")),
+        defaults=defaults,
         alerts=parse_alerts(raw.get("alerts"), f"profiles.{name}.alerts"),
+        actions=parse_actions(raw.get("actions"), f"profiles.{name}.actions", mode=defaults.mode),
     )
 
 
@@ -518,10 +552,18 @@ def _default_evidence_dict() -> dict[str, Any]:
 
 
 def _defaults_dict(defaults: GlobalDefaults) -> dict[str, Any]:
+    humanize = defaults.humanize
     return {
         "mode": defaults.mode,
         "poll_interval_s": defaults.poll_interval_s,
         "rearm": defaults.rearm,
+        "humanize": {
+            "mouse_steps": humanize.mouse_steps,
+            "key_interval_ms": humanize.key_interval_ms,
+            "jitter_px": humanize.jitter_px,
+            "wait_jitter_ms": humanize.wait_jitter_ms,
+            "seed": humanize.seed,
+        },
         "compare_options": _compare_options_to_dict(defaults.compare_options),
     }
 

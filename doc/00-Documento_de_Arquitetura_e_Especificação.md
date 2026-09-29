@@ -699,6 +699,35 @@ class AlertChain:
 
 **Regra**: falha em um notificador **não** impede os demais. Cada um tem seu próprio `try`.
 
+### 11.4 Ações pseudo-humanas (opt-in, `actions/`)
+
+Reação **separada** dos alertas: avaliada depois do `AlertChain.dispatch` quando
+`result.changed`, sem alterar o `DispatchOutcome` nem o re-arm dos alertas. Só
+executa quando **armada**; por padrão fica em **ensaio** (dry-run), que registra o
+que faria e grava evidências, sem clicar.
+
+- **Gatilho**: `changed` (único suportado), `when.severity_min` e filtros de OCR
+  (`text_any`/`text_all`/`text_regex`, case-insensitive por padrão). Filtros de
+  texto exigem `mode: advanced` (validação recusa nos demais modos).
+- **Passos**: `activate`/`click`/`move`/`type`/`key`/`wait`; `ref` é `roi`
+  (relativo a `frame.absolute_rect`), `window` (`frame.window_rect`) ou `screen`.
+  Clique exige `activate` antes (foco explícito + verificação `isActive`; aborta
+  se o foco mudou).
+- **Execução síncrona na thread do loop**: captura/comparação pausam durante a
+  sequência; `settle_s` ao final. Limites `max_per_min`/`max_per_session`.
+- **Re-arm**: `rebaseline: false` por padrão (o baseline permanece após a ação);
+  `rebaseline: true` opt-in repete o gatilho (relatório/página). Re-arm manual em
+  runtime (tray/botão/hotkey `rearm`, via `MonitorSession.request_rebaseline()`).
+- **Ensaio x armado**: `ArmingController` com estados `disarmed`/`armed`/`timed`;
+  estado só em memória, começa desarmado a cada sessão. `Esc` aborta na hora.
+- **Agendador**: fora da janela de horário a ação é suspensa
+  (`suspended_schedule`); monitoramento e alertas seguem.
+- **Auditoria**: `logs/actions.jsonl` (ensaio, execução, suspensão, motivo,
+  duração e caminhos das evidências).
+- **Backend**: `pynput` como extra opcional (`pip install -e ".[input]"`), import
+  preguiçoso em `platform/input.py`; sem ele, hotkeys caem para tray-only e a
+  execução real falha com mensagem clara. Wayland/elevação seguem fora de escopo.
+
 ---
 
 ## 12. Configuração

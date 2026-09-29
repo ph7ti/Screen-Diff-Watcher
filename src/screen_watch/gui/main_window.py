@@ -66,6 +66,7 @@ class MainWindow(QMainWindow):
         self._on_quit = on_quit
         self._entries: list[tuple[str, object]] = []
         self._active_name = ""
+        self._hotkeys: object | None = None
 
         self._timer = QTimer(self)
         self._timer.setInterval(POLL_MS)
@@ -73,6 +74,7 @@ class MainWindow(QMainWindow):
 
         self._build_ui()
         self._reload()
+        self._start_hotkeys()
         self._timer.start()
 
     # -- construcao --------------------------------------------------------
@@ -101,6 +103,8 @@ class MainWindow(QMainWindow):
         self.btn_start = QPushButton("Iniciar")
         self.btn_stop = QPushButton("Parar")
         self.btn_stop.setEnabled(False)
+        self.btn_rearm = QPushButton("Re-armar")
+        self.btn_rearm.setEnabled(False)
         self.btn_new = QPushButton("Novo target (overlay)")
         self.btn_remove = QPushButton("Remover")
         self.btn_reload = QPushButton("Recarregar")
@@ -108,6 +112,7 @@ class MainWindow(QMainWindow):
         self.btn_open = QPushButton("Abrir YAML")
         self.btn_start.clicked.connect(self._start)
         self.btn_stop.clicked.connect(self._stop)
+        self.btn_rearm.clicked.connect(self._rearm)
         self.btn_new.clicked.connect(self._new_target)
         self.btn_remove.clicked.connect(self._remove)
         self.btn_reload.clicked.connect(self._reload)
@@ -116,6 +121,7 @@ class MainWindow(QMainWindow):
         for button in (
             self.btn_start,
             self.btn_stop,
+            self.btn_rearm,
             self.btn_new,
             self.btn_remove,
             self.btn_reload,
@@ -169,6 +175,11 @@ class MainWindow(QMainWindow):
         if self._config is None or self._config.legacy or not self._config.profiles:
             return f"{self._profile or 'default'} (legado/sem config)"
         return self._profile or self._config.profile
+
+    def arm_durations(self) -> tuple[int, ...]:
+        if self._config is None or self._config.legacy:
+            return (1, 5, 15, 30)
+        return self._config.ui.arm_durations_min or (1, 5, 15, 30)
 
     def _label_for(self, _kind: str, value) -> str:
         from screen_watch.persistence.selection import load_selection
@@ -273,6 +284,24 @@ class MainWindow(QMainWindow):
         self.status.setText("parado")
         self._set_running(False)
 
+    def _rearm(self) -> None:
+        if not self._controller.running:
+            return
+        self._controller.rebaseline()
+        self._append("baseline re-armado (proximo frame)")
+
+    def _start_hotkeys(self) -> None:
+        if self._config is None or self._config.legacy:
+            return
+        mapping = dict(self._config.ui.hotkeys)
+        if not mapping:
+            return
+        from screen_watch.gui.hotkeys import start_hotkeys
+
+        self._hotkeys = start_hotkeys(self._controller.events, mapping)
+        if self._hotkeys is None:
+            self._append("hotkeys globais indisponiveis (instale o extra 'input')")
+
     def _remove(self) -> None:
         items = self.list.selectedItems()
         if not items:
@@ -364,10 +393,12 @@ class MainWindow(QMainWindow):
     def _set_running(self, running: bool) -> None:
         self.btn_start.setEnabled(not running)
         self.btn_stop.setEnabled(running)
+        self.btn_rearm.setEnabled(running)
         self.btn_new.setEnabled(not running)
         self.mode_combo.setEnabled(not running)
 
     def _drain(self) -> None:
+        self._update_action_status()
         while True:
             try:
                 event = self._controller.events.get_nowait()
@@ -396,6 +427,41 @@ class MainWindow(QMainWindow):
             self._append(f"evento: {name} {event.get('payload') or ''}")
         elif kind == "tray":
             self._handle_tray(event.get("action"))
+        elif kind == "action":
+            self._handle_action(event)
+
+    def _handle_action(self, event: dict) -> None:
+        dispatcher = self._controller.actions
+        if dispatcher is None:
+            self._append("sem acoes configuradas para esta selecao")
+            return
+        arming = dispatcher.arming
+        action = event.get("action")
+        if action == "arm":
+            arming.arm()
+        elif action == "disarm":
+            arming.disarm()
+        elif action == "toggle":
+            arming.toggle()
+        elif action == "arm_for":
+            arming.arm_for(float(event.get("minutes") or 1))
+        elif action == "abort":
+            arming.abort()
+        elif action == "rearm":
+            self._rearm()
+            self._update_action_status()
+            return
+        else:
+            return
+        self._append(f"acoes: {arming.label()}")
+        self._update_action_status()
+
+    def _update_action_status(self) -> None:
+        dispatcher = self._controller.actions
+        if dispatcher is None:
+            self.status.setToolTip("acoes: nenhuma configurada")
+            return
+        self.status.setToolTip(f"acoes: {dispatcher.arming.label()}")
 
     def _handle_tray(self, action) -> None:
         if action == "toggle":
@@ -411,6 +477,9 @@ class MainWindow(QMainWindow):
 
     def _quit(self) -> None:
         self._timer.stop()
+        from screen_watch.gui.hotkeys import stop_hotkeys
+
+        stop_hotkeys(self._hotkeys)
         self._controller.stop()
         if self._on_quit is not None:
             self._on_quit()
@@ -419,6 +488,9 @@ class MainWindow(QMainWindow):
         self.log.appendPlainText(text)
 
     def closeEvent(self, event) -> None:  # noqa: N802 - API do Qt
+        from screen_watch.gui.hotkeys import stop_hotkeys
+
+        stop_hotkeys(self._hotkeys)
         self._controller.stop()
         super().closeEvent(event)
 
@@ -438,7 +510,7 @@ def run_gui(config_path, profile: str | None = None) -> int:
     events = new_event_queue()
     controller = MonitorController(events)
     window = MainWindow(controller, config_path, profile=profile, on_quit=app.quit)
-    tray = start_tray(events)
+    tray = start_tray(events, arm_durations=window.arm_durations())
     window.show()
     try:
         return int(app.exec())
