@@ -732,6 +732,27 @@ def test_list_actions_prints_marks(monkeypatch, tmp_path, capsys):
     assert "[ ] a" in out
 
 
+def test_list_actions_reads_overrides_even_with_v1_config(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    (tmp_path / "selections").mkdir()
+    config_path = tmp_path / "config.yaml"
+    save_config(
+        config_path,
+        {"targets": [{"name": "painel", "window_handle": 1, "roi_relative": [1, 2, 3, 4]}]},
+    )
+    _write_selection(
+        tmp_path / "selections" / "demo.json",
+        mode="advanced",
+        overrides={"actions": [{"name": "nova", "steps": [{"activate": True}]}]},
+    )
+
+    args = argparse.Namespace(
+        config=str(config_path), selection="demo", target=None, profile=None
+    )
+    assert cli._cmd_list_actions(args) == 0
+    assert "[x] nova" in capsys.readouterr().out
+
+
 def test_list_actions_without_actions(monkeypatch, tmp_path, capsys):
     monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
     (tmp_path / "selections").mkdir()

@@ -724,6 +724,12 @@ que faria e grava evidências, sem clicar.
   (`suspended_schedule`); monitoramento e alertas seguem.
 - **Auditoria**: `logs/actions.jsonl` (ensaio, execução, suspensão, motivo,
   duração e caminhos das evidências).
+- **Criação pela GUI**: `gui/action_editor.py` (`Nova ação...`/`Editar...`/`Remover
+  ação`) grava em `overrides.actions` do JSON de seleção. Como `resolve_actions`
+  lê os overrides antes do perfil, isso funciona também com config v1 (`targets:`),
+  sem migração. A validação reusa `parse_actions` (clique exige `activate`,
+  `text_*` exige `mode: advanced`), então as regras do YAML valem na janela;
+  ações do perfil/YAML são somente leitura na GUI.
 - **Seleção por sessão**: checklist na GUI (e `--actions` no CLI, one-shot) reduz
   o subconjunto por **nome de ação**; aplica só no próximo `build_target`. O estado
   fica em `state.json["action_selection"][seleção]` (chave ausente = todas, lista

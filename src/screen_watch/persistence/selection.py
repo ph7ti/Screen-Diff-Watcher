@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Collection
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -112,6 +112,38 @@ def from_target_config(target: TargetConfig) -> Selection:
         mode=target.mode,
         masks=target.masks,
     )
+
+
+def override_actions(selection: Selection) -> list[dict[str, Any]]:
+    """Acoes cruas definidas em `overrides.actions` (copia; lista vazia se ausente).
+
+    Sao as unicas que a GUI pode editar sem tocar no perfil/YAML; funcionam tambem
+    com config v1 (o parse exige apenas o `mode` resolvido).
+    """
+    overrides = selection.overrides
+    if not isinstance(overrides, dict):
+        return []
+    raw = overrides.get("actions")
+    if not isinstance(raw, (list, tuple)):
+        return []
+    return [dict(item) for item in raw if isinstance(item, dict)]
+
+
+def set_override_actions(
+    selection: Selection, actions: Collection[dict[str, Any]]
+) -> Selection:
+    """Devolve uma copia da selecao com `overrides.actions` substituido.
+
+    Lista vazia remove a chave (volta a herdar as acoes do perfil). Os demais
+    campos de `overrides` sao preservados; sem nenhum, `overrides` volta a None.
+    """
+    overrides = dict(selection.overrides or {})
+    items = list(actions)
+    if items:
+        overrides["actions"] = items
+    else:
+        overrides.pop("actions", None)
+    return replace(selection, overrides=overrides or None)
 
 
 def _resolve_mode(selection: Selection, overrides: dict[str, Any], mode: str | None) -> str:

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Collection
 
-from screen_watch.actions.protocol import ActionSpec
+from screen_watch.actions.protocol import STEP_KINDS, ActionSpec
 from screen_watch.actions.runner import describe_step
 
 
@@ -43,6 +43,29 @@ def format_action(action: ActionSpec) -> str:
         detail.append(f"quando: {trigger}")
     steps = ", ".join(describe_step(step) for step in action.steps) or "(sem passos)"
     return f"{action.name} — {', '.join(detail)} — passos: {steps}"
+
+
+def describe_raw_step(step: dict) -> str:
+    """Linha curta de um passo **cru** (dict), usada pelo editor de acoes da GUI."""
+    if "activate" in step:
+        return "activate"
+    kind = next((name for name in STEP_KINDS if name in step), "?")
+    params = step.get(kind) or {}
+    if kind in ("click", "move"):
+        suffix = (
+            f" {params.get('button', 'left')}x{params.get('clicks', 1)}"
+            if kind == "click"
+            else ""
+        )
+        return (
+            f"{kind}: ({params.get('x')},{params.get('y')}) "
+            f"ref={params.get('ref', 'roi')}{suffix}"
+        )
+    if kind == "key":
+        return f"key: {params.get('keys', '')}"
+    if kind == "type":
+        return f"type: {len(str(params.get('text', '')))} char(s)"
+    return f"wait: {params.get('ms', 0)}ms"
 
 
 def describe_action(action: ActionSpec, selected: bool = True) -> str:

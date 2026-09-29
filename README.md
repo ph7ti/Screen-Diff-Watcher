@@ -278,6 +278,25 @@ checklist e também respeita a contagem.
 Cada gatilho (ensaio, execução, suspensão) vira uma linha em `logs/actions.jsonl` com passos,
 resultado, duração, motivo e os caminhos das evidências.
 
+### Criar ações pela janela
+
+A janela tem os botões **Nova ação...**, **Editar...** e **Remover ação**, logo abaixo do checklist.
+**Nova ação...** abre um formulário com nome, `enabled`, `severity_min` (gatilho), `cooldown_s`,
+`settle_s`, `rebaseline` e uma lista de passos (`activate`, `click`, `move`, `key`, `type`, `wait`);
+cada passo é adicionado com os campos do seu tipo (`x`/`y`/`ref`/`botão`/`cliques`, teclas, texto,
+`ms`). Ao confirmar, o app valida com o **mesmo parser do YAML** (`parse_actions`): cliques exigem um
+passo `activate` antes e filtros de texto exigem `mode: advanced`; erros aparecem num diálogo.
+
+As ações criadas pela janela são gravadas em `overrides.actions` do **JSON da seleção**
+(`app-data/selections/<nome>.json`), então funcionam **mesmo com um `config.yaml` v1** (`targets:`) —
+não é preciso migrar. Cada seleção tem o seu conjunto; a seleção atual continua podendo herdar ações do
+perfil (v2) quando não há override. Ações que vêm do perfil/YAML aparecem no checklist, mas os botões
+de editar/remover avisam que devem ser alteradas no YAML (os botões operam só sobre as ações da
+própria seleção).
+
+Depois de criar, use **Executar ação (3s)** para ensaiar a ação marcada, ou
+`python -m screen_watch list-actions --selection <nome>` para conferir sem iniciar a sessão.
+
 ### Seleção de ações por sessão e log ao vivo
 
 Abaixo da lista de seleções, o checklist **"Ações da sessão (aplicam no próximo start)"** mostra

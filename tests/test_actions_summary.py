@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 from screen_watch.actions.protocol import ActionSpec, ActionStep
-from screen_watch.actions.summary import describe_action, describe_actions, format_action
+from screen_watch.actions.summary import (
+    describe_action,
+    describe_actions,
+    describe_raw_step,
+    format_action,
+)
 
 
 def _action(**extra) -> ActionSpec:
@@ -66,3 +71,15 @@ def test_format_action_has_no_marker():
     text = format_action(_action())
     assert not text.startswith("[")
     assert text.startswith("a — ")
+
+
+def test_describe_raw_step():
+    assert describe_raw_step({"activate": True}) == "activate"
+    assert (
+        describe_raw_step({"click": {"x": 1, "y": 2, "ref": "roi"}})
+        == "click: (1,2) ref=roi leftx1"
+    )
+    assert describe_raw_step({"move": {"x": 3, "y": 4, "ref": "window"}}) == "move: (3,4) ref=window"
+    assert describe_raw_step({"key": {"keys": "ctrl+s"}}) == "key: ctrl+s"
+    assert describe_raw_step({"type": {"text": "abc"}}) == "type: 3 char(s)"
+    assert describe_raw_step({"wait": {"ms": 250}}) == "wait: 250ms"

@@ -16,7 +16,9 @@ from screen_watch.persistence.selection import (
     dump_selection,
     from_target_config,
     load_selection,
+    override_actions,
     resolve_actions,
+    set_override_actions,
     to_target_config,
 )
 
@@ -330,6 +332,59 @@ def test_resolve_actions_rejects_text_in_non_advanced():
     )
     with pytest.raises(ValueError):
         resolve_actions(selection, _profile(mode="default"))
+
+
+def test_override_actions_round_trip_and_resolve():
+    selection = Selection(
+        window_handle=1,
+        origin_at_selection=(0, 0),
+        roi_relative=(1, 2, 3, 4),
+        mode="advanced",
+        overrides={"poll_interval_s": 1.5},
+    )
+    assert override_actions(selection) == []
+
+    raw = {
+        "name": "nova",
+        "steps": [{"activate": True}, {"click": {"x": 1, "y": 2, "ref": "roi"}}],
+    }
+    updated = set_override_actions(selection, [raw])
+
+    assert updated.overrides["poll_interval_s"] == 1.5
+    assert override_actions(updated)[0]["name"] == "nova"
+    # resolve_actions enxerga a acao sem depender de perfis/config v2
+    assert [action.name for action in resolve_actions(updated, _profile(mode="advanced"))] == [
+        "nova"
+    ]
+
+
+def test_set_override_actions_empty_removes_key():
+    selection = Selection(
+        window_handle=1,
+        origin_at_selection=(0, 0),
+        roi_relative=(1, 2, 3, 4),
+        overrides={"actions": [{"name": "a", "steps": []}], "rearm": False},
+    )
+    updated = set_override_actions(selection, [])
+    assert "actions" not in updated.overrides
+    assert updated.overrides["rearm"] is False
+
+    only_actions = Selection(
+        window_handle=1,
+        origin_at_selection=(0, 0),
+        roi_relative=(1, 2, 3, 4),
+        overrides={"actions": [{"name": "a", "steps": []}]},
+    )
+    assert set_override_actions(only_actions, []).overrides is None
+
+
+def test_override_actions_ignores_corrupt():
+    base = {"window_handle": 1, "origin_at_selection": (0, 0), "roi_relative": (1, 2, 3, 4)}
+    assert override_actions(Selection(**base, overrides=None)) == []
+    assert override_actions(Selection(**base, overrides={"actions": 3})) == []
+    assert override_actions(Selection(**base, overrides={"actions": ["x", {"name": "a"}]})) == [
+        {"name": "a"}
+    ]
 
 
 def test_build_target_applies_action_filter():

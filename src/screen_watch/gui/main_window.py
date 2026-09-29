@@ -118,6 +118,18 @@ class MainWindow(QMainWindow):
         self.action_count = QLabel("")
         layout.addWidget(self.action_count)
 
+        action_buttons = QHBoxLayout()
+        self.btn_action_new = QPushButton("Nova acao...")
+        self.btn_action_edit = QPushButton("Editar...")
+        self.btn_action_remove = QPushButton("Remover acao")
+        self.btn_action_new.clicked.connect(self._action_new)
+        self.btn_action_edit.clicked.connect(self._action_edit)
+        self.btn_action_remove.clicked.connect(self._action_remove)
+        for button in (self.btn_action_new, self.btn_action_edit, self.btn_action_remove):
+            action_buttons.addWidget(button)
+        action_buttons.addStretch(1)
+        layout.addLayout(action_buttons)
+
         buttons = QHBoxLayout()
         self.btn_start = QPushButton("Iniciar")
         self.btn_stop = QPushButton("Parar")
@@ -401,6 +413,138 @@ class MainWindow(QMainWindow):
         except OSError as exc:
             self._append(f"nao foi possivel salvar a selecao de acoes: {exc}")
         self._update_action_count()
+
+    # -- editor de acoes ---------------------------------------------------
+    def _current_selection(self):
+        selected = self._selected()
+        if selected is None:
+            return None, None
+        _kind, value = selected
+        from screen_watch.persistence.selection import load_selection
+
+        try:
+            return value, load_selection(value)
+        except (OSError, ValueError) as exc:
+            self._append(f"selecao ilegivel: {exc}")
+            return value, None
+
+    def _selected_action_name(self) -> str | None:
+        item = self.action_list.currentItem()
+        return None if item is None else item.data(ACTION_NAME_ROLE)
+
+    def _save_override_actions(self, value, selection, actions) -> None:
+        from screen_watch.persistence.selection import dump_selection, set_override_actions
+
+        dump_selection(value, set_override_actions(selection, actions))
+
+    def _sync_saved_action(self, stem: str, *, add: str = "", remove: str = "") -> None:
+        from screen_watch.actions.selection import (
+            load_action_selection,
+            save_action_selection,
+        )
+
+        try:
+            saved = load_action_selection(stem)
+            if saved is None:
+                return  # sem subconjunto salvo = todas marcadas
+            names = [name for name in saved if name != remove]
+            if add and add not in names:
+                names.append(add)
+            save_action_selection(stem, names)
+        except OSError:
+            pass
+
+    def _action_new(self) -> None:
+        value, selection = self._current_selection()
+        if selection is None:
+            QMessageBox.information(self, "Screen Diff Watcher", "selecione uma selecao")
+            return
+        from screen_watch.gui.action_editor import ActionEditorDialog
+        from screen_watch.persistence.selection import override_actions
+
+        mode = self.mode_combo.currentText() or selection.mode
+        raw = ActionEditorDialog(self, mode=mode, title="Nova acao").run()
+        if raw is None:
+            return
+        actions = override_actions(selection)
+        if any(item.get("name") == raw["name"] for item in actions):
+            QMessageBox.warning(
+                self, "Screen Diff Watcher", f"ja existe uma acao {raw['name']!r} nesta selecao"
+            )
+            return
+        actions.append(raw)
+        self._save_override_actions(value, selection, actions)
+        self._sync_saved_action(Path(value).stem, add=raw["name"])
+        self._append(f"acao adicionada: {raw['name']} (aplica no proximo start)")
+        self._populate_actions()
+        self._print_action_summary()
+
+    def _action_edit(self) -> None:
+        value, selection = self._current_selection()
+        if selection is None:
+            return
+        name = self._selected_action_name()
+        if name is None:
+            QMessageBox.information(self, "Screen Diff Watcher", "selecione uma acao na lista")
+            return
+        from screen_watch.gui.action_editor import ActionEditorDialog
+        from screen_watch.persistence.selection import override_actions
+
+        actions = override_actions(selection)
+        index = next((i for i, item in enumerate(actions) if item.get("name") == name), None)
+        if index is None:
+            QMessageBox.information(
+                self,
+                "Screen Diff Watcher",
+                "esta acao vem do perfil/YAML (nao editavel aqui); crie uma nova ou edite o YAML",
+            )
+            return
+        mode = self.mode_combo.currentText() or selection.mode
+        raw = ActionEditorDialog(
+            self, mode=mode, action=actions[index], title="Editar acao"
+        ).run()
+        if raw is None:
+            return
+        actions[index] = raw
+        self._save_override_actions(value, selection, actions)
+        if raw["name"] != name:
+            self._sync_saved_action(Path(value).stem, add=raw["name"], remove=name)
+        self._append(f"acao atualizada: {name} -> {raw['name']}")
+        self._populate_actions()
+        self._print_action_summary()
+
+    def _action_remove(self) -> None:
+        value, selection = self._current_selection()
+        if selection is None:
+            return
+        name = self._selected_action_name()
+        if name is None:
+            QMessageBox.information(self, "Screen Diff Watcher", "selecione uma acao na lista")
+            return
+        from screen_watch.persistence.selection import override_actions
+
+        actions = override_actions(selection)
+        remaining = [item for item in actions if item.get("name") != name]
+        if len(remaining) == len(actions):
+            QMessageBox.information(
+                self,
+                "Screen Diff Watcher",
+                "esta acao vem do perfil/YAML; edite o YAML para remove-la",
+            )
+            return
+        confirm = QMessageBox.question(
+            self,
+            "Remover acao",
+            f"Remover a acao {name!r} desta selecao?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+        self._save_override_actions(value, selection, remaining)
+        self._sync_saved_action(Path(value).stem, remove=name)
+        self._append(f"acao removida: {name}")
+        self._populate_actions()
+        self._print_action_summary()
 
     def _print_action_summary(self) -> None:
         from screen_watch.actions.summary import describe_actions
