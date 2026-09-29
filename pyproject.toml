@@ -28,7 +28,7 @@ dependencies = [
 sound = ["simpleaudio>=1.0.4"]
 ocr-preproc = ["opencv-python>=4.8"]
 logging = ["structlog>=24.1"]
-dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.6"]
+dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff==0.16.9"]
 build = ["pyinstaller>=6.0"]
 
 [project.scripts]

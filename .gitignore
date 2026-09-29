@@ -15,3 +15,6 @@ venv/
 *.selection.json
 screen_watch.yaml
 screen_watch.local.yaml
+
+# Git credential helper spills (never commit tokens)
+*gitcred*

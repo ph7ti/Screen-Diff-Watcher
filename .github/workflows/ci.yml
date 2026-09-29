@@ -33,5 +33,10 @@ jobs:
       - name: Lint (ruff)
         run: ruff check .
 
-      - name: Tests
-        run: pytest -q -m "not integration"
+      - name: Tests (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a python -m pytest -q -m "not integration"
+
+      - name: Tests (Windows)
+        if: runner.os != 'Linux'
+        run: python -m pytest -q -m "not integration"

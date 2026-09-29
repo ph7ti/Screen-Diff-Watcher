@@ -16,11 +16,31 @@ import sys
 from ctypes import wintypes
 from dataclasses import dataclass, replace
 
-import pywinctl
+try:
+    import pywinctl
+except Exception as exc:  # dependente de ambiente (ex.: sem servidor grafico/X11)
+    pywinctl = None
+    _PYWINCTL_ERROR: Exception | None = exc
+else:
+    _PYWINCTL_ERROR = None
 
 log = logging.getLogger(__name__)
 
 IS_WINDOWS = sys.platform == "win32"
+
+
+def _require_pywinctl():
+    """Devolve o modulo `pywinctl` ou explica a ausencia de ambiente grafico.
+
+    A fronteira de plataforma fica encapsulada aqui (nada de `sys.platform` fora
+    de `platform/`); a causa original do import fica encadeada em `_PYWINCTL_ERROR`.
+    """
+    if pywinctl is None:
+        raise RuntimeError(
+            "pywinctl indisponivel neste ambiente (sem servidor grafico/X11?)"
+        ) from _PYWINCTL_ERROR
+    return pywinctl
+
 
 _GWL_EXSTYLE = -20
 _GW_OWNER = 4
@@ -76,7 +96,7 @@ def _to_info(win: object) -> WindowInfo:
 def list_windows() -> list[WindowInfo]:
     """Lista as janelas visiveis. Janelas que falham ao inspecionar sao omitidas."""
     infos: list[WindowInfo] = []
-    for win in pywinctl.getAllWindows():
+    for win in _require_pywinctl().getAllWindows():
         try:
             infos.append(_to_info(win))
         except Exception:
@@ -86,7 +106,7 @@ def list_windows() -> list[WindowInfo]:
 
 def find_window_by_handle(handle: int) -> WindowInfo | None:
     """Localiza a janela pelo handle. Nunca usa titulo como chave."""
-    for win in pywinctl.getAllWindows():
+    for win in _require_pywinctl().getAllWindows():
         try:
             info = _to_info(win)
         except Exception:
@@ -108,7 +128,7 @@ def app_window_label(info: WindowInfo) -> str:
 def list_app_windows() -> list[WindowInfo]:
     """Janelas de aplicativos para o seletor da GUI (sem ruido de janelas ocultas)."""
     result: list[WindowInfo] = []
-    for win in pywinctl.getAllWindows():
+    for win in _require_pywinctl().getAllWindows():
         try:
             info = _to_info(win)
         except Exception:

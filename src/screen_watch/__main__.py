@@ -74,7 +74,11 @@ def _cmd_show_paths(_args: argparse.Namespace) -> int:
 def _cmd_list_windows(_args: argparse.Namespace) -> int:
     from screen_watch.platform.window import list_windows
 
-    windows = list_windows()
+    try:
+        windows = list_windows()
+    except RuntimeError as exc:
+        print(str(exc))
+        return 1
     if not windows:
         print("nenhuma janela encontrada")
         return 0
@@ -346,7 +350,11 @@ def _cmd_select_manual(args: argparse.Namespace) -> int:
         print(f"ROI invalida: {w}x{h}; minimo {MIN_ROI_SIDE}x{MIN_ROI_SIDE}")
         return 1
 
-    info = find_window_by_handle(int(args.handle))
+    try:
+        info = find_window_by_handle(int(args.handle))
+    except RuntimeError as exc:
+        print(str(exc))
+        return 1
     if info is None:
         print(f"aviso: janela handle={args.handle} nao encontrada; origem gravada como (0, 0)")
     origin = (info.rect[0], info.rect[1]) if info is not None else (0, 0)
