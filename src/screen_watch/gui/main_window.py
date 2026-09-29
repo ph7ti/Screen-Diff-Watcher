@@ -11,6 +11,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from PyQt6.QtCore import QTimer
+from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -35,11 +36,27 @@ TARGET_ROLE = 1
 MODES = ("light", "default", "advanced")
 
 
+def _window_icon() -> QIcon | None:
+    """Icone multi-resolucao do projeto (todos os PNGs disponiveis)."""
+    from screen_watch.resources import icon_paths
+
+    paths = icon_paths()
+    if not paths:
+        return None
+    icon = QIcon()
+    for path in paths:
+        icon.addFile(str(path))
+    return icon
+
+
 class MainWindow(QMainWindow):
     def __init__(self, controller: MonitorController, config_path, on_quit=None) -> None:
         super().__init__()
         self.setWindowTitle("Screen Diff Watcher")
         self.resize(820, 540)
+        icon = _window_icon()
+        if icon is not None:
+            self.setWindowIcon(icon)
         self._controller = controller
         self._config_path = Path(config_path)
         self._on_quit = on_quit
@@ -409,6 +426,9 @@ def run_gui(config_path) -> int:
 
     set_dpi_awareness()
     app = QApplication.instance() or QApplication([])
+    icon = _window_icon()
+    if icon is not None:
+        app.setWindowIcon(icon)
     events = new_event_queue()
     controller = MonitorController(events)
     window = MainWindow(controller, config_path, on_quit=app.quit)

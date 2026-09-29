@@ -15,6 +15,16 @@ log = logging.getLogger(__name__)
 def _icon_image():
     from PIL import Image, ImageDraw  # noqa: PLC0415
 
+    from screen_watch.resources import icon_path  # noqa: PLC0415
+
+    path = icon_path(32)
+    if path is not None:
+        try:
+            with Image.open(path) as image:
+                return image.copy()
+        except Exception as exc:  # pragma: no cover - depende do ambiente
+            log.warning("nao foi possivel carregar o icone %s: %s", path, exc)
+
     image = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
     draw.rectangle((8, 8, 56, 56), outline=(0, 82, 214, 255), width=4)
