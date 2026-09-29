@@ -63,8 +63,9 @@ def test_start_then_reject_second_start(monkeypatch):
             self.running = False
 
     class FakeSession:
-        def __init__(self, target, on_result=None):
+        def __init__(self, target, on_result=None, recorder=None):
             self.target = target
+            self.recorder = recorder
 
     import screen_watch.app as app
 

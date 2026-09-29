@@ -27,9 +27,12 @@ Implementado:
   tipos com mensagem clara e gravação atômica com backup. O YAML v1 (`targets:`) ainda carrega por
   uma versão, com aviso, e é convertido por `migrate-config`. Persistência (`persistence/`): JSON de
   seleção v2 (com `overrides`) e `state.json` (`platform/paths.py`) para a última seleção/perfil.
+- Evidências (`evidence/`): `EvidenceRecorder` grava prints da janela inteira (baseline/change) em
+  `%TEMP%`, com retenção por contagem e por MB; desabilitado por padrão.
 - CLI (`__main__.py`): `init-config`, `validate-config` (`--selections`), `list-selections`,
   `migrate-config` (`--dry-run`), `list-windows`, `show-paths`, `probe-dpi`, `select-manual`
-  (coordenadas), `select` (overlay), `test-alert`, `compare-modes` (calibração), `run`, `gui`.
+  (coordenadas), `select` (overlay), `test-alert`, `test-evidence`, `compare-modes` (calibração),
+  `run`, `gui`.
 - Overlay de seleção (`gui/`): `overlay_geometry.py` (conversões lógico↔físico, sem Qt) e
   `overlay.py` (PyQt6, uma janela por monitor).
 - GUI mínima + tray (`gui/`): `main_window.py` (lista de seleções, iniciar/parar, status/último
@@ -149,6 +152,7 @@ python -m screen_watch select-manual --handle 12345 --roi 120 340 400 80 --name 
 python -m screen_watch list-selections
 python -m screen_watch migrate-config --dry-run
 python -m screen_watch test-alert --selection painel        # alerta sintetico com o ROI atual
+python -m screen_watch test-evidence --selection painel     # grava baseline+change de exemplo
 python -m screen_watch run --selection painel               # nome em selections/
 python -m screen_watch run --selection "%APPDATA%\screen_watch\selections\painel.json"
 python -m screen_watch run --profile trabalho --selection painel
@@ -170,6 +174,33 @@ Máscaras são retângulos `[x, y, w, h]` **relativos à ROI**, pintados de pret
 (doc §8) — úteis para spinners/relógios que mudam sozinhos. O `MonitorLoop` aplica a máscara
 capturada de `TargetConfig.masks` antes de entregar o `Frame` ao detector. O overlay ainda não
 desenha máscaras (fora do MVP); por enquanto edite o campo `masks` no YAML ou no JSON de seleção.
+
+## Evidências (prints)
+
+Desabilitadas por padrão (`evidence.enabled: false`). Quando ligadas, o app grava prints da
+**janela inteira** (sem máscara) no baseline e a cada mudança detectada — em
+`%TEMP%\screen_watch\captures\<alvo>\<AAAAMMDD-HHMMSS-mmm>_<baseline|change>.png` (o `<alvo>` é o
+nome do arquivo de seleção). Passe `--profile`/edite `config.yaml` para ligar:
+
+```yaml
+evidence:
+  enabled: true
+  dir: null              # null = %TEMP%/screen_watch/captures
+  keep_per_target: 50    # mantém os N mais recentes por alvo
+  max_total_mb: 200      # teto total (todos os alvos)
+  on_baseline: true
+  on_change: true
+```
+
+Os prints ficam **só na sua máquina** (em `%TEMP%`, fora do repositório) e a retenção os poda após
+cada gravação. Para validar a configuração sem esperar um evento real:
+
+```powershell
+python -m screen_watch test-evidence --selection painel   # grava baseline+change e imprime caminhos
+```
+
+Falhas ao gravar (permissão, disco, janela fora da tela) apenas geram `log.warning`; o
+monitoramento continua.
 
 ## Calibração (Etapa D)
 
@@ -194,8 +225,9 @@ Se um alerta falhar (ex.: Telegram fora do ar), ele é re-tentado respeitando o 
 
 `python -m screen_watch gui` abre a janela mínima: lista **apenas as seleções**
 (`app-data/selections/*.json`), `Iniciar`/`Parar` (uma seleção por vez), status e último resultado,
-`Novo target (overlay)` (escolhe a janela e abre o overlay), `Remover` e `Abrir YAML` (config
-global). Duplo clique na lista inicia/para. O tray oferece mostrar/ocultar, iniciar/parar e sair.
+`Novo target (overlay)` (escolhe a janela e abre o overlay), `Remover`, `Minimizar para o tray`
+(esconde a janela sem encerrar o app) e `Abrir YAML` (config global). Duplo clique na lista
+inicia/para. O tray oferece mostrar/ocultar, minimizar, iniciar/parar e sair.
 
 Cada item da lista mostra o **nome do aplicativo**, a **região monitorada** e o **modo** — por
 exemplo `Seleção WhatsApp — Região 120,340 400x80 — advanced`. Há um **seletor de modo**

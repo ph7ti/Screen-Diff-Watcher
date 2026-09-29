@@ -242,6 +242,15 @@ def _resolve_run_target(args: argparse.Namespace):
     return build_target(selection, profile, name=name)
 
 
+def _load_config_or_none(config_path):
+    from screen_watch.config.loader import ConfigError, load_config
+
+    try:
+        return load_config(config_path)
+    except ConfigError:
+        return None
+
+
 def _remember_state(selection_name: str, profile_name: str | None = None) -> None:
     from screen_watch.platform.paths import update_state
 
@@ -273,7 +282,10 @@ def _cmd_run(args: argparse.Namespace) -> int:
     info = find_window_by_handle(target.window_handle)
     _check_monitor_scales(info.rect if info is not None else None)
 
-    session = MonitorSession(target)
+    from screen_watch.app import evidence_recorder
+
+    recorder = evidence_recorder(_load_config_or_none(args.config))
+    session = MonitorSession(target, recorder=recorder)
     loop = build_loop(target, session, on_event=_print_event, on_error=_print_error)
     print(f"monitorando {target.name!r} (handle={target.window_handle}) a cada {target.poll_interval_s}s")
     loop.start()
@@ -366,6 +378,45 @@ def _cmd_test_alert(args: argparse.Namespace) -> int:
     print(f"desfecho: {outcome.value}")
     print(f"jsonl: {log_path}")
     return 0 if outcome is DispatchOutcome.FIRED else 1
+
+
+def _cmd_test_evidence(args: argparse.Namespace) -> int:
+    """Grava baseline+change de exemplo no ROI atual (valida a secao `evidence`)."""
+    import time
+
+    from screen_watch.app import evidence_recorder
+    from screen_watch.capture.frame import Frame
+    from screen_watch.config.loader import ConfigError
+
+    try:
+        target = _resolve_run_target(args)
+    except ConfigError as exc:
+        print(f"erro: {exc}")
+        return 1
+    try:
+        rgb, abs_rect, info = _capture_target_roi(target)
+    except Exception as exc:
+        print(f"falha ao capturar ROI: {exc}")
+        return 1
+
+    frame = Frame(
+        rgb=rgb,
+        timestamp=time.time(),
+        absolute_rect=abs_rect,
+        window_rect=info.rect,
+        window_handle=info.handle,
+        sequence=1,
+    )
+    recorder = evidence_recorder(_load_config_or_none(args.config), force_enabled=True)
+    if recorder is None:
+        print("evidencias indisponiveis")
+        return 1
+    baseline = recorder.capture(frame, "baseline", target.name)
+    change = recorder.capture(frame, "change", target.name)
+    print(f"alvo={target.name!r} janela={info.rect}")
+    print(f"baseline: {baseline}")
+    print(f"change:   {change}")
+    return 0 if baseline is not None and change is not None else 1
 
 
 def _cmd_compare_modes(args: argparse.Namespace) -> int:
@@ -682,6 +733,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_test.add_argument("--selection", default=None, help="selecao JSON (nome ou caminho)")
     p_test.add_argument("--target", default=None, help="deprecado; alias de --selection")
     p_test.set_defaults(func=_cmd_test_alert)
+
+    p_ev = sub.add_parser(
+        "test-evidence", help="grava baseline+change de exemplo no ROI atual (evidencias)"
+    )
+    p_ev.add_argument("--config", default=str(config_path()))
+    p_ev.add_argument("--profile", default=None, help="perfil ativo (default: o do YAML)")
+    p_ev.add_argument("--selection", default=None, help="selecao JSON (nome ou caminho)")
+    p_ev.add_argument("--target", default=None, help="deprecado; alias de --selection")
+    p_ev.set_defaults(func=_cmd_test_evidence)
 
     p_cmp = sub.add_parser(
         "compare-modes", help="mede score/severidade/tempo por modo no ROI atual (calibracao)"

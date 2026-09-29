@@ -104,12 +104,14 @@ class MainWindow(QMainWindow):
         self.btn_new = QPushButton("Novo target (overlay)")
         self.btn_remove = QPushButton("Remover")
         self.btn_reload = QPushButton("Recarregar")
+        self.btn_minimize = QPushButton("Minimizar para o tray")
         self.btn_open = QPushButton("Abrir YAML")
         self.btn_start.clicked.connect(self._start)
         self.btn_stop.clicked.connect(self._stop)
         self.btn_new.clicked.connect(self._new_target)
         self.btn_remove.clicked.connect(self._remove)
         self.btn_reload.clicked.connect(self._reload)
+        self.btn_minimize.clicked.connect(self.hide)
         self.btn_open.clicked.connect(self._open_yaml)
         for button in (
             self.btn_start,
@@ -117,6 +119,7 @@ class MainWindow(QMainWindow):
             self.btn_new,
             self.btn_remove,
             self.btn_reload,
+            self.btn_minimize,
             self.btn_open,
         ):
             buttons.addWidget(button)
@@ -247,7 +250,10 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Screen Diff Watcher", "selecione uma selecao")
             return
         try:
-            self._controller.start(target)
+            from screen_watch.app import evidence_recorder
+
+            recorder = evidence_recorder(self._config)
+            self._controller.start(target, recorder=recorder)
         except Exception as exc:
             QMessageBox.critical(self, "Screen Diff Watcher", f"falha ao iniciar: {exc}")
             return
@@ -394,6 +400,8 @@ class MainWindow(QMainWindow):
     def _handle_tray(self, action) -> None:
         if action == "toggle":
             self.setVisible(not self.isVisible())
+        elif action == "minimize":
+            self.hide()
         elif action == "start":
             self._start()
         elif action == "stop":

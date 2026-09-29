@@ -47,6 +47,7 @@ def start_tray(events) -> object | None:
 
     menu = pystray.Menu(
         pystray.MenuItem("Mostrar/ocultar", push("toggle")),
+        pystray.MenuItem("Minimizar para o tray", push("minimize")),
         pystray.MenuItem("Iniciar", push("start")),
         pystray.MenuItem("Parar", push("stop")),
         pystray.MenuItem("Sair", push("quit")),

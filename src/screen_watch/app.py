@@ -161,6 +161,14 @@ def _legacy_profile(config: AppConfig | None, selection_name: str | None) -> Pro
     )
 
 
+def evidence_recorder(config: AppConfig | None, *, force_enabled: bool = False):
+    """Recorder de evidencias a partir da secao global `evidence` (None se desligado)."""
+    from screen_watch.evidence.recorder import EvidenceRecorder  # noqa: PLC0415
+
+    options = getattr(config, "evidence", None) if config is not None else None
+    return EvidenceRecorder.from_options(options, force_enabled=force_enabled)
+
+
 class MonitorSession:
     """Sink do `MonitorLoop`: baseline no 1o frame, comparacao + alerta nos demais.
 
@@ -170,18 +178,25 @@ class MonitorSession:
     perder (falhas re-tentam respeitando o cooldown/backoff).
     """
 
-    def __init__(self, target: TargetConfig, on_result: ResultCallback | None = None) -> None:
+    def __init__(
+        self,
+        target: TargetConfig,
+        on_result: ResultCallback | None = None,
+        recorder: object | None = None,
+    ) -> None:
         self.target = target
         self.pipeline = build_pipeline(target.mode, target.compare_options)
         self.chain = build_alert_chain(target.alerts)
         self.rearm = bool(target.rearm)
         self._on_result = on_result
+        self._recorder = recorder
         self._initialized = False
 
     def __call__(self, frame: Frame) -> None:
         if not self._initialized:
             self.pipeline.initialize(frame)  # primeiro frame = baseline
             self._initialized = True
+            self._record("record_baseline", frame)
             return
         result = self.pipeline.compare(frame)
         if not result.changed:
@@ -189,8 +204,20 @@ class MonitorSession:
         outcome = self.chain.dispatch(result, frame)
         if self._on_result is not None:
             self._on_result(result, outcome)
+        self._record("record_change", frame)
         if self.rearm and outcome in _REARM_OUTCOMES:
             self.pipeline.initialize(frame)
+
+    def rebaseline_now(self, frame: Frame) -> None:
+        """Re-arma o baseline manualmente (tray/botao/hotkey re-arm)."""
+        self.pipeline.initialize(frame)
+
+    def _record(self, method: str, frame: Frame) -> None:
+        if self._recorder is None:
+            return
+        callback = getattr(self._recorder, method, None)
+        if callable(callback):
+            callback(frame, self.target.name)
 
 
 def build_loop(target: TargetConfig, session: MonitorSession, **kwargs: object) -> MonitorLoop:

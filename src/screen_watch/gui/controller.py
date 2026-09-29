@@ -24,12 +24,12 @@ class MonitorController:
     def running(self) -> bool:
         return self._loop is not None and self._loop.running
 
-    def start(self, target: TargetConfig) -> None:
+    def start(self, target: TargetConfig, recorder: object | None = None) -> None:
         if self.running:
             raise RuntimeError("ja existe um target em execucao")
         from screen_watch.app import MonitorSession, build_loop  # noqa: PLC0415
 
-        self._session = MonitorSession(target, on_result=self._on_result)
+        self._session = MonitorSession(target, on_result=self._on_result, recorder=recorder)
         self._loop = build_loop(
             target, self._session, on_event=self._on_event, on_error=self._on_error
         )
