@@ -8,6 +8,7 @@ CLI `record-actions`.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 
 import yaml
 
@@ -15,6 +16,10 @@ log = logging.getLogger(__name__)
 
 Rect = tuple[int, int, int, int]
 Point = tuple[int, int]
+
+
+class RecordingCancelled(RuntimeError):
+    """A contagem/confirmacao que antecede a gravacao foi cancelada."""
 
 _MODIFIER_NAMES = {
     "ctrl": "ctrl",
@@ -121,8 +126,15 @@ def record_interactively(
     start_key: str = "f9",
     stop_key: str = "f10",
     status=print,
+    before_start: Callable[[], None] | None = None,
+    auto_start: bool = False,
 ) -> StepRecorder:
-    """Escuta o usuario ate `stop_key` (Inicio/Fim explicitos). Requer `pynput`."""
+    """Escuta o usuario ate `stop_key` (Inicio/Fim explicitos). Requer `pynput`.
+
+    Com `auto_start=True`, `before_start()` roda na thread principal **antes** de
+    criar os listeners (nunca no callback do `pynput`) e a gravacao ja comeca sem
+    exigir `start_key`. Com `auto_start=False`, mantem o `F9` explicito.
+    """
     from screen_watch.platform.input import InputUnavailable  # noqa: PLC0415
 
     try:
@@ -133,7 +145,9 @@ def record_interactively(
         ) from exc
 
     recorder = StepRecorder(roi_rect=roi_rect, window_rect=window_rect)
-    state = {"active": False, "done": False}
+    if auto_start and before_start is not None:
+        before_start()
+    state = {"active": bool(auto_start), "done": False}
     held: list[str] = []
 
     def _key_name(key) -> str:
@@ -181,7 +195,10 @@ def record_interactively(
     key_listener = keyboard.Listener(on_press=on_press, on_release=on_release)
     mouse_listener.start()
     key_listener.start()
-    status(f"pressione {start_key} para iniciar a gravacao")
+    if auto_start:
+        status(f"gravando... pressione {stop_key} para finalizar")
+    else:
+        status(f"pressione {start_key} para iniciar a gravacao")
     key_listener.join()
     mouse_listener.stop()
     return recorder

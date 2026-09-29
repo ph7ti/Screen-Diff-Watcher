@@ -732,6 +732,12 @@ que faria e grava evidências, sem clicar.
 - **Log ao vivo**: cada gatilho emite um payload efêmero (`ActionDispatcher.on_event`
   → `MonitorSession.on_action` → `kind: "action_event"` na fila da GUI, distinto de
   `action` = comandos de tray/hotkey); a fonte de verdade continua sendo o JSONL.
+- **Contagem de 3s**: fluxos avulsos (`test-action --armed`, `record-actions` e o
+  botão "Executar ação (3s)" da GUI) usam `gui/countdown.py::run_countdown` — overlay
+  Qt sem borda, always-on-top e `WindowDoesNotAcceptFocus`, **sem** `activateWindow`
+  (a janela-alvo pode ser focada durante a contagem); clique cancela. Instanciado por
+  `gui/qt_app.py::ensure_app` com `QEventLoop` (chamável de dentro da GUI). O disparo
+  automático do loop **não** tem contagem. Fallback textual no console sem Qt/display.
 - **Backend**: `pynput` como extra opcional (`pip install -e ".[input]"`), import
   preguiçoso em `platform/input.py`; sem ele, hotkeys caem para tray-only e a
   execução real falha com mensagem clara. Wayland/elevação seguem fora de escopo.
@@ -836,8 +842,10 @@ associação/utilitário — o botão "Abrir pasta de prints" da GUI e "Abrir YA
 - **Agendador** (`scheduler/schedule.py::is_open`, função pura): fora da janela de horário apenas as
   ações são suspensas (`suspended_schedule`); captura, comparação e alertas seguem.
 - **Gravador** (`actions/recorder.py` + `record-actions`): com o extra `input`, captura cliques/teclas
-  (F9 inicia, F10 encerra), converte coordenadas absolutas para `ref: roi`/`window`/`screen` e gera um
-  snippet de `actions:` com `when` comentado.
+  (F10 encerra), converte coordenadas absolutas para `ref: roi`/`window`/`screen` e gera um snippet de
+  `actions:` com `when` comentado. Padrão: contagem de 3s e gravação automática
+  (`before_start`/`auto_start=True`; a contagem roda na thread principal, antes dos listeners do
+  `pynput`); `--no-countdown` mantém o `F9` explícito.
 - **Seleção de ações na UI**: checklist "Ações da sessão" (`describe_action`/`describe_actions` em
   `actions/summary.py`) + contador "N de M"; persiste por nome de seleção
   (`actions/selection.py::load_action_selection`/`save_action_selection`) e vale no próximo start.

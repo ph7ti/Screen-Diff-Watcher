@@ -551,7 +551,13 @@ def test_test_action_dry_run(monkeypatch, tmp_path, capsys):
         "screen_watch.app.evidence_recorder", lambda config, force_enabled=False: FakeRecorder()
     )
     args = argparse.Namespace(
-        config=str(config_path), selection="demo", target=None, profile=None, armed=False, dry_run=True
+        config=str(config_path),
+        selection="demo",
+        target=None,
+        profile=None,
+        armed=False,
+        dry_run=True,
+        no_countdown=True,
     )
     assert cli._cmd_test_action(args) == 0
     assert "ensaio" in capsys.readouterr().out
@@ -581,7 +587,13 @@ def test_test_action_armed_executes(monkeypatch, tmp_path, capsys):
     fake = FakeInput()
     monkeypatch.setattr("screen_watch.platform.input.default_backend", lambda: fake)
     args = argparse.Namespace(
-        config=str(config_path), selection="demo", target=None, profile=None, armed=True, dry_run=False
+        config=str(config_path),
+        selection="demo",
+        target=None,
+        profile=None,
+        armed=True,
+        dry_run=False,
+        no_countdown=True,
     )
     assert cli._cmd_test_action(args) == 0
     assert fake.pressed == ["ctrl+s"]
@@ -730,6 +742,100 @@ def test_list_actions_without_actions(monkeypatch, tmp_path, capsys):
     )
     assert cli._cmd_list_actions(args) == 0
     assert "nao tem acoes" in capsys.readouterr().out
+
+
+def test_parser_accepts_no_countdown():
+    parser = cli.build_parser()
+    assert parser.parse_args(["test-action", "--no-countdown"]).no_countdown is True
+    assert parser.parse_args(["record-actions", "--no-countdown"]).no_countdown is True
+
+
+def test_test_action_armed_cancelled_countdown(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    (tmp_path / "selections").mkdir()
+    _write_selection(
+        tmp_path / "selections" / "demo.json",
+        mode="advanced",
+        overrides={"actions": [{"name": "a", "settle_s": 0, "steps": [{"key": {"keys": "ctrl+s"}}]}]},
+    )
+    config_path = tmp_path / "config.yaml"
+    save_config(config_path, _v2_with())
+    monkeypatch.setattr(cli, "_capture_target_roi", _fake_capture)
+    monkeypatch.setattr("screen_watch.gui.countdown.run_countdown", lambda **kwargs: False)
+
+    class FakeInput:
+        def __init__(self):
+            self.pressed = []
+
+        def press(self, keys):
+            self.pressed.append(keys)
+
+    fake = FakeInput()
+    monkeypatch.setattr("screen_watch.platform.input.default_backend", lambda: fake)
+    args = argparse.Namespace(
+        config=str(config_path),
+        selection="demo",
+        target=None,
+        profile=None,
+        armed=True,
+        dry_run=False,
+        no_countdown=False,
+    )
+
+    assert cli._cmd_test_action(args) == 1
+    assert fake.pressed == []
+    assert "cancelada" in capsys.readouterr().out
+
+
+def test_record_actions_auto_start_passes_before_start(monkeypatch, tmp_path):
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    (tmp_path / "selections").mkdir()
+    _write_selection(tmp_path / "selections" / "demo.json")
+    monkeypatch.setattr("screen_watch.platform.window.find_window_by_handle", lambda handle: _FakeWindow())
+
+    captured: dict = {}
+
+    class FakeRecorder:
+        def to_yaml(self, name):
+            return f"actions:\n- name: {name}\n"
+
+    def fake_record(**kwargs):
+        captured.update(kwargs)
+        return FakeRecorder()
+
+    monkeypatch.setattr("screen_watch.actions.recorder.record_interactively", fake_record)
+    args = argparse.Namespace(
+        selection="demo", target=None, name="teste", out=None, no_countdown=False
+    )
+
+    assert cli._cmd_record_actions(args) == 0
+    assert captured["auto_start"] is True
+    assert callable(captured["before_start"])
+
+
+def test_record_actions_no_countdown_keeps_f9(monkeypatch, tmp_path):
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    (tmp_path / "selections").mkdir()
+    _write_selection(tmp_path / "selections" / "demo.json")
+    monkeypatch.setattr("screen_watch.platform.window.find_window_by_handle", lambda handle: _FakeWindow())
+
+    captured: dict = {}
+
+    class FakeRecorder:
+        def to_yaml(self, name):
+            return f"actions:\n- name: {name}\n"
+
+    def fake_record(**kwargs):
+        captured.update(kwargs)
+        return FakeRecorder()
+
+    monkeypatch.setattr("screen_watch.actions.recorder.record_interactively", fake_record)
+    args = argparse.Namespace(
+        selection="demo", target=None, name="teste", out=None, no_countdown=True
+    )
+
+    assert cli._cmd_record_actions(args) == 0
+    assert "auto_start" not in captured
 
 
 def test_record_actions_without_input_reports_error(monkeypatch, tmp_path, capsys):

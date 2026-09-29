@@ -446,9 +446,7 @@ def _cmd_test_action(args: argparse.Namespace) -> int:
     """Executa/ensaias as acoes da selecao sobre o ROI atual (plano, F2-T9)."""
     import time
 
-    from screen_watch.actions.arming import ArmingController
-    from screen_watch.actions.audit import ActionAudit
-    from screen_watch.actions.runner import ActionRunner, describe_step
+    from screen_watch.actions.once import run_actions
     from screen_watch.app import evidence_recorder
     from screen_watch.capture.frame import Frame
     from screen_watch.config.loader import ConfigError
@@ -476,58 +474,31 @@ def _cmd_test_action(args: argparse.Namespace) -> int:
         sequence=1,
     )
     recorder = evidence_recorder(_load_config_or_none(args.config), force_enabled=True)
-    audit = ActionAudit()
-    arming = ArmingController()
-    if args.armed:
-        arming.arm()
-    runner = ActionRunner(humanize=target.humanize)
 
-    failures = 0
-    mode = "armado" if args.armed else "ensaio (dry-run)"
-    print(f"alvo={target.name!r} modo={mode}")
-    for action in target.actions:
-        if not action.enabled:
-            print(f"[desabilitada] {action.name}")
-            continue
-        descriptions = [describe_step(step) for step in action.steps]
-        if not arming.is_armed():
-            evidence: list[str] = []
-            if recorder is not None:
-                path = recorder.record_action(frame, target.name)
-                if path:
-                    evidence.append(str(path))
-            audit.record(
-                {
-                    "mode": "rehearsal",
-                    "action": action.name,
-                    "steps": descriptions,
-                    "evidence": evidence,
-                }
-            )
-            print(f"[ensaio] {action.name}: {', '.join(descriptions) or '(sem passos)'}")
-            continue
-        run = runner.run(action, frame, arming=arming)
-        audit.record(
-            {
-                "mode": "armed",
-                "action": action.name,
-                "executed": run.executed,
-                "steps": list(run.steps),
-                "duration_s": round(run.duration_s, 3),
-                "reason": run.reason,
-            }
-        )
-        status = "ok" if run.executed else f"falhou ({run.reason})"
-        print(f"[armado] {action.name}: {status}")
-        if not run.executed:
-            failures += 1
-    print(f"auditoria: {audit.path}")
-    return 0 if not failures else 1
+    countdown = None
+    if args.armed and not getattr(args, "no_countdown", False):
+        from screen_watch.gui.countdown import run_countdown  # noqa: PLC0415
+
+        countdown = run_countdown
+
+    code, lines = run_actions(
+        target,
+        frame,
+        armed=bool(args.armed),
+        recorder=recorder,
+        countdown=countdown,
+    )
+    for line in lines:
+        print(line)
+    return code
 
 
 def _cmd_record_actions(args: argparse.Namespace) -> int:
     """Grava cliques/teclas do usuario e gera um snippet de `actions:` (plano, F3-T4)."""
-    from screen_watch.actions.recorder import record_interactively
+    from screen_watch.actions.recorder import (
+        RecordingCancelled,
+        record_interactively,
+    )
     from screen_watch.capture.resolver import resolve
     from screen_watch.config.loader import ConfigError
     from screen_watch.persistence.selection import load_selection
@@ -551,8 +522,27 @@ def _cmd_record_actions(args: argparse.Namespace) -> int:
         print("ROI invalida (fora da janela ou degenerada)")
         return 1
 
+    no_countdown = bool(getattr(args, "no_countdown", False))
+
+    def before_start() -> None:
+        from screen_watch.gui.countdown import run_countdown  # noqa: PLC0415
+
+        if not run_countdown():
+            raise RecordingCancelled("contagem cancelada")
+
     try:
-        recorder = record_interactively(roi_rect=abs_rect, window_rect=info.rect)
+        if no_countdown:
+            recorder = record_interactively(roi_rect=abs_rect, window_rect=info.rect)
+        else:
+            recorder = record_interactively(
+                roi_rect=abs_rect,
+                window_rect=info.rect,
+                before_start=before_start,
+                auto_start=True,
+            )
+    except RecordingCancelled:
+        print("contagem cancelada; gravacao abortada")
+        return 1
     except InputUnavailable as exc:
         print(str(exc))
         return 1
@@ -961,6 +951,9 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="subconjunto de acoes (a,b; 'all'/'none'); one-shot, nao persiste",
     )
+    p_act.add_argument(
+        "--no-countdown", action="store_true", help="pula a contagem de 3s antes de executar"
+    )
     p_act.set_defaults(func=_cmd_test_action)
 
     p_listact = sub.add_parser(
@@ -979,6 +972,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_rec.add_argument("--target", default=None, help="deprecado; alias de --selection")
     p_rec.add_argument("--name", default=None, help="nome da acao no snippet (default: stem)")
     p_rec.add_argument("--out", default=None, help="arquivo de saida (default: stdout)")
+    p_rec.add_argument(
+        "--no-countdown",
+        action="store_true",
+        help="nao conta 3s antes de gravar (exige F9 para iniciar)",
+    )
     p_rec.set_defaults(func=_cmd_record_actions)
 
     p_cmp = sub.add_parser(

@@ -257,15 +257,23 @@ exige um `activate` antes: o app foca a janela e confere `isActive`, abortando s
 a execução é síncrona na thread do loop, captura/comparação pausam durante a sequência.
 
 Arme/desarme por: itens do tray ("Armar ações"/"Desarmar ações"/"Armar por N min"), botão
-**Re-armar** na janela (re-arma o baseline na hora), ou hotkeys globais (quando o extra `input`
-está instalado; sem ele a GUI avisa e fica tray-only).
+**Re-armar** na janela (re-arma o baseline na hora), botão **Executar ação (3s)** (roda uma vez, com
+contagem, fora do loop), ou hotkeys globais (quando o extra `input` está instalado; sem ele a GUI
+avisa e fica tray-only).
 
 Para testar sem esperar um evento real:
 
 ```powershell
 python -m screen_watch test-action --selection painel            # ensaio (default)
-python -m screen_watch test-action --selection painel --armed    # executa de verdade
+python -m screen_watch test-action --selection painel --armed    # executa de verdade (com contagem de 3s)
+python -m screen_watch test-action --selection painel --armed --no-countdown   # sem contagem
 ```
+
+Em `--armed`, uma contagem de 3s aparece no topo da tela (overlay Qt **sem roubar foco**) para você
+focar a janela-alvo; um clique no overlay cancela. `--no-countdown` pula a contagem (útil em
+automação). O disparo automático por mudança no `run` **não** tem contagem (ele roda no loop). A
+janela tem o botão equivalente **Executar ação (3s)**, que usa o subconjunto de ações marcado no
+checklist e também respeita a contagem.
 
 Cada gatilho (ensaio, execução, suspensão) vira uma linha em `logs/actions.jsonl` com passos,
 resultado, duração, motivo e os caminhos das evidências.
@@ -322,9 +330,16 @@ em `actions:`:
 python -m screen_watch record-actions --selection painel --out snippet.yaml
 ```
 
-A gravação começa ao pressionar `F9` e termina em `F10`. Os cliques são convertidos de coordenadas
-absolutas para `ref: roi`/`window` (ou `screen` se caírem fora da janela) e o snippet já inclui um
-passo `activate` e o bloco `when` comentado, para você revisar antes de armar.
+Fluxo padrão: contagem de 3s (mesmo overlay sem foco) → a gravação começa automaticamente → `F10`
+encerra. Use `--no-countdown` para voltar ao `F9` manual (tempo para se preparar sem o overlay). O
+clique no overlay cancela a contagem. Os cliques são convertidos de coordenadas absolutas para
+`ref: roi`/`window` (ou `screen` se caírem fora da janela) e o snippet já inclui um passo `activate`
+e o bloco `when` comentado, para você revisar antes de armar.
+
+A contagem é chamada na **thread principal**, antes de criar os listeners do `pynput` (nunca dentro
+do callback). Sem Qt/display (headless/Wayland), a contagem cai para o console (`3... 2... 1...`) e
+segue. Ressalva: em Wayland a captura/entrada continuam limitadas (doc §14.1); a elevação (UAC) não
+é contornada.
 
 ## Calibração (Etapa D)
 

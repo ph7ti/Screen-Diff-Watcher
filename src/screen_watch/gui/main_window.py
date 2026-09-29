@@ -124,6 +124,7 @@ class MainWindow(QMainWindow):
         self.btn_stop.setEnabled(False)
         self.btn_rearm = QPushButton("Re-armar")
         self.btn_rearm.setEnabled(False)
+        self.btn_run_action = QPushButton("Executar acao (3s)")
         self.btn_new = QPushButton("Novo target (overlay)")
         self.btn_remove = QPushButton("Remover")
         self.btn_reload = QPushButton("Recarregar")
@@ -133,6 +134,7 @@ class MainWindow(QMainWindow):
         self.btn_start.clicked.connect(self._start)
         self.btn_stop.clicked.connect(self._stop)
         self.btn_rearm.clicked.connect(self._rearm)
+        self.btn_run_action.clicked.connect(self._run_action_once)
         self.btn_new.clicked.connect(self._new_target)
         self.btn_remove.clicked.connect(self._remove)
         self.btn_reload.clicked.connect(self._reload)
@@ -143,6 +145,7 @@ class MainWindow(QMainWindow):
             self.btn_start,
             self.btn_stop,
             self.btn_rearm,
+            self.btn_run_action,
             self.btn_new,
             self.btn_remove,
             self.btn_reload,
@@ -443,6 +446,57 @@ class MainWindow(QMainWindow):
         else:
             self._start()
 
+    def _run_action_once(self) -> None:
+        if self._controller.running:
+            QMessageBox.information(
+                self, "Screen Diff Watcher", "pare a sessao antes de executar uma acao"
+            )
+            return
+        try:
+            target = self._resolve_target(self.mode_combo.currentText())
+        except Exception as exc:
+            QMessageBox.warning(self, "Screen Diff Watcher", f"falha ao carregar: {exc}")
+            return
+        if target is None:
+            QMessageBox.information(self, "Screen Diff Watcher", "selecione uma selecao")
+            return
+        if not target.actions:
+            QMessageBox.information(
+                self, "Screen Diff Watcher", "nenhuma acao selecionada para esta sessao"
+            )
+            return
+
+        import time
+
+        from screen_watch.__main__ import _capture_target_roi
+        from screen_watch.actions.once import run_actions
+        from screen_watch.app import evidence_recorder
+        from screen_watch.capture.frame import Frame
+        from screen_watch.gui.countdown import run_countdown
+
+        try:
+            rgb, abs_rect, info = _capture_target_roi(target)
+        except Exception as exc:
+            QMessageBox.warning(self, "Screen Diff Watcher", f"falha ao capturar ROI: {exc}")
+            return
+        frame = Frame(
+            rgb=rgb,
+            timestamp=time.time(),
+            absolute_rect=abs_rect,
+            window_rect=info.rect,
+            window_handle=info.handle,
+            sequence=1,
+        )
+        self._append("executando acao (3s); foque a janela-alvo...")
+        recorder = evidence_recorder(self._config, force_enabled=True)
+        code, lines = run_actions(
+            target, frame, armed=True, recorder=recorder, countdown=run_countdown
+        )
+        for line in lines:
+            self._append(line)
+        if code != 0:
+            self._append("execucao nao concluida")
+
     def _start(self) -> None:
         if self._controller.running:
             return
@@ -604,6 +658,7 @@ class MainWindow(QMainWindow):
         self.btn_start.setEnabled(not running)
         self.btn_stop.setEnabled(running)
         self.btn_rearm.setEnabled(running)
+        self.btn_run_action.setEnabled(not running)
         self.btn_new.setEnabled(not running)
         self.mode_combo.setEnabled(not running)
 

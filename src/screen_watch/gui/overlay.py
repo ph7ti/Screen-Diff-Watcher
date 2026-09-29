@@ -16,7 +16,7 @@ from dataclasses import dataclass
 
 from PyQt6.QtCore import QEventLoop, QPoint, QRect, Qt
 from PyQt6.QtGui import QColor, QGuiApplication, QPainter, QPen
-from PyQt6.QtWidgets import QApplication, QWidget
+from PyQt6.QtWidgets import QWidget
 
 from screen_watch.gui.overlay_geometry import (
     global_from_local,
@@ -26,9 +26,6 @@ from screen_watch.gui.overlay_geometry import (
 
 Rect = tuple[int, int, int, int]
 Point = tuple[int, int]
-
-# Mantem o QApplication vivo quando o CLI cria um (a GUI reutiliza o existente).
-_QT_APP: QApplication | None = None
 
 
 @dataclass(frozen=True)
@@ -137,15 +134,9 @@ def run_selection() -> SelectionResult | None:
     Usa um `QEventLoop` proprio (nao `app.exec()`), para poder ser chamado de
     dentro da GUI sem encerrar o loop principal.
     """
-    global _QT_APP
+    from screen_watch.gui.qt_app import ensure_app  # noqa: PLC0415
 
-    QApplication.setHighDpiScaleFactorRoundingPolicy(
-        Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
-    )
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-        _QT_APP = app
+    ensure_app()
 
     loop = QEventLoop()
     controller = _OverlayController(loop.quit)

@@ -6,12 +6,37 @@ import pytest
 import yaml
 
 from screen_watch.actions.recorder import (
+    RecordingCancelled,
     StepRecorder,
     convert_point,
     point_in_rect,
     record_interactively,
 )
 from screen_watch.platform.input import InputUnavailable
+
+
+def _fake_pynput_recorder():
+    import types
+
+    class FakeListener:
+        def __init__(self, **kwargs) -> None:
+            self.kwargs = kwargs
+
+        def start(self) -> None:
+            pass
+
+        def join(self) -> None:
+            pass
+
+        def stop(self) -> None:
+            pass
+
+    keyboard = types.SimpleNamespace(Listener=FakeListener)
+    mouse = types.SimpleNamespace(Listener=FakeListener)
+    module = types.ModuleType("pynput")
+    module.keyboard = keyboard
+    module.mouse = mouse
+    return module
 
 
 def test_point_in_rect_boundaries():
@@ -83,4 +108,65 @@ def test_record_interactively_without_pynput(monkeypatch):
     with pytest.raises(InputUnavailable):
         record_interactively(
             roi_rect=(0, 0, 10, 10), window_rect=(0, 0, 10, 10), status=lambda *args: None
+        )
+
+
+def test_record_interactively_without_pynput_skips_before_start(monkeypatch):
+    calls: list[bool] = []
+    monkeypatch.setitem(sys.modules, "pynput", None)
+    with pytest.raises(InputUnavailable):
+        record_interactively(
+            roi_rect=(0, 0, 10, 10),
+            window_rect=(0, 0, 10, 10),
+            status=lambda *args: None,
+            before_start=lambda: calls.append(True),
+            auto_start=True,
+        )
+    assert calls == []
+
+
+def test_record_interactively_auto_start_calls_before_start_once(monkeypatch):
+    calls: list[bool] = []
+    monkeypatch.setitem(sys.modules, "pynput", _fake_pynput_recorder())
+
+    recorder = record_interactively(
+        roi_rect=(0, 0, 10, 10),
+        window_rect=(0, 0, 10, 10),
+        status=lambda *args: None,
+        before_start=lambda: calls.append(True),
+        auto_start=True,
+    )
+
+    assert calls == [True]
+    assert recorder.raw_steps() == []
+
+
+def test_record_interactively_keeps_f9_without_auto_start(monkeypatch):
+    calls: list[bool] = []
+    monkeypatch.setitem(sys.modules, "pynput", _fake_pynput_recorder())
+
+    record_interactively(
+        roi_rect=(0, 0, 10, 10),
+        window_rect=(0, 0, 10, 10),
+        status=lambda *args: None,
+        before_start=lambda: calls.append(True),
+        auto_start=False,
+    )
+
+    assert calls == []
+
+
+def test_record_interactively_propagates_cancel(monkeypatch):
+    def boom() -> None:
+        raise RecordingCancelled("cancelado")
+
+    monkeypatch.setitem(sys.modules, "pynput", _fake_pynput_recorder())
+
+    with pytest.raises(RecordingCancelled):
+        record_interactively(
+            roi_rect=(0, 0, 10, 10),
+            window_rect=(0, 0, 10, 10),
+            status=lambda *args: None,
+            before_start=boom,
+            auto_start=True,
         )
