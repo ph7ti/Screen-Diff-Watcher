@@ -454,6 +454,26 @@ class MainWindow(QMainWindow):
         except OSError:
             pass
 
+    def _locator_bases(self, mode: str):
+        """Bases logicas (ROI, janela) para o localizador; (None, None) se indisponivel."""
+        from screen_watch.capture.resolver import resolve
+
+        try:
+            target = self._resolve_target(mode)
+        except Exception:
+            return None, None
+        if target is None:
+            return None, None
+        from screen_watch.platform.window import find_window_by_handle
+
+        try:
+            info = find_window_by_handle(target.window_handle)
+        except Exception:
+            return None, None
+        if info is None or not info.exists or info.is_minimized:
+            return None, None
+        return resolve(info, target.roi_relative), info.rect
+
     def _action_new(self) -> None:
         value, selection = self._current_selection()
         if selection is None:
@@ -463,7 +483,10 @@ class MainWindow(QMainWindow):
         from screen_watch.persistence.selection import override_actions
 
         mode = self.mode_combo.currentText() or selection.mode
-        raw = ActionEditorDialog(self, mode=mode, title="Nova acao").run()
+        roi_rect, window_rect = self._locator_bases(mode)
+        raw = ActionEditorDialog(
+            self, mode=mode, title="Nova acao", roi_rect=roi_rect, window_rect=window_rect
+        ).run()
         if raw is None:
             return
         actions = override_actions(selection)
@@ -500,8 +523,14 @@ class MainWindow(QMainWindow):
             )
             return
         mode = self.mode_combo.currentText() or selection.mode
+        roi_rect, window_rect = self._locator_bases(mode)
         raw = ActionEditorDialog(
-            self, mode=mode, action=actions[index], title="Editar acao"
+            self,
+            mode=mode,
+            action=actions[index],
+            title="Editar acao",
+            roi_rect=roi_rect,
+            window_rect=window_rect,
         ).run()
         if raw is None:
             return

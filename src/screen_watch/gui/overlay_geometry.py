@@ -61,6 +61,27 @@ def to_relative(global_physical: Rect, window_origin: Point) -> Rect:
     )
 
 
+def resolve_ref_point(
+    point: Point,
+    ref: str,
+    *,
+    roi_rect: Rect | None = None,
+    window_rect: Rect | None = None,
+) -> tuple[str, Point]:
+    """Ponto global (logico) relativo ao `ref` de uma acao (`roi`/`window`/`screen`).
+
+    Mesma base do `ActionRunner`: `roi` parte de `frame.absolute_rect`, `window` de
+    `frame.window_rect`, `screen` da origem (0, 0). Sem a base pedida, cai para
+    `screen` e devolve o `ref` efetivo (para o chamador nao gravar um offset
+    relativo sem base).
+    """
+    if ref == "roi" and roi_rect is not None:
+        return "roi", (int(point[0] - roi_rect[0]), int(point[1] - roi_rect[1]))
+    if ref == "window" and window_rect is not None:
+        return "window", (int(point[0] - window_rect[0]), int(point[1] - window_rect[1]))
+    return "screen", (int(point[0]), int(point[1]))
+
+
 def is_valid_selection(rect: Rect, *, min_side: int = MIN_SELECTION_SIDE) -> bool:
     """Area minima em pixels **logicos** (doc secao 9.6)."""
     return rect[2] >= min_side and rect[3] >= min_side

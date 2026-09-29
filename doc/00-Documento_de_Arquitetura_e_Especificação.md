@@ -730,6 +730,13 @@ que faria e grava evidências, sem clicar.
   sem migração. A validação reusa `parse_actions` (clique exige `activate`,
   `text_*` exige `mode: advanced`), então as regras do YAML valem na janela;
   ações do perfil/YAML são somente leitura na GUI.
+- **Localizador de posição**: `gui/locator.py::run_locator` (botão "Localizar
+  posição do mouse..." nos passos `click`/`move`) mostra uma caixa seguindo o
+  cursor; Enter/clique esquerdo confirma, Esc/clique direito cancela. Devolve o
+  ponto global **lógico** (mesma base do `Frame`) e converte pelo `ref` via
+  `overlay_geometry.resolve_ref_point` (`roi`→`absolute_rect`, `window`→
+  `window_rect`, `screen`→origem); sem base, cai para `screen`. Difere do
+  countdown: aqui o foco é necessário para capturar o Enter.
 - **Seleção por sessão**: checklist na GUI (e `--actions` no CLI, one-shot) reduz
   o subconjunto por **nome de ação**; aplica só no próximo `build_target`. O estado
   fica em `state.json["action_selection"][seleção]` (chave ausente = todas, lista

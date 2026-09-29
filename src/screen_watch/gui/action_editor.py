@@ -32,11 +32,12 @@ from PyQt6.QtWidgets import (
 
 from screen_watch.actions.protocol import BUTTONS, REF_KINDS, STEP_KINDS
 from screen_watch.actions.summary import describe_raw_step
+from screen_watch.gui.overlay_geometry import resolve_ref_point
 
 _PARAMS_BY_KIND = {
     "activate": set(),
-    "click": {"x", "y", "ref", "button", "clicks"},
-    "move": {"x", "y", "ref"},
+    "click": {"x", "y", "ref", "button", "clicks", "locate"},
+    "move": {"x", "y", "ref", "locate"},
     "key": {"keys"},
     "type": {"text"},
     "wait": {"ms"},
@@ -53,10 +54,14 @@ class ActionEditorDialog(QDialog):
         mode: str = "advanced",
         action: dict | None = None,
         title: str = "Nova acao",
+        roi_rect: tuple[int, int, int, int] | None = None,
+        window_rect: tuple[int, int, int, int] | None = None,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(title)
         self._mode = mode
+        self._roi_rect = roi_rect
+        self._window_rect = window_rect
         self._steps: list[dict] = []
         self._param_rows: dict[str, list[QWidget]] = {}
         self._build_ui()
@@ -121,6 +126,11 @@ class ActionEditorDialog(QDialog):
         self.y_spin = self._int_spin(-100000, 100000)
         self._add_param(step_form, "y", "y", self.y_spin)
 
+        self.locate_btn = QPushButton("Localizar posicao do mouse...")
+        self.locate_btn.setToolTip("Mova o mouse ate o ponto e pressione Enter; Esc cancela")
+        self.locate_btn.clicked.connect(self._locate)
+        self._add_param(step_form, "locate", "", self.locate_btn)
+
         self.ref_combo = QComboBox()
         self.ref_combo.addItems(REF_KINDS)
         self._add_param(step_form, "ref", "ref", self.ref_combo)
@@ -149,8 +159,8 @@ class ActionEditorDialog(QDialog):
         layout.addWidget(self.add_step_btn)
 
         hint = QLabel(
-            "Dica: cliques exigem um passo 'activate' antes; filtros de texto "
-            "exigem mode advanced (use when no YAML ou selecione advanced)."
+            "Dica: use 'Localizar posicao do mouse...' para preencher x/y (Enter confirma). "
+            "Cliques exigem um passo 'activate' antes; filtros de texto exigem mode advanced."
         )
         hint.setWordWrap(True)
         layout.addWidget(hint)
@@ -200,6 +210,26 @@ class ActionEditorDialog(QDialog):
         if kind == "type":
             return {"type": {"text": self.text_edit.text()}}
         return {"wait": {"ms": self.ms_spin.value()}}
+
+    def _locate(self) -> None:
+        from screen_watch.gui.locator import run_locator
+
+        ref = self.ref_combo.currentText()
+        point = run_locator(ref, roi_rect=self._roi_rect, window_rect=self._window_rect)
+        if point is None:
+            return
+        effective_ref, (rel_x, rel_y) = resolve_ref_point(
+            point, ref, roi_rect=self._roi_rect, window_rect=self._window_rect
+        )
+        if effective_ref != ref:
+            self.ref_combo.setCurrentText(effective_ref)
+            QMessageBox.information(
+                self,
+                "Localizar",
+                "janela/ROI indisponivel agora: usei coordenadas absolutas (ref=screen)",
+            )
+        self.x_spin.setValue(rel_x)
+        self.y_spin.setValue(rel_y)
 
     def _add_step(self) -> None:
         self._steps.append(self._collect_step())

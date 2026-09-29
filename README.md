@@ -287,6 +287,12 @@ cada passo é adicionado com os campos do seu tipo (`x`/`y`/`ref`/`botão`/`cliq
 `ms`). Ao confirmar, o app valida com o **mesmo parser do YAML** (`parse_actions`): cliques exigem um
 passo `activate` antes e filtros de texto exigem `mode: advanced`; erros aparecem num diálogo.
 
+Para não adivinhar o `x`/`y`, há o botão **Localizar posição do mouse...** (nos passos `click`/`move`):
+aparece uma caixa seguindo o cursor com os valores já no `ref` escolhido (mais o absoluto); mova o
+mouse até o ponto e pressione **Enter** para preencher `x`/`y` (**Esc** ou clique direito cancela).
+A conversão usa a mesma base do disparo: `roi` = ROI monitorada, `window` = janela-alvo, `screen` =
+tela; se a janela/ROI não estiver disponível no momento, cai para `screen` e avisa.
+
 As ações criadas pela janela são gravadas em `overrides.actions` do **JSON da seleção**
 (`app-data/selections/<nome>.json`), então funcionam **mesmo com um `config.yaml` v1** (`targets:`) —
 não é preciso migrar. Cada seleção tem o seu conjunto; a seleção atual continua podendo herdar ações do
