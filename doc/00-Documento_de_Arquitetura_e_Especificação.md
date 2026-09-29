@@ -703,34 +703,87 @@ class AlertChain:
 
 ## 12. Configuração
 
-### 12.1 Schema YAML
+### 12.1 Schema YAML v2 (config global por perfil)
+
+O YAML deixou de ser uma lista de targets e passou a ser **configuração global**. Os alvos vivem
+em arquivos de seleção JSON (`app-data/selections/*.json`); o YAML define perfis, alertas, atalhos,
+agendador e evidências.
 
 ```yaml
-targets:
-  - name: "painel_estoque"
-    window_handle: 123456
-    window_title_hint: "ERP - Estoque"
-    origin_at_selection: [100, 200]
-    roi_relative: [120, 340, 400, 80]
-    mode: "default"                # "light" | "default" | "advanced"
-    poll_interval_s: 2.0
-    masks: []
-    compare_options:
-      light:    { threshold: 12.0 }
-      default:  { hash_size: 8, threshold: 6 }
-      advanced: { similarity_threshold: 0.92, psm: 6, lang: "eng" }
+version: 2
+profile: default                 # perfil ativo; trocavel com --profile
+profiles:
+  default:
+    defaults:
+      mode: "advanced"           # "light" | "default" | "advanced"
+      poll_interval_s: 2.0
+      rearm: true
+      compare_options:
+        light:    { threshold: 12.0 }
+        default:  { hash_size: 8, threshold: 6 }
+        advanced: { similarity_threshold: 0.92, psm: 6, lang: "por+eng", upscale: 2,
+                    tesseract_cmd: null }
     alerts:
       - { type: "sound",   enabled: true, severity_min: 1, cooldown_s: 30, file: "alert.wav" }
       - { type: "popup",   enabled: true, severity_min: 1, cooldown_s: 30 }
       - { type: "telegram", enabled: true, severity_min: 2, cooldown_s: 60,
           bot_token_env: "TELEGRAM_BOT_TOKEN", chat_id: "123456789",
           attach_roi: true }
+  trabalho:
+    defaults: { mode: "default", poll_interval_s: 1.0 }
+ui:
+  hotkeys: { arm: "<ctrl>+<alt>+a", disarm: "<ctrl>+<alt>+d", toggle: "<ctrl>+<alt>+space",
+             rearm: "<ctrl>+<alt>+r", abort: "<esc>" }
+  arm_durations_min: [1, 5, 15, 30]
+schedule: { enabled: false, days: [mon, tue, wed, thu, fri], windows: ["08:00-12:00"], timezone: local }
+evidence: { enabled: false, dir: null, keep_per_target: 50, max_total_mb: 200,
+            on_baseline: true, on_change: true, per_step: false }
 ```
 
 **Regras**:
 - Tokens e segredos **nunca** no YAML. Usar variáveis de ambiente (`bot_token_env`).
-- `window_title_hint` é apenas hint humano; o lookup usa `window_handle`.
-- `roi_relative` é a fonte de verdade para reconstruir a ROI a cada tick.
+- `profile` inexistente é `ConfigError`; `version` > 2 é `ConfigError`.
+- `version` ausente com `targets:` é o v1 legado: carrega por uma versão, com aviso, e é
+  convertido por `migrate-config` (backup `config.yaml.bak`, uma seleção JSON por target).
+- `TargetConfig` continua sendo o contrato interno do runtime; o perfil + a seleção são resolvidos
+  para ele por `persistence.selection.build_target`.
+
+### 12.2 Perfis e defaults
+
+Perfis nomeados (`profiles.<nome>.defaults` + `.alerts`) permitem alternar conjuntos de parâmetros
+com `--profile`. A troca **aplica no próximo start** (não ao vivo). O perfil ativo também é gravado
+em `state.json`.
+
+### 12.3 Seleção JSON e overrides
+
+Cada seleção é um JSON v2; `overrides` é opcional e **substitui** (não soma) os valores do perfil
+para aquele alvo: `mode`, `masks`, `poll_interval_s`, `rearm` e, adiante, `alerts`/`actions`.
+Seleções `version: 1` continuam carregando sem overrides.
+
+```json
+{
+  "version": 2,
+  "window_handle": 123456,
+  "window_title_hint": "ERP - Estoque",
+  "app_name": "ERP",
+  "origin_at_selection": [100, 200],
+  "roi_relative": [120, 340, 400, 80],
+  "mode": "advanced",
+  "masks": [],
+  "overrides": { "poll_interval_s": 1.5, "rearm": false }
+}
+```
+
+`window_title_hint` é apenas hint humano; o lookup usa `window_handle`. `roi_relative` é a fonte de
+verdade para reconstruir a ROI a cada tick.
+
+### 12.4 Estado, app-data e gravação
+
+`platform/paths.py` centraliza `app_home()`, `config_path()`, `selections_dir()`, `logs_dir()` e
+`state_path()`. `state.json` guarda `{"last_selection": "...", "profile": "..."}` e é atualizado
+ao iniciar `run`/GUI com sucesso. O YAML é regravado de forma atômica (temp + `os.replace`) com
+backup `config.yaml.bak`; `state.json` é atômico, sem backup.
+
 
 ---
 

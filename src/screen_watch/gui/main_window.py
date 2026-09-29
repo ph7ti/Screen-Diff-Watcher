@@ -29,7 +29,7 @@ from PyQt6.QtWidgets import (
 )
 
 from screen_watch.gui.controller import MonitorController, new_event_queue
-from screen_watch.gui.labels import selection_label, target_label
+from screen_watch.gui.labels import selection_label
 
 POLL_MS = 200
 TARGET_ROLE = 1
@@ -50,7 +50,9 @@ def _window_icon() -> QIcon | None:
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, controller: MonitorController, config_path, on_quit=None) -> None:
+    def __init__(
+        self, controller: MonitorController, config_path, profile: str | None = None, on_quit=None
+    ) -> None:
         super().__init__()
         self.setWindowTitle("Screen Diff Watcher")
         self.resize(820, 540)
@@ -59,6 +61,8 @@ class MainWindow(QMainWindow):
             self.setWindowIcon(icon)
         self._controller = controller
         self._config_path = Path(config_path)
+        self._profile = profile
+        self._config = None
         self._on_quit = on_quit
         self._entries: list[tuple[str, object]] = []
         self._active_name = ""
@@ -77,7 +81,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
 
-        layout.addWidget(QLabel("Targets e selecoes — nome do app, ROI monitorada e modo"))
+        layout.addWidget(QLabel("Selecoes — nome do app, ROI monitorada e modo"))
         self.list = QListWidget()
         self.list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.list.currentItemChanged.connect(self._item_changed)
@@ -135,15 +139,14 @@ class MainWindow(QMainWindow):
 
         self.list.clear()
         self._entries.clear()
+        self._config = None
 
         try:
-            config = load_config(self._config_path)
+            self._config = load_config(self._config_path)
         except ConfigError as exc:
             self._append(f"config indisponivel: {exc}")
-            config = None
-        if config is not None:
-            for target in config.targets:
-                self._entries.append(("target", target))
+        if self._config is not None and self._config.legacy:
+            self._append("aviso: YAML v1 (targets); rode 'migrate-config' para v2")
 
         for path in sorted(selections_dir().glob("*.json")):
             self._entries.append(("selection", path))
@@ -153,13 +156,18 @@ class MainWindow(QMainWindow):
             item.setData(TARGET_ROLE, (kind, value))
             self.list.addItem(item)
 
-        self._append(f"carregado: {len(self._entries)} item(ns)")
+        self._append(
+            f"carregado: {len(self._entries)} selecao(oes) — perfil {self._profile_label()}"
+        )
         if self.list.count():
             self.list.setCurrentRow(0)
 
-    def _label_for(self, kind: str, value) -> str:
-        if kind == "target":
-            return target_label(value)
+    def _profile_label(self) -> str:
+        if self._config is None or self._config.legacy or not self._config.profiles:
+            return f"{self._profile or 'default'} (legado/sem config)"
+        return self._profile or self._config.profile
+
+    def _label_for(self, _kind: str, value) -> str:
         from screen_watch.persistence.selection import load_selection
 
         try:
@@ -175,9 +183,7 @@ class MainWindow(QMainWindow):
     def _entry_mode(self, entry) -> str:
         if entry is None:
             return self.mode_combo.currentText() or MODES[-1]
-        kind, value = entry
-        if kind == "target":
-            return value.mode
+        _kind, value = entry
         from screen_watch.persistence.selection import load_selection
 
         try:
@@ -189,16 +195,13 @@ class MainWindow(QMainWindow):
         selected = self._selected()
         if selected is None:
             return None
-        kind, value = selected
-        if kind == "target":
-            return replace(value, mode=mode)
-        from screen_watch.app import default_alerts
-        from screen_watch.persistence.selection import load_selection, to_target_config
+        _kind, value = selected
+        from screen_watch.app import profile_from_config
+        from screen_watch.persistence.selection import build_target, load_selection
 
         selection = load_selection(value)
-        return to_target_config(
-            selection, name=Path(value).stem, alerts=default_alerts(), mode=mode
-        )
+        profile = profile_from_config(self._config, self._profile, Path(value).stem)
+        return build_target(selection, profile, name=Path(value).stem, mode=mode)
 
     # -- acoes -------------------------------------------------------------
     def _item_changed(self, _current, _previous) -> None:
@@ -213,11 +216,7 @@ class MainWindow(QMainWindow):
         selected = self._selected()
         if selected is None:
             return
-        kind, value = selected
-        if kind != "selection":
-            # Target do YAML: o modo vale para esta execucao (nao regravamos o YAML).
-            self._append(f"modo de {Path(value).stem} -> {mode} (somente nesta execucao)")
-            return
+        _kind, value = selected
         try:
             from screen_watch.persistence.selection import dump_selection, load_selection
 
@@ -227,7 +226,7 @@ class MainWindow(QMainWindow):
             return
         item = self.list.currentItem()
         if item is not None:
-            item.setText(self._label_for(kind, value))
+            item.setText(self._label_for("selection", value))
         self._append(f"modo de {Path(value).stem} -> {mode}")
 
     def _toggle_clicked(self) -> None:
@@ -245,7 +244,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Screen Diff Watcher", f"falha ao carregar: {exc}")
             return
         if target is None:
-            QMessageBox.information(self, "Screen Diff Watcher", "selecione um target ou selecao")
+            QMessageBox.information(self, "Screen Diff Watcher", "selecione uma selecao")
             return
         try:
             self._controller.start(target)
@@ -253,6 +252,12 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Screen Diff Watcher", f"falha ao iniciar: {exc}")
             return
         self._active_name = target.name
+        from screen_watch.platform.paths import update_state
+
+        fields: dict[str, object] = {"last_selection": f"{target.name}.json"}
+        if self._profile:
+            fields["profile"] = self._profile
+        update_state(**fields)
         self.status.setText(f"monitorando {target.name!r} ({target.mode})")
         self._set_running(True)
 
@@ -263,8 +268,6 @@ class MainWindow(QMainWindow):
         self._set_running(False)
 
     def _remove(self) -> None:
-        from screen_watch.config.loader import remove_target_from_config
-
         items = self.list.selectedItems()
         if not items:
             QMessageBox.information(self, "Screen Diff Watcher", "selecione um ou mais itens")
@@ -277,26 +280,21 @@ class MainWindow(QMainWindow):
         confirm = QMessageBox.question(
             self,
             "Remover",
-            f"Remover {len(items)} item(ns)?\n{preview}",
+            f"Remover {len(items)} selecao(oes)?\n{preview}",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
 
-        remove_names = {
-            value.name if kind == "target" else Path(value).stem for kind, value in entries
-        }
+        remove_names = {Path(value).stem for _kind, value in entries}
         if self._controller.running and self._active_name in remove_names:
             self._stop()
 
         removed = 0
         errors: list[str] = []
-        for kind, value in entries:
+        for _kind, value in entries:
             try:
-                if kind == "target":
-                    remove_target_from_config(self._config_path, value.name)
-                else:
-                    Path(value).unlink(missing_ok=True)
+                Path(value).unlink(missing_ok=True)
                 removed += 1
             except Exception as exc:
                 errors.append(f"{value}: {exc}")
@@ -417,7 +415,7 @@ class MainWindow(QMainWindow):
         super().closeEvent(event)
 
 
-def run_gui(config_path) -> int:
+def run_gui(config_path, profile: str | None = None) -> int:
     """Sobe a GUI minima com tray e roda o loop de eventos do Qt."""
     from PyQt6.QtWidgets import QApplication
 
@@ -431,7 +429,7 @@ def run_gui(config_path) -> int:
         app.setWindowIcon(icon)
     events = new_event_queue()
     controller = MonitorController(events)
-    window = MainWindow(controller, config_path, on_quit=app.quit)
+    window = MainWindow(controller, config_path, profile=profile, on_quit=app.quit)
     tray = start_tray(events)
     window.show()
     try:

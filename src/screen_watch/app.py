@@ -13,7 +13,14 @@ from screen_watch.alerts.protocol import Notifier
 from screen_watch.capture.frame import Frame
 from screen_watch.compare.pipeline import MODE_STAGES, ComparePipeline
 from screen_watch.compare.protocol import ComparisonResult
-from screen_watch.config.schema import AlertOptions, CompareOptions, TargetConfig
+from screen_watch.config.schema import (
+    AlertOptions,
+    AppConfig,
+    CompareOptions,
+    GlobalDefaults,
+    ProfileOptions,
+    TargetConfig,
+)
 from screen_watch.scheduler.loop import MonitorLoop, MonitorTarget
 
 log = logging.getLogger(__name__)
@@ -115,6 +122,42 @@ def default_alerts() -> tuple[AlertOptions, ...]:
         AlertOptions(type="sound", severity_min=1, cooldown_s=30.0),
         AlertOptions(type="popup", severity_min=1, cooldown_s=30.0),
         AlertOptions(type="log", severity_min=1, cooldown_s=0.0),
+    )
+
+
+def profile_from_config(
+    config: AppConfig | None,
+    profile_name: str | None = None,
+    selection_name: str | None = None,
+) -> ProfileOptions:
+    """Resolve o perfil a usar, com fallback para o YAML v1 legado (doc, secao 12).
+
+    `ValueError`/`KeyError` do perfil explicito sobem para o CLI/GUI mostrarem
+    mensagem clara sem stacktrace.
+    """
+    if config is None or config.legacy or not config.profiles:
+        return _legacy_profile(config, selection_name)
+    name = profile_name or config.profile
+    profile = config.profiles.get(name)
+    if profile is None:
+        raise ValueError(f"profile inexistente: {name!r}")
+    return profile
+
+
+def _legacy_profile(config: AppConfig | None, selection_name: str | None) -> ProfileOptions:
+    if config is None or not config.targets:
+        return ProfileOptions(alerts=default_alerts())
+    target = config.get_target(selection_name) if selection_name else None
+    if target is None:
+        target = config.targets[0]
+    return ProfileOptions(
+        defaults=GlobalDefaults(
+            mode=target.mode,
+            poll_interval_s=target.poll_interval_s,
+            rearm=target.rearm,
+            compare_options=target.compare_options,
+        ),
+        alerts=target.alerts,
     )
 
 

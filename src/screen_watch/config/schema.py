@@ -1,4 +1,9 @@
-"""Dataclasses de configuracao (doc, secao 12.1)."""
+"""Dataclasses de configuracao (doc, secao 12).
+
+`TargetConfig` continua sendo o contrato interno do runtime
+(`MonitorSession`/`build_loop`); a config global v2 (perfis) e resolvida para
+ele a partir de uma selecao (`persistence.selection.build_target`).
+"""
 
 from __future__ import annotations
 
@@ -6,6 +11,10 @@ from dataclasses import dataclass, field
 
 Rect = tuple[int, int, int, int]
 Point = tuple[int, int]
+
+VALID_MODES = ("light", "default", "advanced")
+VALID_DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+VALID_TIMEZONES = ("local",)
 
 
 @dataclass(frozen=True)
@@ -51,6 +60,55 @@ class AlertOptions:
 
 
 @dataclass(frozen=True)
+class GlobalDefaults:
+    """Valores padrao de um perfil (doc, secao 12.2)."""
+
+    mode: str = "advanced"
+    poll_interval_s: float = 2.0
+    rearm: bool = True
+    compare_options: CompareOptions = field(default_factory=CompareOptions)
+
+
+@dataclass(frozen=True)
+class ProfileOptions:
+    """Um perfil nomeado: defaults + alertas (+ acoes nas fases seguintes)."""
+
+    defaults: GlobalDefaults = field(default_factory=GlobalDefaults)
+    alerts: tuple[AlertOptions, ...] = ()
+
+
+@dataclass(frozen=True)
+class EvidenceOptions:
+    enabled: bool = False
+    dir: str | None = None
+    keep_per_target: int = 50
+    max_total_mb: int = 200
+    on_baseline: bool = True
+    on_change: bool = True
+    per_step: bool = False
+
+
+@dataclass(frozen=True)
+class UiOptions:
+    hotkeys: tuple[tuple[str, str], ...] = ()
+    arm_durations_min: tuple[int, ...] = (1, 5, 15, 30)
+
+    def hotkey(self, name: str, default: str = "") -> str:
+        for key, value in self.hotkeys:
+            if key == name:
+                return value
+        return default
+
+
+@dataclass(frozen=True)
+class ScheduleOptions:
+    enabled: bool = False
+    days: tuple[str, ...] = ()
+    windows: tuple[str, ...] = ()
+    timezone: str = "local"
+
+
+@dataclass(frozen=True)
 class TargetConfig:
     name: str
     window_handle: int
@@ -67,7 +125,16 @@ class TargetConfig:
 
 @dataclass(frozen=True)
 class AppConfig:
+    """Config global v2. `targets`/`legacy` sobrevivem apenas para o YAML v1."""
+
+    version: int = 2
+    profile: str = "default"
+    profiles: dict[str, ProfileOptions] = field(default_factory=dict)
+    evidence: EvidenceOptions = field(default_factory=EvidenceOptions)
+    ui: UiOptions = field(default_factory=UiOptions)
+    schedule: ScheduleOptions = field(default_factory=ScheduleOptions)
     targets: tuple[TargetConfig, ...] = ()
+    legacy: bool = False
 
     def get_target(self, name: str) -> TargetConfig | None:
         for target in self.targets:
@@ -75,5 +142,13 @@ class AppConfig:
                 return target
         return None
 
+    def get_profile(self, name: str | None = None) -> ProfileOptions | None:
+        return self.profiles.get(name or self.profile)
 
-VALID_MODES = ("light", "default", "advanced")
+    def resolve(self, name: str | None = None) -> ProfileOptions:
+        """Perfil ativo/explicito; `KeyError` claro se nao existir."""
+        profile_name = name or self.profile
+        profile = self.profiles.get(profile_name)
+        if profile is None:
+            raise KeyError(f"profile inexistente: {profile_name!r}")
+        return profile

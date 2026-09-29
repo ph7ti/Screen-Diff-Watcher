@@ -12,16 +12,20 @@ dele.
 from __future__ import annotations
 
 import ctypes
+import json
 import os
 import sys
+import tempfile
 from ctypes import wintypes
 from pathlib import Path
+from typing import Any
 
 APP_DIR_NAME = "screen_watch"
 ENV_HOME = "SCREEN_WATCH_HOME"
 CONFIG_FILENAME = "config.yaml"
 SELECTIONS_DIRNAME = "selections"
 LOGS_DIRNAME = "logs"
+STATE_FILENAME = "state.json"
 
 _ERROR_INSUFFICIENT_BUFFER = 122
 
@@ -88,6 +92,46 @@ def selections_dir() -> Path:
 
 def logs_dir() -> Path:
     return app_home() / LOGS_DIRNAME
+
+
+def state_path() -> Path:
+    """Estado leve de runtime persistido entre sessoes (doc, secao 12.4)."""
+    return app_home() / STATE_FILENAME
+
+
+def load_state() -> dict[str, Any]:
+    """Le `state.json`; ausente ou ilegivel devolve `{}` (estado e best-effort)."""
+    path = state_path()
+    if not path.exists():
+        return {}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def save_state(state: dict[str, Any]) -> None:
+    """Grava `state.json` de forma atomica (sem backup; estado e descartavel)."""
+    path = state_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(dir=str(path.parent), prefix=path.name + ".", suffix=".tmp")
+    tmp = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(state, handle, indent=2, ensure_ascii=False)
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
+def update_state(**fields: Any) -> dict[str, Any]:
+    """Mescla `fields` no estado atual e regrava (best-effort)."""
+    state = load_state()
+    state.update(fields)
+    save_state(state)
+    return state
 
 
 def ensure_dirs() -> Path:

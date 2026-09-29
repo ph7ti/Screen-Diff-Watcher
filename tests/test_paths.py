@@ -56,3 +56,30 @@ def test_packaged_ignored_when_package_dir_missing(monkeypatch, tmp_path):
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     # "Packages/FAM" nao existe -> cai no caminho padrao do SO
     assert "Packages" not in str(paths.app_home())
+
+
+def test_state_path_under_home(monkeypatch, tmp_path):
+    monkeypatch.setenv(paths.ENV_HOME, str(tmp_path))
+    assert paths.state_path() == tmp_path / "state.json"
+
+
+def test_load_state_missing_is_empty(monkeypatch, tmp_path):
+    monkeypatch.setenv(paths.ENV_HOME, str(tmp_path))
+    assert paths.load_state() == {}
+
+
+def test_save_and_update_state(monkeypatch, tmp_path):
+    monkeypatch.setenv(paths.ENV_HOME, str(tmp_path))
+    paths.update_state(last_selection="a.json")
+    assert paths.load_state()["last_selection"] == "a.json"
+
+    paths.update_state(profile="trabalho")
+    assert paths.load_state() == {"last_selection": "a.json", "profile": "trabalho"}
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_load_state_ignores_corrupt_file(monkeypatch, tmp_path):
+    monkeypatch.setenv(paths.ENV_HOME, str(tmp_path))
+    paths.state_path().write_text("{not json", encoding="utf-8")
+    assert paths.load_state() == {}
+

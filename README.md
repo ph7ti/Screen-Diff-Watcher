@@ -22,15 +22,17 @@ Implementado:
   e `AlertChain` com cooldown; `dispatch` devolve `DispatchOutcome`
   (`FIRED`/`SUPPRESSED_COOLDOWN`/`BELOW_MIN`/`NONE_ENABLED`/`FAILED`) para o re-arm.
 - Agendamento (`scheduler/loop.py`): `threading.Thread` + `Event.wait`.
-- Config (`config/`): schema + loader YAML com defaults `advanced`, `rearm: true`,
-  `lang="por+eng"`, `upscale=2`, validação de tipos com mensagem clara e gravação atômica
-  com backup. Persistência (`persistence/`): JSON de seleção.
-- CLI (`__main__.py`): `init-config`, `validate-config`, `list-windows`, `show-paths`,
-  `probe-dpi`, `select-manual` (coordenadas), `select` (overlay), `test-alert`, `compare-modes`
-  (calibração), `run`, `gui`.
+- Config (`config/`): schema v2 global (perfis `profiles`, `ui`, `schedule`, `evidence`) +
+  loader YAML com defaults `advanced`, `rearm: true`, `lang="por+eng"`, `upscale=2`, validação de
+  tipos com mensagem clara e gravação atômica com backup. O YAML v1 (`targets:`) ainda carrega por
+  uma versão, com aviso, e é convertido por `migrate-config`. Persistência (`persistence/`): JSON de
+  seleção v2 (com `overrides`) e `state.json` (`platform/paths.py`) para a última seleção/perfil.
+- CLI (`__main__.py`): `init-config`, `validate-config` (`--selections`), `list-selections`,
+  `migrate-config` (`--dry-run`), `list-windows`, `show-paths`, `probe-dpi`, `select-manual`
+  (coordenadas), `select` (overlay), `test-alert`, `compare-modes` (calibração), `run`, `gui`.
 - Overlay de seleção (`gui/`): `overlay_geometry.py` (conversões lógico↔físico, sem Qt) e
   `overlay.py` (PyQt6, uma janela por monitor).
-- GUI mínima + tray (`gui/`): `main_window.py` (targets/seleções, iniciar/parar, status/último
+- GUI mínima + tray (`gui/`): `main_window.py` (lista de seleções, iniciar/parar, status/último
   resultado, novo target via overlay, abrir YAML) e `tray.py` (mostrar/ocultar, iniciar/parar,
   sair); eventos via fila + `QTimer` (`gui/controller.py`).
 - Escada: `scripts/step1_absolute_roi.py`, `scripts/step2_anchored_roi.py`,
@@ -43,7 +45,7 @@ Ainda não implementado (na ordem da escada, §13):
 
 ## Config, seleção e logs (app-data)
 
-Tudo fica em `%APPDATA%\screen_watch` (`config.yaml`, `selections/`, `logs/`). Para
+Tudo fica em `%APPDATA%\screen_watch` (`config.yaml`, `selections/`, `state.json`, `logs/`). Para
 apontar para outro diretório, defina `SCREEN_WATCH_HOME`.
 
 **Python da Microsoft Store (MSIX):** o Windows redireciona `%APPDATA%` para dentro do pacote, e
@@ -53,6 +55,54 @@ o arquivo fica invisível para o Explorer/editor. Nesse caso o app passa a usar 
 
 O app regrava o YAML sem preservar comentários; a escrita é atômica (temp + `os.replace`)
 e deixa um backup `config.yaml.bak`.
+
+## Config global v2 (perfis, overrides e migração)
+
+O `config.yaml` v2 é **global**: define um perfil ativo (`profile`), um ou mais `profiles` nomeados
+(cada um com `defaults` + `alerts`), e as seções `ui`, `schedule` e `evidence`.
+
+```yaml
+version: 2
+profile: default
+profiles:
+  default:
+    defaults:
+      mode: advanced
+      poll_interval_s: 2.0
+      rearm: true
+      compare_options: { light: { threshold: 12.0 }, default: { hash_size: 8, threshold: 6 },
+                         advanced: { similarity_threshold: 0.92, psm: 6, lang: "por+eng",
+                                     upscale: 2, tesseract_cmd: null } }
+    alerts:
+      - { type: sound, enabled: true, severity_min: 1, cooldown_s: 30, file: "alert.wav" }
+  trabalho:
+    defaults: { mode: default, poll_interval_s: 1.0 }
+ui:
+  hotkeys: { arm: "<ctrl>+<alt>+a", disarm: "<ctrl>+<alt>+d", toggle: "<ctrl>+<alt>+space",
+             rearm: "<ctrl>+<alt>+r", abort: "<esc>" }
+  arm_durations_min: [1, 5, 15, 30]
+schedule: { enabled: false, days: [mon, tue, wed, thu, fri], windows: ["08:00-12:00"], timezone: local }
+evidence: { enabled: false, dir: null, keep_per_target: 50, max_total_mb: 200 }
+```
+
+Regras: segredos nunca no YAML (mantém `bot_token_env`); `profile` inexistente é erro de validação;
+`version` ausente com `targets:` é tratado como v1 legado (com aviso); `version` > 2 é erro.
+
+Cada **seleção JSON** pode trazer `overrides` (`mode`, `masks`, `poll_interval_s`, `rearm` e,
+adiante, `alerts`/`actions`) que **substituem** os valores do perfil para aquele alvo (não somam).
+Seleções `version: 1` continuam carregando sem overrides.
+
+Migração de um YAML v1:
+
+```powershell
+python -m screen_watch migrate-config --dry-run   # imprime o plano
+python -m screen_watch migrate-config             # grava selections/*.json + config.yaml v2 (.bak)
+python -m screen_watch list-selections            # lista as seleções (marca a última usada)
+```
+
+`run`/`test-alert`/`compare-modes`/`gui` aceitam `--selection NOME` (resolvido em `selections/`) ou
+caminho e `--profile NOME`. Sem `--selection`, usa `state.json.last_selection`; se não houver,
+lista as disponíveis e sai com erro. `--target` ainda funciona como alias deprecado de `--selection`.
 
 ## Requisitos
 
@@ -90,26 +140,29 @@ python -m pip install -e ".[dev]"
 ## Uso
 
 ```powershell
-python -m screen_watch init-config            # cria o YAML em app-data
-python -m screen_watch validate-config
+python -m screen_watch init-config            # cria o YAML v2 em app-data
+python -m screen_watch validate-config --selections
 python -m screen_watch list-windows          # handle/titulo/rect
 python -m screen_watch probe-dpi             # monitores mss/Qt, escala e rect (matriz de DPI)
 python -m screen_watch select --handle 12345 --name painel      # overlay: arrastar na tela
 python -m screen_watch select-manual --handle 12345 --roi 120 340 400 80 --name painel
-python -m screen_watch test-alert --target painel_estoque   # alerta sintetico com o ROI atual
-python -m screen_watch run --target painel_estoque
+python -m screen_watch list-selections
+python -m screen_watch migrate-config --dry-run
+python -m screen_watch test-alert --selection painel        # alerta sintetico com o ROI atual
+python -m screen_watch run --selection painel               # nome em selections/
 python -m screen_watch run --selection "%APPDATA%\screen_watch\selections\painel.json"
-python -m screen_watch compare-modes --target painel_estoque --delay 5   # calibracao (Etapa D)
+python -m screen_watch run --profile trabalho --selection painel
+python -m screen_watch compare-modes --selection painel --delay 5   # calibracao (Etapa D)
 python -m screen_watch show-paths
-python -m screen_watch gui                                                # GUI minima + tray
+python -m screen_watch gui --profile default                # GUI minima + tray
 ```
 
 O `select` abre o overlay (uma janela por monitor): arraste com o botão esquerdo; botão direito
 cancela. A seleção é gravada como JSON em app-data. Alternativa por coordenadas: `select-manual`.
 
-O `run --selection` monta o target a partir do JSON. Se houver um target com o mesmo nome no YAML,
-herda alertas/opções dele; senão usa som + popup + log (Telegram exige `chat_id`, então não entra
-no default).
+O `run --selection` monta o target a partir do JSON de seleção + perfil do YAML. Os `overrides` da
+seleção substituem os valores do perfil; sem YAML (ou com YAML v1), usa som + popup + log (Telegram
+exige `chat_id`, então não entra no default).
 
 ## Máscara de regiões voláteis
 
@@ -139,19 +192,17 @@ Se um alerta falhar (ex.: Telegram fora do ar), ele é re-tentado respeitando o 
 
 ## GUI e tray
 
-`python -m screen_watch gui` abre a janela mínima: lista de targets do YAML e de seleções
-(`app-data/selections/*.json`), `Iniciar`/`Parar` (um target por vez), status e último resultado,
-`Novo target (overlay)` (escolhe a janela e abre o overlay) e `Abrir YAML`. Duplo clique na lista
-inicia/para. O tray oferece mostrar/ocultar, iniciar/parar e sair.
+`python -m screen_watch gui` abre a janela mínima: lista **apenas as seleções**
+(`app-data/selections/*.json`), `Iniciar`/`Parar` (uma seleção por vez), status e último resultado,
+`Novo target (overlay)` (escolhe a janela e abre o overlay), `Remover` e `Abrir YAML` (config
+global). Duplo clique na lista inicia/para. O tray oferece mostrar/ocultar, iniciar/parar e sair.
 
 Cada item da lista mostra o **nome do aplicativo**, a **região monitorada** e o **modo** — por
-exemplo `Seleção WhatsApp — Região 120,340 400x80 — advanced` ou
-`[YAML] painel — ERP — Região 120,340 400x80 — advanced`. Há um **seletor de modo**
-(`light`/`default`/`advanced`) que vale para a próxima execução; em seleções, o modo escolhido é
-gravado no JSON (targets do YAML não são regravados).
+exemplo `Seleção WhatsApp — Região 120,340 400x80 — advanced`. Há um **seletor de modo**
+(`light`/`default`/`advanced`) que vale para a próxima execução e é gravado no JSON da seleção.
 
-O botão **Remover** apaga um ou mais itens selecionados (seleção múltipla com Ctrl/Shift): targets
-do YAML são retirados e o arquivo é regravado (atômico, com backup); seleções têm o JSON apagado.
+O botão **Remover** apaga um ou mais JSONs de seleção selecionados (seleção múltipla com
+Ctrl/Shift).
 
 No `Novo target (overlay)`, a lista de janelas usa o **nome do aplicativo no estilo Gerenciador de
 Tarefas** (`FileDescription`/`ProductName` do executável, com fallback para o nome do `.exe`) e

@@ -55,7 +55,99 @@ def _cmd_validate_config(args: argparse.Namespace) -> int:
     except ConfigError as exc:
         print(f"config invalida: {exc}")
         return 1
-    print(f"ok: {len(config.targets)} target(s)")
+    if config.legacy:
+        print("aviso: YAML v1 (targets); rode 'migrate-config' para o formato v2")
+        print(f"ok: {len(config.targets)} target(s) legado(s)")
+    else:
+        print(f"ok: {len(config.profiles)} perfil(is); ativo={config.profile!r}")
+
+    if getattr(args, "selections", False):
+        return _validate_selections()
+    return 0
+
+
+def _validate_selections() -> int:
+    from screen_watch.config.loader import parse_overrides
+    from screen_watch.persistence.selection import load_selection
+    from screen_watch.platform.paths import selections_dir
+
+    paths = sorted(selections_dir().glob("*.json"))
+    failures = 0
+    for path in paths:
+        try:
+            selection = load_selection(path)
+            parse_overrides(selection.overrides)
+        except (OSError, ValueError) as exc:
+            print(f"selecao invalida {path.name}: {exc}")
+            failures += 1
+    print(f"ok: {len(paths) - failures}/{len(paths)} selecao(oes) validas")
+    return 1 if failures else 0
+
+
+def _cmd_list_selections(_args: argparse.Namespace) -> int:
+    from screen_watch.persistence.selection import load_selection
+    from screen_watch.platform.paths import load_state, selections_dir
+
+    last = str(load_state().get("last_selection") or "")
+    paths = sorted(selections_dir().glob("*.json"))
+    if not paths:
+        print("nenhuma selecao encontrada (use 'select' ou 'select-manual')")
+        return 0
+    for path in paths:
+        marker = "  (ultima)" if path.name == last else ""
+        try:
+            selection = load_selection(path)
+        except (OSError, ValueError) as exc:
+            print(f"{path.name}  ilegivel ({exc}){marker}")
+            continue
+        name = selection.app_name or selection.window_title_hint or path.stem
+        x, y, w, h = selection.roi_relative
+        print(f"{path.name}  {name} — {x},{y} {w}x{h} — {selection.mode}{marker}")
+    return 0
+
+
+def _cmd_migrate_config(args: argparse.Namespace) -> int:
+    from screen_watch.config.loader import (
+        ConfigError,
+        load_config_dict,
+        migrate_config_dict,
+        save_config,
+    )
+    from screen_watch.persistence.selection import dump_selection, from_target_config
+    from screen_watch.platform.paths import ensure_dirs, selections_dir
+
+    path = Path(args.path)
+    try:
+        new_dict, targets = migrate_config_dict(load_config_dict(path))
+    except ConfigError as exc:
+        print(f"migracao abortada: {exc}")
+        return 1
+
+    ensure_dirs()
+    conflicts = [
+        target.name
+        for target in targets
+        if (selections_dir() / f"{target.name}.json").exists()
+    ]
+    if conflicts:
+        print(
+            "migracao abortada: ja existem selecoes com estes nomes: "
+            + ", ".join(conflicts)
+            + " (remova ou renomeie antes)"
+        )
+        return 1
+
+    if args.dry_run:
+        print(f"[dry-run] {len(targets)} selecao(oes) seriam gravadas em {selections_dir()}:")
+        for target in targets:
+            print(f"  - {target.name}.json")
+        print(f"[dry-run] config v2 seria gravada em {path} (backup .bak)")
+        return 0
+
+    for target in targets:
+        dump_selection(selections_dir() / f"{target.name}.json", from_target_config(target))
+    save_config(path, new_dict)
+    print(f"migrado: {len(targets)} selecao(oes) + {path} v2 (backup .bak)")
     return 0
 
 
@@ -67,6 +159,7 @@ def _cmd_show_paths(_args: argparse.Namespace) -> int:
     print(f"app_home: {paths.app_home()}")
     print(f"config: {paths.config_path()}")
     print(f"selections: {paths.selections_dir()}")
+    print(f"state: {paths.state_path()}")
     print(f"logs: {paths.logs_dir()}")
     return 0
 
@@ -89,44 +182,73 @@ def _cmd_list_windows(_args: argparse.Namespace) -> int:
     return 0
 
 
-def _default_cli_alerts():
-    """Alertas usados pelo `run --selection` quando nao ha target no YAML."""
-    from screen_watch.app import default_alerts
+def _resolve_selection_path(value: str | None) -> Path:
+    """Nome (em `selections/`) ou caminho; sem valor usa `state.json.last_selection`."""
+    from screen_watch.config.loader import ConfigError
+    from screen_watch.platform.paths import load_state, selections_dir
 
-    return default_alerts()
+    if value:
+        candidate = Path(value)
+        if candidate.exists():
+            return candidate
+        if candidate.suffix.lower() == ".json":
+            raise ConfigError(f"selecao nao encontrada: {candidate}")
+        named = selections_dir() / f"{value}.json"
+        if named.exists():
+            return named
+        raise ConfigError(f"selecao nao encontrada: {named}")
+
+    last = load_state().get("last_selection")
+    if last:
+        candidate = selections_dir() / str(last)
+        if candidate.exists():
+            return candidate
+    available = sorted(path.stem for path in selections_dir().glob("*.json"))
+    if available:
+        raise ConfigError(
+            "nenhuma selecao informada e sem 'last_selection'; disponiveis: "
+            + ", ".join(available)
+        )
+    raise ConfigError("nenhuma selecao disponivel; crie uma com 'select' ou 'select-manual'")
+
+
+def _load_profile(config_path, profile_name: str | None, selection_name: str):
+    from screen_watch.app import profile_from_config
+    from screen_watch.config.loader import ConfigError, load_config
+
+    try:
+        config = load_config(config_path)
+    except ConfigError:
+        config = None
+    return profile_from_config(config, profile_name, selection_name)
 
 
 def _resolve_run_target(args: argparse.Namespace):
-    """Target vindo do YAML ou de um selection JSON (`--selection`)."""
-    from pathlib import Path
+    """Target resolvido a partir de uma selecao + perfil (doc, secao 12)."""
+    from screen_watch.config.loader import ConfigError
+    from screen_watch.persistence.selection import build_target, load_selection
 
-    from screen_watch.config.loader import ConfigError, load_config
+    deprecated = getattr(args, "target", None)
+    if deprecated and not getattr(args, "selection", None):
+        print("aviso: --target esta deprecado; use --selection NOME")
 
-    if args.selection:
-        from screen_watch.persistence.selection import load_selection, to_target_config
+    path = _resolve_selection_path(getattr(args, "selection", None) or deprecated)
+    try:
+        selection = load_selection(path)
+    except (OSError, ValueError) as exc:
+        raise ConfigError(f"selecao invalida ({path}): {exc}") from exc
+    name = path.stem
+    profile = _load_profile(args.config, getattr(args, "profile", None), name)
+    return build_target(selection, profile, name=name)
 
-        selection = load_selection(args.selection)
-        name = args.target or Path(args.selection).stem
-        try:
-            config = load_config(args.config)
-        except ConfigError:
-            config = None
-        existing = config.get_target(name) if config is not None else None
-        if existing is not None:
-            return to_target_config(
-                selection,
-                name=name,
-                alerts=existing.alerts,
-                poll_interval_s=existing.poll_interval_s,
-                rearm=existing.rearm,
-                compare_options=existing.compare_options,
-            )
-        return to_target_config(selection, name=name, alerts=_default_cli_alerts())
 
-    config = load_config(args.config)
-    if args.target:
-        return config.get_target(args.target)
-    return config.targets[0] if config.targets else None
+def _remember_state(selection_name: str, profile_name: str | None = None) -> None:
+    from screen_watch.platform.paths import update_state
+
+    fields: dict[str, object] = {"last_selection": f"{selection_name}.json"}
+    if profile_name:
+        fields["profile"] = profile_name
+    update_state(**fields)
 
 
 def _cmd_run(args: argparse.Namespace) -> int:
@@ -144,12 +266,10 @@ def _cmd_run(args: argparse.Namespace) -> int:
     try:
         target = _resolve_run_target(args)
     except ConfigError as exc:
-        print(f"config invalida: {exc}")
-        return 1
-    if target is None:
-        print("nenhum target encontrado")
+        print(f"erro: {exc}")
         return 1
 
+    _remember_state(target.name, getattr(args, "profile", None))
     info = find_window_by_handle(target.window_handle)
     _check_monitor_scales(info.rect if info is not None else None)
 
@@ -165,12 +285,6 @@ def _cmd_run(args: argparse.Namespace) -> int:
     finally:
         loop.stop(timeout=5.0)
     return 0
-
-
-def _select_target(config, name: str | None):
-    if name:
-        return config.get_target(name)
-    return config.targets[0] if config.targets else None
 
 
 def _capture_target_roi(target):
@@ -208,19 +322,15 @@ def _cmd_test_alert(args: argparse.Namespace) -> int:
     from screen_watch.app import build_alert_chain
     from screen_watch.capture.frame import Frame
     from screen_watch.compare.protocol import ComparisonResult
-    from screen_watch.config.loader import ConfigError, load_config
+    from screen_watch.config.loader import ConfigError
 
     try:
-        config = load_config(args.config)
+        target = _resolve_run_target(args)
     except ConfigError as exc:
-        print(f"config invalida: {exc}")
-        return 1
-    target = _select_target(config, args.target)
-    if target is None:
-        print("nenhum target encontrado na config")
+        print(f"erro: {exc}")
         return 1
     if not target.alerts:
-        print(f"target {target.name!r} nao tem alertas configurados")
+        print(f"selecao {target.name!r} nao tem alertas configurados")
         return 1
 
     try:
@@ -270,10 +380,7 @@ def _cmd_compare_modes(args: argparse.Namespace) -> int:
     try:
         target = _resolve_run_target(args)
     except ConfigError as exc:
-        print(f"config invalida: {exc}")
-        return 1
-    if target is None:
-        print("nenhum target encontrado")
+        print(f"erro: {exc}")
         return 1
 
     modes = [m.strip() for m in str(args.modes).split(",") if m.strip()]
@@ -503,7 +610,7 @@ def _cmd_gui(args: argparse.Namespace) -> int:
 
     from screen_watch.gui.main_window import run_gui
 
-    return run_gui(args.config)
+    return run_gui(args.config, profile=getattr(args, "profile", None))
 
 
 def _configure_std_streams() -> None:
@@ -533,40 +640,56 @@ def build_parser() -> argparse.ArgumentParser:
     p_init.add_argument("--force", action="store_true")
     p_init.set_defaults(func=_cmd_init_config)
 
-    p_val = sub.add_parser("validate-config", help="valida o YAML de config")
+    p_val = sub.add_parser("validate-config", help="valida o YAML de config e (opcional) selecoes")
     p_val.add_argument("--config", default=str(config_path()))
+    p_val.add_argument(
+        "--selections", action="store_true", help="valida tambem os overrides das selecoes"
+    )
     p_val.set_defaults(func=_cmd_validate_config)
+
+    p_sel = sub.add_parser("list-selections", help="lista as selecoes em app-data")
+    p_sel.set_defaults(func=_cmd_list_selections)
+
+    p_mig = sub.add_parser("migrate-config", help="converte YAML v1 (targets) em v2 + selecoes")
+    p_mig.add_argument("--path", default=str(config_path()))
+    p_mig.add_argument("--dry-run", action="store_true", help="so imprime o plano")
+    p_mig.set_defaults(func=_cmd_migrate_config)
 
     p_list = sub.add_parser("list-windows", help="lista janelas (handle, titulo, rect)")
     p_list.set_defaults(func=_cmd_list_windows)
 
-    p_paths = sub.add_parser("show-paths", help="mostra onde ficam config/selecoes/logs")
+    p_paths = sub.add_parser("show-paths", help="mostra onde ficam config/selecoes/state/logs")
     p_paths.set_defaults(func=_cmd_show_paths)
 
     p_gui = sub.add_parser("gui", help="abre a GUI minima com tray")
     p_gui.add_argument("--config", default=str(config_path()))
+    p_gui.add_argument("--profile", default=None, help="perfil ativo (default: o do YAML)")
     p_gui.set_defaults(func=_cmd_gui)
 
     p_probe = sub.add_parser("probe-dpi", help="imprime monitores mss/Qt e rect de janela (P1)")
     p_probe.set_defaults(func=_cmd_probe_dpi)
 
-    p_run = sub.add_parser("run", help="inicia o monitoramento")
+    p_run = sub.add_parser("run", help="inicia o monitoramento da selecao")
     p_run.add_argument("--config", default=str(config_path()))
-    p_run.add_argument("--target", default=None)
-    p_run.add_argument("--selection", default=None, help="selection JSON em vez do YAML")
+    p_run.add_argument("--profile", default=None, help="perfil ativo (default: o do YAML)")
+    p_run.add_argument("--selection", default=None, help="selecao JSON (nome ou caminho)")
+    p_run.add_argument("--target", default=None, help="deprecado; alias de --selection")
     p_run.set_defaults(func=_cmd_run)
 
     p_test = sub.add_parser("test-alert", help="dispara um alerta sintetico com o ROI atual")
     p_test.add_argument("--config", default=str(config_path()))
-    p_test.add_argument("--target", default=None)
+    p_test.add_argument("--profile", default=None, help="perfil ativo (default: o do YAML)")
+    p_test.add_argument("--selection", default=None, help="selecao JSON (nome ou caminho)")
+    p_test.add_argument("--target", default=None, help="deprecado; alias de --selection")
     p_test.set_defaults(func=_cmd_test_alert)
 
     p_cmp = sub.add_parser(
         "compare-modes", help="mede score/severidade/tempo por modo no ROI atual (calibracao)"
     )
     p_cmp.add_argument("--config", default=str(config_path()))
-    p_cmp.add_argument("--target", default=None)
-    p_cmp.add_argument("--selection", default=None, help="selection JSON em vez do YAML")
+    p_cmp.add_argument("--profile", default=None, help="perfil ativo (default: o do YAML)")
+    p_cmp.add_argument("--selection", default=None, help="selecao JSON (nome ou caminho)")
+    p_cmp.add_argument("--target", default=None, help="deprecado; alias de --selection")
     p_cmp.add_argument(
         "--delay", type=float, default=5.0, help="segundos entre baseline e amostra"
     )
