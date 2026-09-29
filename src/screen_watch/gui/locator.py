@@ -5,9 +5,11 @@ absoluto). `Enter`/clique esquerdo confirma; `Esc`/clique direito cancela. Devol
 o ponto global **logico** (a mesma base do `Frame`); o chamador converte pelo `ref`
 via `overlay_geometry.resolve_ref_point`.
 
-O overlay precisa de foco para capturar o Enter — ao contrario do countdown, aqui
-nao ha janela-alvo a preservar. Qt e importado dentro da funcao (CI sem display);
-sem Qt devolve `None` (o chamador segue digitando os valores).
+O localizador e aberto **de dentro do dialogo do editor**, que esta em `exec()` (modal
+de aplicacao) — por isso a janela precisa ser filha do dialogo (imune a modalidade) e
+capturar teclado/mouse explicitamente; sem isso, Enter/Esc/cliques nao chegam ao
+overlay (o pop-up aparece, mas nao responde). Qt e importado dentro da funcao (CI sem
+display); sem Qt devolve `None` (o chamador segue digitando os valores).
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ def run_locator(
     roi_rect: Rect | None = None,
     window_rect: Rect | None = None,
     screen=None,
+    parent=None,
     status: Callable[[str], None] | None = None,
 ) -> tuple[int, int] | None:
     """Devolve o ponto global (logico) confirmado, ou `None` se cancelado/sem Qt."""
@@ -42,7 +45,9 @@ def run_locator(
 
     class _Locator(QWidget):
         def __init__(self) -> None:
-            super().__init__()
+            # Filho do dialogo modal: janelas filhas recebem entrada mesmo com o
+            # dialogo em exec() (application-modal).
+            super().__init__(parent)
             self.setWindowFlags(
                 Qt.WindowType.FramelessWindowHint
                 | Qt.WindowType.WindowStaysOnTopHint
@@ -121,6 +126,9 @@ def run_locator(
     widget.raise_()
     widget.activateWindow()
     widget.setFocus()
+    # Grabs explicitas: garantem teclado/mouse no overlay mesmo sem foco de janela.
+    widget.grabKeyboard()
+    widget.grabMouse()
     timer = QTimer()
     timer.setInterval(30)
     timer.timeout.connect(widget._paint)
@@ -128,7 +136,11 @@ def run_locator(
     widget._paint()
     if status is not None:
         status("localize o ponto e pressione Enter (Esc cancela)")
-    loop.exec()
-    timer.stop()
-    widget.close()
+    try:
+        loop.exec()
+    finally:
+        timer.stop()
+        widget.releaseMouse()
+        widget.releaseKeyboard()
+        widget.close()
     return result["point"]

@@ -215,7 +215,12 @@ class ActionEditorDialog(QDialog):
         from screen_watch.gui.locator import run_locator
 
         ref = self.ref_combo.currentText()
-        point = run_locator(ref, roi_rect=self._roi_rect, window_rect=self._window_rect)
+        point = run_locator(
+            ref,
+            roi_rect=self._roi_rect,
+            window_rect=self._window_rect,
+            parent=self,
+        )
         if point is None:
             return
         effective_ref, (rel_x, rel_y) = resolve_ref_point(
