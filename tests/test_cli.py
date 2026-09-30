@@ -524,7 +524,7 @@ def test_run_starts_and_stops_loop(monkeypatch, tmp_path):
     assert cli._cmd_run(args) == 0
 
 
-def test_test_action_dry_run(monkeypatch, tmp_path, capsys):
+def test_test_action_rehearsal(monkeypatch, tmp_path, capsys):
     monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
     (tmp_path / "selections").mkdir()
     _write_selection(
@@ -553,7 +553,6 @@ def test_test_action_dry_run(monkeypatch, tmp_path, capsys):
         selection="demo",
         profile=None,
         armed=False,
-        dry_run=True,
         no_countdown=True,
     )
     assert cli._cmd_test_action(args) == 0
@@ -588,7 +587,6 @@ def test_test_action_armed_executes(monkeypatch, tmp_path, capsys):
         selection="demo",
         profile=None,
         armed=True,
-        dry_run=False,
         no_countdown=True,
     )
     assert cli._cmd_test_action(args) == 0
@@ -791,7 +789,6 @@ def test_test_action_armed_cancelled_countdown(monkeypatch, tmp_path, capsys):
         selection="demo",
         profile=None,
         armed=True,
-        dry_run=False,
         no_countdown=False,
     )
 

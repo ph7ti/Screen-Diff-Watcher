@@ -86,7 +86,7 @@ Durante a execução, cada gatilho imprime uma linha `[action] rehearsal|armed <
 |---|---|
 | `test-alert --selection S` | dispara um alerta **sintético** (severidade 3) com a ROI atual, para conferir som/popup/Telegram/log |
 | `test-evidence --selection S` | grava um par baseline+change de exemplo e imprime os caminhos |
-| `test-action --selection S [--armed] [--dry-run] [--actions ...] [--no-countdown]` | ensaia (default) ou executa as ações; `--armed` mostra a contagem de 3 s |
+| `test-action --selection S [--armed] [--actions ...] [--no-countdown]` | ensaia (default) ou executa as ações; `--armed` mostra a contagem de 3 s |
 | `list-actions --selection S` | lista as ações resolvidas e o subconjunto salvo, sem iniciar sessão |
 | `record-actions --selection S [--name NOME] [--out ARQUIVO] [--no-countdown]` | grava cliques/teclas e gera um snippet de `actions:` (extra `input`; `F10` encerra) |
 | `compare-modes --selection S [--delay 5] [--repeat 1] [--modes light,default,advanced]` | mede `changed`/`score`/`threshold`/`severity`/tempo de cada modo (calibração) |

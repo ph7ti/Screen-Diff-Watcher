@@ -115,7 +115,6 @@ def build_parser() -> argparse.ArgumentParser:
         parents=[selection_args],
     )
     p_act.add_argument("--armed", action="store_true", help="actually execute (default: rehearsal)")
-    p_act.add_argument("--dry-run", action="store_true", help="only rehearse (default)")
     p_act.add_argument(
         "--actions",
         default=None,

@@ -87,7 +87,7 @@ During execution, each trigger prints a line `[action] rehearsal|armed <name> ->
 |---|---|
 | `test-alert --selection S` | fires a **synthetic** alert (severity 3) with the current ROI, to check sound/popup/Telegram/log |
 | `test-evidence --selection S` | writes an example baseline+change pair and prints the paths |
-| `test-action --selection S [--armed] [--dry-run] [--actions ...] [--no-countdown]` | rehearses (default) or runs the actions; `--armed` shows the 3 s countdown |
+| `test-action --selection S [--armed] [--actions ...] [--no-countdown]` | rehearses (default) or runs the actions; `--armed` shows the 3 s countdown |
 | `list-actions --selection S` | lists the resolved actions and the saved subset, without starting a session |
 | `record-actions --selection S [--name NAME] [--out FILE] [--no-countdown]` | records clicks/keys and generates an `actions:` snippet (`input` extra; `F10` ends it) |
 | `compare-modes --selection S [--delay 5] [--repeat 1] [--modes light,default,advanced]` | measures `changed`/`score`/`threshold`/`severity`/time of each mode (calibration) |
