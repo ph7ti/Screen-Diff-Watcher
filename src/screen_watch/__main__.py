@@ -7,7 +7,9 @@ captura, janela Qt ou chamada a `pywinctl` (doc, secao 5.1).
 from __future__ import annotations
 
 import argparse
+import json
 import logging
+import subprocess
 import sys
 from pathlib import Path
 from typing import NamedTuple
@@ -791,6 +793,128 @@ def _cmd_probe_dpi(_args: argparse.Namespace) -> int:
     return 0
 
 
+def _tesseract_info() -> dict[str, object]:
+    """Caminho do Tesseract + idiomas instalados (`--list-langs`). Nunca levanta."""
+    from screen_watch.platform.tesseract import resolve_tesseract_cmd
+
+    cmd = resolve_tesseract_cmd()
+    if cmd is None:
+        return {"path": None, "languages": [], "error": "nao encontrado"}
+    info: dict[str, object] = {"path": cmd, "languages": [], "error": None}
+    try:
+        proc = subprocess.run(
+            [cmd, "--list-langs"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        info["error"] = str(exc)
+        return info
+    lines = (proc.stdout or "").splitlines()
+    info["languages"] = [
+        line.strip() for line in lines if line.strip() and " " not in line.strip() and ":" not in line
+    ]
+    if proc.returncode != 0:
+        info["error"] = (proc.stderr or "").strip() or f"exit {proc.returncode}"
+    return info
+
+
+def _monitors_info() -> list[dict[str, object]] | None:
+    from screen_watch.platform.display import list_monitor_scales
+
+    try:
+        scales = list_monitor_scales()
+    except Exception:
+        return None
+    if scales is None:
+        return None
+    return [
+        {"name": scale.name, "scale_percent": scale.scale_percent, "primary": scale.is_primary}
+        for scale in scales
+    ]
+
+
+def collect_features() -> dict[str, object]:
+    """Diagnostico do ambiente (versao, app-data, OCR, entrada, som, tray, telas)."""
+    from screen_watch import __version__
+    from screen_watch.platform import audio, paths
+    from screen_watch.platform.input import available as input_available
+
+    try:
+        import pystray  # noqa: F401, PLC0415
+
+        tray_available = True
+    except Exception:
+        tray_available = False
+
+    config_file = paths.config_path()
+    return {
+        "version": __version__,
+        "frozen": bool(getattr(sys, "frozen", False)),
+        "executable": sys.executable,
+        "python": sys.version.split()[0],
+        "app_home": str(paths.app_home()),
+        "config": str(config_file),
+        "config_exists": config_file.exists(),
+        "selections": len(list(paths.selections_dir().glob("*.json"))),
+        "tesseract": _tesseract_info(),
+        "input": {"available": input_available()},
+        "sound": audio.backend_info(),
+        "tray": {"pystray": tray_available},
+        "monitors": _monitors_info(),
+    }
+
+
+def _print_features(info: dict[str, object]) -> None:
+    origin = "bundle" if info["frozen"] else "source"
+    print(f"screen-watch {info['version']} ({origin})")
+    print(f"executavel: {info['executable']} (Python {info['python']})")
+    print(f"app_home: {info['app_home']}")
+    config_state = "existe" if info["config_exists"] else "ausente"
+    print(f"config: {info['config']} ({config_state})")
+    print(f"selecoes: {info['selections']}")
+
+    tesseract = info["tesseract"]
+    if tesseract["path"]:
+        langs = ", ".join(tesseract["languages"]) or "nenhum"
+        print(f"tesseract: {tesseract['path']} — idiomas: {langs}")
+    else:
+        print(f"tesseract: indisponivel ({tesseract['error']})")
+
+    entrada = "disponivel" if info["input"]["available"] else "indisponivel (extra 'input')"
+    print(f"entrada (pynput): {entrada}")
+
+    sound = info["sound"]
+    if sound["available"]:
+        print(f"som: {sound['backend']}")
+    else:
+        players = ", ".join(sound.get("players", [])) or "nenhum"
+        print(f"som: indisponivel (players externos: {players})")
+
+    tray = "disponivel" if info["tray"]["pystray"] else "indisponivel"
+    print(f"tray (pystray): {tray}")
+
+    monitors = info["monitors"]
+    if monitors is None:
+        print("monitores: indisponivel (sem display ou PyQt6)")
+    else:
+        print(f"monitores: {len(monitors)}")
+        for monitor in monitors:
+            primary = " (primario)" if monitor["primary"] else ""
+            print(f"  - {monitor['name']} escala {monitor['scale_percent']}%{primary}")
+
+
+def _cmd_features(args: argparse.Namespace) -> int:
+    info = collect_features()
+    if getattr(args, "json", False):
+        print(json.dumps(info, indent=2, ensure_ascii=False))
+    else:
+        _print_features(info)
+    return 0
+
+
 def _cmd_gui(args: argparse.Namespace) -> int:
     if is_wayland():
         print("Wayland detectado: a GUI Qt nao e suportada neste prototipo.")
@@ -908,6 +1032,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_probe = sub.add_parser("probe-dpi", help="imprime monitores mss/Qt e rect de janela (P1)")
     p_probe.set_defaults(func=_cmd_probe_dpi)
+
+    p_feat = sub.add_parser(
+        "features", help="diagnostico do ambiente (versao, OCR, entrada, som, tray, monitores)"
+    )
+    p_feat.add_argument("--json", action="store_true", help="saida JSON (para CI/automacao)")
+    p_feat.set_defaults(func=_cmd_features)
 
     p_run = sub.add_parser("run", help="inicia o monitoramento da selecao")
     p_run.add_argument("--config", default=str(config_path()))

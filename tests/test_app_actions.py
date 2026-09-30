@@ -60,7 +60,8 @@ def test_profile_from_config_resolves_requested_profile():
     assert profile_from_config(config, "trabalho") is config.profiles["trabalho"]
 
 
-def test_evidence_recorder_helper(tmp_path):
+def test_evidence_recorder_helper(monkeypatch, tmp_path):
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path / "home"))
     assert evidence_recorder(None) is None
     config = AppConfig(
         profiles={"default": ProfileOptions()},
@@ -69,6 +70,25 @@ def test_evidence_recorder_helper(tmp_path):
     recorder = evidence_recorder(config)
     assert recorder is not None
     assert recorder.base_dir == tmp_path
+
+
+def test_evidence_recorder_honors_state_toggle(monkeypatch, tmp_path):
+    from screen_watch.evidence.recorder import default_captures_dir
+    from screen_watch.platform.paths import update_state
+
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path / "home"))
+
+    # Config v1/legado: `evidence.enabled` fica desligado por default.
+    config = AppConfig(version=1, legacy=True)
+    assert evidence_recorder(config) is None
+
+    update_state(evidence_enabled=True)
+    recorder = evidence_recorder(config)
+    assert recorder is not None
+    assert recorder.base_dir == default_captures_dir()
+
+    update_state(evidence_enabled=False)
+    assert evidence_recorder(config) is None
 
 
 def test_monitor_session_action_rebaseline_plumbing(make_frame, solid):

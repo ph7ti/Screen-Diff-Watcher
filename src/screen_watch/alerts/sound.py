@@ -1,15 +1,15 @@
 """Alerta sonoro local (doc, secao 11.2).
 
-Tenta `simpleaudio` (opcional, sem wheel confiavel no 3.13). Se ele faltar, cai
-para `winsound` no Windows; sem `alert.wav`, usa `MessageBeep()` — nenhum asset
-e obrigatorio.
+Tenta `simpleaudio` (extra opcional `sound`, sem wheel confiavel no 3.13). Sem
+ele, delega a `platform/audio.py`, que concentra a fronteira de plataforma
+(`winsound` no Windows; player externo no Linux/macOS). `alerts/` nao conhece
+`sys.platform` nem `winsound`.
 """
 
 from __future__ import annotations
 
 import logging
 import os
-import sys
 
 from screen_watch.capture.frame import Frame
 from screen_watch.compare.protocol import ComparisonResult
@@ -37,7 +37,9 @@ class SoundNotifier:
     def notify(self, result: ComparisonResult, frame: Frame) -> None:
         if self._play_simpleaudio():
             return
-        self._play_fallback()
+        from screen_watch.platform.audio import play_file  # noqa: PLC0415
+
+        play_file(self.file)
 
     def _play_simpleaudio(self) -> bool:
         if not os.path.exists(self.file):
@@ -52,18 +54,3 @@ class SoundNotifier:
         except Exception as exc:  # pragma: no cover - depende do ambiente
             log.warning("simpleaudio nao conseguiu tocar %s: %s", self.file, exc)
             return False
-
-    def _play_fallback(self) -> None:
-        if sys.platform != "win32":
-            log.warning(
-                "som indisponivel: simpleaudio ausente e sem fallback no SO %s (arquivo=%s)",
-                sys.platform,
-                self.file,
-            )
-            return
-        import winsound  # noqa: PLC0415
-
-        if os.path.exists(self.file):
-            winsound.PlaySound(self.file, winsound.SND_FILENAME | winsound.SND_ASYNC)
-        else:
-            winsound.MessageBeep()

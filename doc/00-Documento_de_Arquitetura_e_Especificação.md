@@ -852,6 +852,13 @@ exclusivamente por `platform/shell.py::open_path` (best-effort): `os.startfile` 
 `open`/`xdg-open` nos demais, devolvendo `False` com `log.warning` quando não há
 associação/utilitário — o botão "Abrir pasta de prints" da GUI e "Abrir YAML" usam esse helper.
 
+Ligar/desligar os prints do loop não depende do YAML: `app.effective_evidence_options(config)` parte
+do `evidence` do YAML (v2) e aplica o toggle de runtime `state.json["evidence_enabled"]` (checkbox
+"Gravar prints" na GUI), que tem precedência — funciona também com config v1. O caminho avulso
+(`run_actions` usado por `test-action --armed` e pelo botão "Executar ação (3s)") sempre grava print
+quando recebe um `recorder` (`force_enabled=True`), respeitando `per_step` e registrando os caminhos
+na auditoria.
+
 ### 12.5 Agendador, perfis na UI e gravador
 
 - **Perfis na UI**: seletor na janela + submenu no tray; a troca vale no próximo start e persiste em

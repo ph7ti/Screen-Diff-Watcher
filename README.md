@@ -18,9 +18,11 @@ Implementado:
 - Camada de comparação (`compare/`): `MeanColorStrategy`, `PerceptualHashStrategy`,
   `OCRTextDiffStrategy`, `ComparePipeline` com curto-circuito. Modo padrão: **`advanced`**
   (OCR puro); `default` = phash; `light` = cor média.
-- Camada de alertas (`alerts/`): som (com fallback `winsound`), popup, Telegram, log JSONL
-  e `AlertChain` com cooldown; `dispatch` devolve `DispatchOutcome`
-  (`FIRED`/`SUPPRESSED_COOLDOWN`/`BELOW_MIN`/`NONE_ENABLED`/`FAILED`) para o re-arm.
+- Camada de alertas (`alerts/`): som, popup, Telegram, log JSONL e `AlertChain` com cooldown;
+  `dispatch` devolve `DispatchOutcome`
+  (`FIRED`/`SUPPRESSED_COOLDOWN`/`BELOW_MIN`/`NONE_ENABLED`/`FAILED`) para o re-arm. O som passa
+  pela fronteira `platform/audio.py` (`winsound` no Windows; `paplay`/`aplay`/`ffplay` no Linux,
+  `afplay` no macOS) — `alerts/` nao conhece `sys.platform`.
 - Agendamento (`scheduler/loop.py`): `threading.Thread` + `Event.wait`. A janela de horário
   (`scheduler/schedule.py::is_open`, função pura) suspende **apenas as ações** fora do horário.
 - Config (`config/`): schema v2 global (perfis `profiles`, `ui`, `schedule`, `evidence`) +
@@ -36,7 +38,7 @@ Implementado:
 - CLI (`__main__.py`): `init-config`, `validate-config` (`--selections`), `list-selections`,
   `migrate-config` (`--dry-run`), `list-windows`, `show-paths`, `probe-dpi`, `select-manual`
   (coordenadas), `select` (overlay), `test-alert`, `test-evidence`, `test-action`, `record-actions`,
-  `compare-modes` (calibração), `run`, `gui`.
+  `compare-modes` (calibração), `run`, `gui`, `features` (diagnóstico do ambiente).
 - Overlay de seleção (`gui/`): `overlay_geometry.py` (conversões lógico↔físico, sem Qt) e
   `overlay.py` (PyQt6, uma janela por monitor).
 - GUI mínima + tray (`gui/`): `main_window.py` (lista de seleções, iniciar/parar, status/último
@@ -44,11 +46,16 @@ Implementado:
   sair); eventos via fila + `QTimer` (`gui/controller.py`).
 - Escada: `scripts/step1_absolute_roi.py`, `scripts/step2_anchored_roi.py`,
   `scripts/step3_selection_overlay.py`, `scripts/probe_dpi.py`.
+- Empacotamento (PyInstaller onedir) com dois executáveis (`screen-watch` console e
+  `screen-watch-gui` sem console) e instaladores nativos: **Inno Setup** (Windows) e **`.deb`**
+  (Linux). Build por `scripts/build_release.py`; release por tag em
+  `.github/workflows/release.yml`. Diagnóstico de ambiente pelo comando `features`.
 
-Ainda não implementado (na ordem da escada, §13):
+Ainda não implementado / validação manual pendente:
 
-- Empacotamento PyInstaller.
 - Validação manual da GUI/tray e do overlay em 100/125/150% (§6.3).
+- Ícone da janela/tray no bundle, `StartupWMClass` do `.desktop`, tamanho do pacote e o aviso do
+  SmartScreen (assinatura de código fora de escopo) — checar numa máquina/container limpos.
 
 ## Config, seleção e logs (app-data)
 
@@ -118,9 +125,11 @@ lista as disponíveis e sai com erro. `--target` ainda funciona como alias depre
   `eng`. Necessário apenas para o modo `advanced`. O executável é procurado no `PATH` e nos
   diretórios de instalação comuns do sistema; para forçar um caminho, use
   `compare_options.advanced.tesseract_cmd`. Sem o binário, o OCR falha com mensagem clara.
-- `simpleaudio` não tem wheel confiável para Python 3.13; instale com `pip install -e ".[sound]"`
-  se o seu ambiente suportar. Sem ele, o som cai para `winsound` no Windows (e
-  `MessageBeep()` quando não há `alert.wav`).
+- Som: `simpleaudio` não tem wheel confiável para Python 3.13; instale com
+  `pip install -e ".[sound]"` se o seu ambiente suportar (os instaladores **não** o incluem). Sem
+  ele, o Windows usa `winsound` (com `MessageBeep()` quando não há `alert.wav`) e o Linux/macOS usa
+  um player externo (`paplay`/`aplay`/`ffplay`, ou `afplay`). Sem player, o som fica silencioso
+  (o alerta nunca quebra). No `.deb`, `pulseaudio-utils`/`alsa-utils` vêm como `Recommends`.
 - Ações pseudo-humanas exigem `pynput` (`pip install -e ".[input]"`). Sem ele, as ações permanecem
   em ensaio e as hotkeys globais ficam indisponíveis (tray-only).
 - O token do Telegram vem da variável de ambiente `TELEGRAM_BOT_TOKEN` (nunca do YAML).
@@ -138,13 +147,87 @@ com `gui/overlay_geometry.to_physical` antes de gravar a seleção (doc §9.5).
 Ao iniciar `run`, o app verifica cada monitor, marca os adequados (`OK`, 100%) e avisa se a janela
 do target estiver num monitor com escala. `probe-dpi` e `scripts/probe_dpi.py` mostram a matriz.
 
-## Instalação
+## Instalação (código-fonte)
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -e ".[dev]"
 ```
+
+## Instalação por binários (Windows e Linux)
+
+Os instaladores são publicados no GitHub Releases (a partir da tag `v0.2.0`):
+
+- **Windows** — `screen-diff-watcher_<versão>_windows_x64_setup.exe` (Inno Setup, per-machine,
+  requer admin). Cria atalho no Menu Iniciar e, opcionalmente (desmarcados), na Área de Trabalho e o
+  início automático com o Windows.
+- **Linux (Debian/Ubuntu amd64)** — `screen-watch_<versão>_amd64.deb`
+  (`sudo apt install ./screen-watch_<versão>_amd64.deb`). Requer X11 (Wayland não é suportado). O
+  `.deb` declara `tesseract-ocr` + `tesseract-ocr-por` e as libs Qt6/X11 como dependências.
+
+No Windows, o **SmartScreen** vai avisar porque o `.exe` não é assinado (assinatura fora de escopo):
+use "Mais informações" → "Executar assim mesmo". O mesmo pode valer para o antivírus.
+
+### Tesseract (OCR) automático
+
+No Windows, se o Tesseract não estiver instalado, o instalador baixa o release fixado do
+UB-Mannheim, **verifica o SHA256**, instala em silêncio e garante o `por.traineddata` (o pacote traz
+`eng`). Precisa de rede e admin; se o download/verificação falhar, o instalador **avisa e continua** —
+o app funciona em `light`/`default` e o `advanced` acusa a falta com a mensagem já existente.
+**Offline**: instale o Tesseract manualmente (https://github.com/UB-Mannheim/tesseract/wiki) com os
+traineddata `por` e `eng`; o instalador detecta o binário e não baixa nada.
+
+No Linux, `tesseract-ocr` + `tesseract-ocr-por` vêm como dependência do `.deb`. A desinstalação
+remove só o app e **preserva** o Tesseract e o app-data do usuário.
+
+### Início automático (Linux)
+
+O `.deb` não configura autostart. Para iniciar com a sessão, crie
+`~/.config/autostart/screen-diff-watcher.desktop`:
+
+```ini
+[Desktop Entry]
+Type=Application
+Exec=screen-diff-watcher-gui
+X-GNOME-Autostart-enabled=true
+```
+
+### Diagnóstico: `features`
+
+```powershell
+screen-watch features           # versão/origem, app-data, nº de seleções, Tesseract, entrada, som, tray, monitores
+screen-watch features --json    # saída JSON (usada no smoke do CI)
+```
+
+Degrada sem display (não quebra) e informa se o binário é `bundle` ou `source`.
+
+### Limitações dos instaladores
+
+- **Wayland**: a captura via `mss` não funciona; rode em X11. O app avisa e encerra.
+- **Tray no GNOME**: pode não aparecer sem extensão de tray; a janela continua funcional.
+- **Som no Linux**: depende de `paplay`/`aplay`/`ffplay`; sem player, fica silencioso.
+- **Arquitetura**: apenas `amd64`/`x86_64`. ARM fora de escopo.
+
+## Build dos instaladores (desenvolvimento)
+
+Guia completo (atualizar versão/pin do Tesseract, buildar, publicar e validar):
+[`doc/01-Build_e_Release.md`](doc/01-Build_e_Release.md).
+
+```powershell
+python -m pip install -e ".[dev,build,input]"
+python scripts/build_release.py --windows   # no Windows (ISCC.exe do Inno Setup no PATH)
+python scripts/build_release.py --linux     # no Linux (dpkg-deb)
+```
+
+O script roda **no SO alvo** (sem cross-build), lê a versão de `screen_watch.__version__` (fonte
+única; o `pyproject` usa versão dinâmica), roda o PyInstaller com `packaging/screen-watch.spec` e
+grava os artefatos + `build-info.json` em `dist/installers/`. O ícone `.ico` é versionado; para
+regenerá-lo, `python packaging/make_ico.py`.
+
+Para publicar: crie a tag `vX.Y.Z` (igual a `__version__`) e faça push. O workflow
+`.github/workflows/release.yml` builda os dois instaladores, gera `SHA256SUMS.txt` e publica o
+GitHub Release; `workflow_dispatch` com `version` gera só os artefatos (sem release).
 
 ## Uso
 
@@ -165,6 +248,7 @@ python -m screen_watch run --profile trabalho --selection painel
 python -m screen_watch compare-modes --selection painel --delay 5   # calibracao (Etapa D)
 python -m screen_watch show-paths
 python -m screen_watch gui --profile default                # GUI minima + tray
+python -m screen_watch features                             # diagnostico do ambiente
 ```
 
 O `select` abre o overlay (uma janela por monitor): arraste com o botão esquerdo; botão direito
@@ -183,10 +267,14 @@ desenha máscaras (fora do MVP); por enquanto edite o campo `masks` no YAML ou n
 
 ## Evidências (prints)
 
-Desabilitadas por padrão (`evidence.enabled: false`). Quando ligadas, o app grava prints da
-**janela inteira** (sem máscara) no baseline e a cada mudança detectada — em
+Desabilitadas por padrão. Quando ligadas, o app grava prints da **janela inteira** (sem máscara) no
+baseline e a cada mudança detectada — em
 `%TEMP%\screen_watch\captures\<alvo>\<AAAAMMDD-HHMMSS-mmm>_<baseline|change>.png` (o `<alvo>` é o
-nome do arquivo de seleção). Passe `--profile`/edite `config.yaml` para ligar:
+nome do arquivo de seleção).
+
+A forma mais simples de ligar é o checkbox **Gravar prints (evidências)** na janela: ele persiste em
+`state.json` (`evidence_enabled`) e vale **sem editar o YAML** — inclusive com config v1 (`targets:`).
+Se preferir pela config (v2), use a seção `evidence:` abaixo; o checkbox tem precedência sobre ela.
 
 ```yaml
 evidence:
@@ -199,18 +287,23 @@ evidence:
 ```
 
 Os prints ficam **só na sua máquina** (em `%TEMP%`, fora do repositório) e a retenção os poda após
-cada gravação. Para validar a configuração sem esperar um evento real:
+cada gravação. Duas formas de gerar prints na hora, sem esperar um evento real (ambas **sempre**
+gravam, mesmo com as evidências do loop desligadas):
 
 ```powershell
-python -m screen_watch test-evidence --selection painel   # grava baseline+change e imprime caminhos
+python -m screen_watch test-evidence --selection painel   # baseline+change, imprime caminhos
+python -m screen_watch test-action --selection painel --armed   # print da execucao da acao
 ```
+
+O botão **Executar ação (3s)** da janela também grava um print ao executar.
 
 A janela tem o botão **Abrir pasta de prints**, que abre a pasta efetiva (`evidence.dir` quando
 configurado, senão `%TEMP%/screen_watch/captures`) no gerenciador de arquivos — criando-a se ainda
-não existir. O mesmo caminho aparece em `python -m screen_watch show-paths` (linha `capturas:`,
-com nota quando há override). Abrir pasta/arquivo passa sempre por `platform/shell.py::open_path`
-(`os.startfile` no Windows, `open`/`xdg-open` nos demais); se não houver associação/utilitário, a
-GUI apenas registra "abra manualmente: <caminho>".
+não existir; **se os prints do loop estiverem desligados ele avisa no log**. O mesmo caminho aparece
+em `python -m screen_watch show-paths` (linha `capturas:`, com nota quando há override). Abrir
+pasta/arquivo passa sempre por `platform/shell.py::open_path` (`os.startfile` no Windows,
+`open`/`xdg-open` nos demais); se não houver associação/utilitário, a GUI apenas registra
+"abra manualmente: <caminho>".
 
 Falhas ao gravar (permissão, disco, janela fora da tela) apenas geram `log.warning`; o
 monitoramento continua.
@@ -451,8 +544,13 @@ sintética e falha se o HTTP não for 2xx (aceite do §1.3).
 ## CI (GitHub Actions)
 
 `.github/workflows/ci.yml` roda `ruff check .` e `pytest -m "not integration"` em
-**`ubuntu-latest` e `windows-latest`** × **Python 3.11 e 3.13**. O CI não instala `simpleaudio`,
-não usa Tesseract (OCR é mockado) e não importa Qt na coleta de testes.
+**`ubuntu-latest` e `windows-latest`** × **Python 3.11 e 3.13**; em pull requests, o job `package`
+(se recomendado) monta os instaladores sem publicar. O CI não instala `simpleaudio`, não usa
+Tesseract (OCR é mockado) e não importa Qt na coleta de testes.
+
+`.github/workflows/release.yml` builda os instaladores (Windows/latest, Linux `ubuntu-22.04`) a
+partir de uma tag `v*.*.*` e publica o GitHub Release com `SHA256SUMS.txt`; `workflow_dispatch`
+gera apenas os artefatos de workflow.
 
 Configurações de ambiente necessárias em produção (nunca no YAML):
 - `compare_options.advanced.tesseract_cmd` — caminho do Tesseract quando fora do `PATH`.

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Screen Diff Watcher
+Comment=Monitor a rectangular region of a window and alert on changes
+Exec=@BIN@
+Icon=screen-diff-watcher
+Terminal=false
+Categories=Utility;
+StartupNotify=true
+StartupWMClass=screen-watch-gui

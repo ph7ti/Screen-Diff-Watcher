@@ -1,0 +1,153 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Versao a validar (igual a screen_watch.__version__), ex.: 0.2.0-rc1"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: windows installer
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Guarda de versao
+        shell: bash
+        env:
+          REF_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+        run: |
+          python - <<'PY'
+          import os, sys
+          sys.path.insert(0, "src")
+          import screen_watch
+          expected = screen_watch.__version__
+          ref = os.environ["REF_VERSION"].strip()
+          if ref.startswith("v"):
+              ref = ref[1:]
+          if ref != expected:
+              print(f"::error::ref {ref!r} != screen_watch.__version__ {expected!r}")
+              raise SystemExit(1)
+          print(f"versao ok: {expected}")
+          PY
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,build,input]"
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Tests
+        run: python -m pytest -q -m "not integration"
+
+      - name: Inno Setup
+        run: choco install innosetup -y
+
+      - name: Build installer
+        run: python scripts/build_release.py --windows
+
+      - name: Smoke
+        run: |
+          dist\screen-watch\screen-watch.exe --help
+          dist\screen-watch\screen-watch.exe features --json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: dist/installers/*
+
+  linux:
+    name: linux package
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Guarda de versao
+        env:
+          REF_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+        run: |
+          python - <<'PY'
+          import os, sys
+          sys.path.insert(0, "src")
+          import screen_watch
+          expected = screen_watch.__version__
+          ref = os.environ["REF_VERSION"].strip()
+          if ref.startswith("v"):
+              ref = ref[1:]
+          if ref != expected:
+              print(f"::error::ref {ref!r} != screen_watch.__version__ {expected!r}")
+              raise SystemExit(1)
+          print(f"versao ok: {expected}")
+          PY
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,build,input]"
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Tests
+        run: xvfb-run -a python -m pytest -q -m "not integration"
+
+      - name: Build installer
+        run: python scripts/build_release.py --linux
+
+      - name: Smoke
+        run: |
+          dist/screen-watch/screen-watch --help
+          xvfb-run -a dist/screen-watch/screen-watch features --json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-package
+          path: dist/installers/*
+
+  release:
+    name: publish release
+    needs: [windows, linux]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Checksums
+        shell: bash
+        run: |
+          cd artifacts
+          find . -type f -not -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          gh release create "$TAG" artifacts/* \
+            --title "$TAG" \
+            --notes "Release $TAG. Instaladores: Windows (setup.exe) e Linux (.deb). Checksums em SHA256SUMS.txt."

@@ -9,6 +9,8 @@ Qt e importado de forma preguicosa: a coleta de testes nao depende de PyQt6.
 
 from __future__ import annotations
 
+import os
+import sys
 from dataclasses import dataclass
 
 Rect = tuple[int, int, int, int]
@@ -38,9 +40,22 @@ class MonitorScale:
         return rx <= x < rx + rw and ry <= y < ry + rh
 
 
+def display_available() -> bool:
+    """False sem sessao grafica (ex.: Linux headless, sem X11 nem Wayland).
+
+    Criar um `QApplication` sem display derruba o processo no Qt, entao a
+    verificacao precisa vir antes (usada por `features` e pelos probes).
+    """
+    if sys.platform.startswith("linux"):
+        return bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+    return True
+
+
 def list_monitor_scales() -> list[MonitorScale] | None:
-    """Escalas por monitor via Qt, ou None se o PyQt6 nao estiver disponivel."""
+    """Escalas por monitor via Qt, ou None se o PyQt6/display nao estiver disponivel."""
     global _QT_APP
+    if not display_available():
+        return None
     try:
         from PyQt6.QtWidgets import QApplication  # noqa: PLC0415
     except Exception:

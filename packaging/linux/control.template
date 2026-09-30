@@ -1,0 +1,17 @@
+Package: screen-diff-watcher
+Version: @VERSION@
+Section: utils
+Priority: optional
+Architecture: amd64
+Maintainer: Raphael Pereira <raphael.pereira@somosagility.com.br>
+Homepage: https://github.com/ph7ti/Screen-Diff-Watcher
+Depends: tesseract-ocr, tesseract-ocr-por, xdg-utils, libxcb-cursor0, libxkbcommon-x11-0, libegl1, libgl1, libxcb-icccm4, libxcb-image0, libxcb-keysyms1, libxcb-randr0, libxcb-render-util0, libxcb-shape0
+Recommends: pulseaudio-utils, alsa-utils
+Description: Monitor a rectangular region of a window and alert on visual changes
+ Screen Diff Watcher watches a ROI of a target window and alerts when it
+ changes visually. It bundles a CLI (screen-watch) and a GUI
+ (screen-diff-watcher-gui).
+ .
+ OCR mode (advanced) requires Tesseract, pulled in as a dependency
+ (tesseract-ocr + tesseract-ocr-por). Sound playback uses an external player
+ (paplay/aplay/ffplay); without one it stays silent.

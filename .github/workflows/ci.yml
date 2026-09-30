@@ -40,3 +40,54 @@ jobs:
       - name: Tests (Windows)
         if: runner.os != 'Linux'
         run: python -m pytest -q -m "not integration"
+
+  package:
+    name: package (${{ matrix.os }})
+    if: github.event_name == 'pull_request'
+    needs: test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: --linux
+          - os: windows-latest
+            target: --windows
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[build,input]"
+
+      - name: Inno Setup
+        if: runner.os == 'Windows'
+        run: choco install innosetup -y
+
+      - name: Build installer
+        run: python scripts/build_release.py ${{ matrix.target }}
+
+      - name: Smoke (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          dist/screen-watch/screen-watch --help
+          xvfb-run -a dist/screen-watch/screen-watch features --json
+
+      - name: Smoke (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          dist\screen-watch\screen-watch.exe --help
+          dist\screen-watch\screen-watch.exe features --json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ runner.os }}
+          path: dist/installers/*

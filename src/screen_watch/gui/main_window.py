@@ -13,6 +13,7 @@ from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
     QComboBox,
     QHBoxLayout,
     QInputDialog,
@@ -168,6 +169,16 @@ class MainWindow(QMainWindow):
             buttons.addWidget(button)
         layout.addLayout(buttons)
 
+        evidence_row = QHBoxLayout()
+        self.chk_evidence = QCheckBox("Gravar prints (evidencias)")
+        self.chk_evidence.setToolTip(
+            "Grava prints da janela no baseline e a cada mudanca (pasta em 'Abrir pasta de prints')."
+        )
+        self.chk_evidence.toggled.connect(self._toggle_evidence)
+        evidence_row.addWidget(self.chk_evidence)
+        evidence_row.addStretch(1)
+        layout.addLayout(evidence_row)
+
         self.status = QLabel("parado")
         self.last = QLabel("ultimo resultado: -")
         layout.addWidget(self.status)
@@ -180,12 +191,26 @@ class MainWindow(QMainWindow):
 
     # -- dados -------------------------------------------------------------
     def _reload(self) -> None:
-        from screen_watch.config.loader import ConfigError, load_config
+        from screen_watch.config.loader import (
+            ConfigError,
+            default_config_dict,
+            load_config,
+            save_config,
+        )
         from screen_watch.platform.paths import selections_dir
 
         self.list.clear()
         self._entries.clear()
         self._config = None
+
+        if not self._config_path.exists():
+            # Primeiro uso: cria o default no app-data do usuario (o instalador nao
+            # roda init-config para nao gravar no perfil do admin).
+            try:
+                save_config(self._config_path, default_config_dict())
+                self._append(f"config default criada em: {self._config_path}")
+            except OSError as exc:
+                self._append(f"nao foi possivel criar a config: {exc}")
 
         try:
             self._config = load_config(self._config_path)
@@ -193,6 +218,7 @@ class MainWindow(QMainWindow):
             self._append(f"config indisponivel: {exc}")
         if self._config is not None and self._config.legacy:
             self._append("aviso: YAML v1 (targets); rode 'migrate-config' para v2")
+        self._sync_evidence_toggle()
 
         for path in sorted(selections_dir().glob("*.json")):
             self._entries.append(("selection", path))
@@ -811,18 +837,41 @@ class MainWindow(QMainWindow):
         if not open_path(path):
             self._append(f"abra manualmente: {path}")
 
+    def _sync_evidence_toggle(self) -> None:
+        from screen_watch.app import effective_evidence_options
+
+        enabled = bool(effective_evidence_options(self._config).enabled)
+        self.chk_evidence.blockSignals(True)
+        self.chk_evidence.setChecked(enabled)
+        self.chk_evidence.blockSignals(False)
+
+    def _toggle_evidence(self, checked: bool) -> None:
+        from screen_watch.platform.paths import update_state
+
+        try:
+            update_state(evidence_enabled=bool(checked))
+        except OSError as exc:
+            self._append(f"nao foi possivel salvar a preferencia de prints: {exc}")
+            return
+        self._append(f"prints (evidencias) -> {'ligados' if checked else 'desligados'}")
+
     def _open_captures(self) -> None:
+        from screen_watch.app import effective_evidence_options
         from screen_watch.evidence.recorder import ensure_captures_dir
         from screen_watch.platform.shell import open_path
 
-        options = None
-        if self._config is not None and not self._config.legacy:
-            options = self._config.evidence
+        options = effective_evidence_options(self._config)
         try:
             directory = ensure_captures_dir(options)
         except OSError as exc:
             self._append(f"nao foi possivel criar a pasta de prints: {exc}")
             return
+        if not options.enabled:
+            self._append(
+                "aviso: os prints do monitoramento estao DESLIGADOS — marque "
+                "'Gravar prints (evidencias)' e reinicie a sessao (o botao "
+                "'Executar acao (3s)' sempre grava um print)"
+            )
         if not open_path(directory):
             self._append(f"abra manualmente: {directory}")
 

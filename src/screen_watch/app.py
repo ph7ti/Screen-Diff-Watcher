@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from dataclasses import replace
 
 from screen_watch.alerts.chain import AlertChain, DispatchOutcome
 from screen_watch.alerts.protocol import Notifier
@@ -18,6 +19,7 @@ from screen_watch.config.schema import (
     AlertOptions,
     AppConfig,
     CompareOptions,
+    EvidenceOptions,
     GlobalDefaults,
     ProfileOptions,
     TargetConfig,
@@ -162,12 +164,35 @@ def _legacy_profile(config: AppConfig | None, selection_name: str | None) -> Pro
     )
 
 
+def _state_evidence_toggle() -> bool | None:
+    from screen_watch.platform.paths import load_state  # noqa: PLC0415
+
+    value = load_state().get("evidence_enabled")
+    return value if isinstance(value, bool) else None
+
+
+def effective_evidence_options(config: AppConfig | None) -> EvidenceOptions:
+    """Opcoes de evidencia efetivas: YAML (v2) + toggle de runtime da GUI.
+
+    O toggle (`state.json["evidence_enabled"]`) tem precedencia e permite ligar/
+    desligar prints pela janela, sem depender do YAML (funciona tambem com config
+    v1). Sem toggle salvo, vale o `evidence.enabled` do YAML (default: desligado).
+    """
+    base = getattr(config, "evidence", None) if config is not None else None
+    options = base if base is not None else EvidenceOptions()
+    toggle = _state_evidence_toggle()
+    if toggle is None:
+        return options
+    return replace(options, enabled=toggle)
+
+
 def evidence_recorder(config: AppConfig | None, *, force_enabled: bool = False):
-    """Recorder de evidencias a partir da secao global `evidence` (None se desligado)."""
+    """Recorder de evidencias efetivas (None se desligado)."""
     from screen_watch.evidence.recorder import EvidenceRecorder  # noqa: PLC0415
 
-    options = getattr(config, "evidence", None) if config is not None else None
-    return EvidenceRecorder.from_options(options, force_enabled=force_enabled)
+    return EvidenceRecorder.from_options(
+        effective_evidence_options(config), force_enabled=force_enabled
+    )
 
 
 class MonitorSession:

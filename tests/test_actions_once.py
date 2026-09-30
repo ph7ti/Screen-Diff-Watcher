@@ -111,6 +111,72 @@ def test_run_actions_without_actions():
     assert any("nao tem acoes" in line for line in lines)
 
 
+def test_run_actions_armed_records_evidence(monkeypatch, tmp_path):
+    import json
+
+    backend = FakeBackend()
+    monkeypatch.setattr("screen_watch.platform.input.default_backend", lambda: backend)
+    audit = ActionAudit(tmp_path / "a.jsonl")
+
+    class FakeRecorder:
+        per_step = False
+
+        def __init__(self):
+            self.calls: list[tuple[str, int]] = []
+
+        def record_action(self, frame, name, step=0):
+            self.calls.append((name, step))
+            return f"/x/{name}-{step}.png"
+
+    recorder = FakeRecorder()
+    code, _ = run_actions(
+        _target((_key_action(),)),
+        _frame(),
+        armed=True,
+        recorder=recorder,
+        audit=audit,
+        countdown=lambda: True,
+    )
+
+    assert code == 0
+    assert recorder.calls == [("t", 0)]
+    record = json.loads(audit.path.read_text(encoding="utf-8").splitlines()[0])
+    assert record["evidence"] == ["/x/t-0.png"]
+
+
+def test_run_actions_armed_records_evidence_per_step(monkeypatch, tmp_path):
+    backend = FakeBackend()
+    monkeypatch.setattr("screen_watch.platform.input.default_backend", lambda: backend)
+    action = ActionSpec(
+        name="a",
+        settle_s=0.0,
+        steps=(ActionStep(kind="key", keys="a"), ActionStep(kind="key", keys="b")),
+    )
+
+    class FakeRecorder:
+        per_step = True
+
+        def __init__(self):
+            self.calls: list[tuple[str, int]] = []
+
+        def record_action(self, frame, name, step=0):
+            self.calls.append((name, step))
+            return f"/x/{name}-{step}.png"
+
+    recorder = FakeRecorder()
+    code, _ = run_actions(
+        _target((action,)),
+        _frame(),
+        armed=True,
+        recorder=recorder,
+        audit=ActionAudit(tmp_path / "a.jsonl"),
+        countdown=lambda: True,
+    )
+
+    assert code == 0
+    assert recorder.calls == [("t", 0), ("t", 1)]
+
+
 def test_run_actions_reports_failure(monkeypatch, tmp_path):
     class BoomBackend(FakeBackend):
         def press(self, keys: str) -> None:

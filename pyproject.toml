@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "screen-watch"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Monitor a rectangular region of a desktop window and alert on visual changes."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -30,7 +30,8 @@ input = ["pynput>=1.7"]
 ocr-preproc = ["opencv-python>=4.8"]
 logging = ["structlog>=24.1"]
 dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff==0.16.9"]
-build = ["pyinstaller>=6.0"]
+# PyInstaller so passou a suportar Python 3.13 a partir do 6.11.1.
+build = ["pyinstaller>=6.11.1"]
 
 [project.scripts]
 screen-watch = "screen_watch.__main__:main"
@@ -43,6 +44,10 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 screen_watch = ["py.typed", "assets/icons/*.png"]
+
+[tool.setuptools.dynamic]
+# Fonte unica da versao: screen_watch/__init__.py::__version__.
+version = { attr = "screen_watch.__version__" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

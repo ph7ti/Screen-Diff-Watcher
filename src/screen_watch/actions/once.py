@@ -61,13 +61,24 @@ def run_actions(
             )
             lines.append(f"[ensaio] {action.name}: {', '.join(descriptions) or '(sem passos)'}")
             continue
-        run = runner.run(action, frame, arming=arming)
+        evidence: list[str] = []
+        hook = None
+        if recorder is not None and getattr(recorder, "per_step", False):
+            hook = lambda index: evidence.append(  # noqa: E731
+                str(recorder.record_action(frame, target.name, index))
+            )
+        run = runner.run(action, frame, arming=arming, evidence_hook=hook)
+        if recorder is not None and not getattr(recorder, "per_step", False):
+            path = recorder.record_action(frame, target.name)
+            if path:
+                evidence.append(str(path))
         payload = {
             "mode": "armed",
             "action": action.name,
             "executed": run.executed,
             "steps": list(run.steps),
             "duration_s": round(run.duration_s, 3),
+            "evidence": evidence,
             "reason": run.reason,
         }
         audit.record(payload)

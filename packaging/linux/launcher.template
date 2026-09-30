@@ -1,0 +1,4 @@
+#!/bin/sh
+# Wrapper `exec` (nao symlink): o PyInstaller resolve `_internal` pelo caminho
+# real do executavel, entao o binario precisa rodar a partir do /opt.
+exec /opt/screen-watch/@BIN@ "$@"
