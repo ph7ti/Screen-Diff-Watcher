@@ -17,6 +17,7 @@ plataformas, pré-requisitos, quick start e build) fica no [README](../README.pt
 | [Configuração](Configuracao.md) | `config.yaml` v2 (perfis, overrides), `state.json`, migração v1→v2 |
 | [Ações pseudo-humanas](Acoes-Pseudo-Humanas.md) | passos, gatilhos, arming/ensaio, limites, editor da GUI, gravador, auditoria |
 | [Alertas](Alertas.md) | som/popup/Telegram/log, severidade, cooldown, re-arm, `test-alert` |
+| [Configuração do Telegram](Configuracao-Telegram.md) | passo a passo: criar o bot, obter o chat id, definir o token, editar o YAML e testar |
 | [Evidências](Evidencias.md) | prints de baseline/mudança, retenção, pastas, toggle |
 | [Idiomas (i18n)](Idiomas.md) | catálogos, precedência, como adicionar um idioma |
 | [DPI e limitações](DPI-e-Limitacoes.md) | escala de tela, Wayland, janela ocluída, robustez |

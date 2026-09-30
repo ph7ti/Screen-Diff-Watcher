@@ -56,6 +56,22 @@ janela-alvo ──► ROI ──► captura ──► máscara ──► compara
                                     alertas (som/popup/Telegram/log) + ações (se armadas)
 ```
 
+## Recursos de alerta
+
+Quando uma mudança é confirmada, a cadeia de alertas dispara os canais habilitados no perfil, cada
+um com seu `severity_min` e `cooldown_s`:
+
+| Canal (`type`) | O que faz | Detalhes |
+|---|---|---|
+| `sound` | toca um som local | [wiki/Alertas.md](wiki/Alertas.md) |
+| `popup` | notificação local | [wiki/Alertas.md](wiki/Alertas.md) |
+| `telegram` | mensagem + imagem da ROI via bot | **[Configuração do Telegram — passo a passo](wiki/Configuracao-Telegram.md)** |
+| `log` | uma linha JSON por alerta (`logs/alerts.jsonl`) | [wiki/Alertas.md](wiki/Alertas.md) |
+
+Os alertas são configurados por perfil no `config.yaml` (lista `alerts:`). Segredos nunca vão no
+YAML — o token do Telegram é lido de variável de ambiente. Novos canais estão previstos (ex.:
+webhook genérico); o mapa de canais é extensível por `type`.
+
 ## Que problemas ele resolve
 
 - Acompanhar um **painel/indicador** (ERP, dashboard, tela de status) sem ficar de olho nele.
@@ -129,7 +145,8 @@ exemplo: `python -m screen_watch --language en-US gui`.
 - Nenhum para os modos `light`/`default`.
 - **Tesseract** no sistema (traineddata `por` + `eng`) para o modo `advanced` — no Windows o
   instalador baixa sob demanda; no `.deb` ele já vem como dependência.
-- **Telegram** (opcional): token via variável de ambiente `TELEGRAM_BOT_TOKEN` (nunca no YAML).
+- **Telegram** (opcional): token via variável de ambiente `TELEGRAM_BOT_TOKEN` (nunca no YAML) —
+  passo a passo em [wiki/Configuracao-Telegram.md](wiki/Configuracao-Telegram.md).
 - **Ações e hotkeys globais** (opcional): extra `input` (`pynput`).
 - **Som** (opcional): `winsound` no Windows; no Linux, um player (`paplay`/`aplay`/`ffplay`).
 - **Linux**: sessão **X11** — Wayland não é suportado.

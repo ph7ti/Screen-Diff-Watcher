@@ -52,6 +52,8 @@ log** (Telegram exige `chat_id`, então não entra no default).
 - `attach_roi: true` (default) envia o **screenshot do ROI** junto (`sendPhoto`), o que é essencial
   para validar falsos positivos; com `false`, envia só texto (`sendMessage`).
 - Timeout curto (**5 s**) para não travar o loop.
+- **Passo a passo completo**: [Configuração do Telegram](Configuracao-Telegram.md) — criar o bot,
+  obter o chat id, definir o token, editar o YAML e testar.
 
 ### Log
 

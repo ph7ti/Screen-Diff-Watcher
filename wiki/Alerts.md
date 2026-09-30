@@ -53,6 +53,8 @@ log** (Telegram requires `chat_id`, so it does not enter the default).
 - `attach_roi: true` (default) sends the **ROI screenshot** along with it (`sendPhoto`), which is essential
   to validate false positives; with `false`, it sends text only (`sendMessage`).
 - Short timeout (**5 s**) so as not to block the loop.
+- **Full step-by-step**: [Telegram setup](Telegram-Setup.md) — create the bot, get the chat id,
+  set the token, edit the YAML and test.
 
 ### Log
 

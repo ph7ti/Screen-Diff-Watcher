@@ -18,6 +18,7 @@ platforms, prerequisites, quick start and build) is in the [README](../README.md
 | [Configuration](Configuration.md) | `config.yaml` v2 (profiles, overrides), `state.json`, v1→v2 migration |
 | [Pseudo-human actions](Pseudo-Human-Actions.md) | steps, triggers, arming/rehearsal, limits, GUI editor, recorder, audit |
 | [Alerts](Alerts.md) | sound/popup/Telegram/log, severity, cooldown, re-arm, `test-alert` |
+| [Telegram setup](Telegram-Setup.md) | step by step: create the bot, get the chat id, set the token, edit the YAML and test |
 | [Evidence](Evidence.md) | baseline/change prints, retention, folders, toggle |
 | [Languages (i18n)](Languages.md) | catalogs, precedence, how to add a language |
 | [DPI and limitations](DPI-and-Limitations.md) | screen scaling, Wayland, occluded window, robustness |

@@ -64,6 +64,22 @@ target window ──► ROI ──► capture ──► mask ──► compare (
                                    alerts (sound/popup/Telegram/log) + actions (if armed)
 ```
 
+## Alert channels
+
+When a change is confirmed, the alert chain fires the channels enabled in the profile, each with
+its own `severity_min` and `cooldown_s`:
+
+| Channel (`type`) | What it does | Details |
+|---|---|---|
+| `sound` | plays a local sound | [wiki/Alerts.md](wiki/Alerts.md) |
+| `popup` | local notification | [wiki/Alerts.md](wiki/Alerts.md) |
+| `telegram` | message + ROI image via bot | **[Telegram setup — step by step](wiki/Telegram-Setup.md)** |
+| `log` | one JSON line per alert (`logs/alerts.jsonl`) | [wiki/Alerts.md](wiki/Alerts.md) |
+
+The alerts are configured per profile in `config.yaml` (the `alerts:` list). Secrets never go in the
+YAML — the Telegram token is read from an environment variable. More channels are planned (e.g. a
+generic webhook); the channel map is extensible by `type`.
+
 ## What problems it solves
 
 - Watching a **panel/indicator** (ERP, dashboard, status screen) without staring at it.
@@ -138,7 +154,7 @@ example: `python -m screen_watch --language en-US gui`.
 - **Tesseract** on the system (`por` + `eng` traineddata) for `advanced` mode — on Windows the
   installer downloads it on demand; in the `.deb` it comes as a dependency.
 - **Telegram** (optional): token via the `TELEGRAM_BOT_TOKEN` environment variable (never in the
-  YAML).
+  YAML) — step-by-step in [wiki/Telegram-Setup.md](wiki/Telegram-Setup.md).
 - **Actions and global hotkeys** (optional): the `input` extra (`pynput`).
 - **Sound** (optional): `winsound` on Windows; on Linux, a player (`paplay`/`aplay`/`ffplay`).
 - **Linux**: an **X11** session — Wayland is not supported.

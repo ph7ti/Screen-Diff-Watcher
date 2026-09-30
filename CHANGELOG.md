@@ -35,6 +35,9 @@ versionamento semântico. Versão: `screen_watch.__version__` (fonte única).
   (principal)** com espelho em **português** (`README.pt-BR.md` + páginas PT da wiki, com link de
   idioma no topo); `doc/00` e `doc/01` ganharam versões em inglês, e o `doc/00` em português foi
   reciclado para o estado implementado (v0.3.0).
+- **Tutorial do Telegram**: guia passo a passo (EN/PT) na Wiki — criar o bot, obter o `chat_id`,
+  definir o token por variável de ambiente, editar o YAML e testar — linkado no README, que ganhou
+  a seção "Recursos de alerta" (preparada para novos canais, ex.: webhook).
 
 ## [0.2.1] — 2026-09-30
 
