@@ -7,6 +7,8 @@ Marcados com `integration`; por padrao sao pulados. Para rodar:
     $env:TELEGRAM_TEST_CHAT_ID="..."; python -m pytest -m integration
     $env:TEST_REAL_WEBHOOK_URL="https://..."; python -m pytest -m integration
     $env:TEST_REAL_HTTP_URL="https://..."; python -m pytest -m integration
+    $env:TEST_REAL_AUDIO="1"; $env:TEST_REAL_AUDIO_FILE="C:\\sons\\alerta.mp3";
+    python -m pytest -m integration
 """
 
 from __future__ import annotations
@@ -208,3 +210,18 @@ def test_real_http_post():
     )
     notifier = HttpPostNotifier(options, target_name="integration")
     notifier.notify(_synthetic_result(), _synthetic_frame())
+
+
+@pytest.mark.skipif(
+    os.environ.get("TEST_REAL_AUDIO") != "1",
+    reason="defina TEST_REAL_AUDIO=1 e TEST_REAL_AUDIO_FILE para rodar",
+)
+def test_real_audio_plays_a_file():
+    from screen_watch.platform.audio import play_file
+
+    path = os.environ.get("TEST_REAL_AUDIO_FILE", "")
+    if not path:
+        pytest.fail("defina TEST_REAL_AUDIO_FILE com um WAV/MP3/OGG/FLAC real")
+
+    assert play_file(path) is True
+    time.sleep(1.5)  # deixa o miniaudio (thread) terminar antes do processo sair

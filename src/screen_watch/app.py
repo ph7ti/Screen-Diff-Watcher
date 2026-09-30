@@ -43,8 +43,18 @@ def build_pipeline(mode: str, options: CompareOptions) -> ComparePipeline:
     if mode not in MODE_STAGES:
         raise ValueError(f"modo invalido: {mode!r}; use um de {MODE_STAGES}")
 
+    watch = options.advanced.text_watch if mode == "advanced" else None
+    if watch is not None and not watch.text.strip():
+        watch = None  # texto vazio desliga o filtro (defensivo; o loader ja valida)
+
     stages = []
     for stage_name in MODE_STAGES[mode]:
+        if watch is not None and stage_name == "default":
+            # Com `text_watch` o gate de phash e bypassado: o OCR roda a cada tick e o
+            # veredito do filtro e autoritativo (doc, secao 10.5). O ruido de OCR que
+            # motivou o gate nao gera falso positivo aqui, pois o veredito e por
+            # presenca, nao por similaridade.
+            continue
         if stage_name == "light":
             from screen_watch.compare.light import MeanColorStrategy  # noqa: PLC0415
 
@@ -60,15 +70,27 @@ def build_pipeline(mode: str, options: CompareOptions) -> ComparePipeline:
         elif stage_name == "advanced":
             from screen_watch.compare.advanced import OCRTextDiffStrategy  # noqa: PLC0415
 
-            stages.append(
-                OCRTextDiffStrategy(
-                    similarity_threshold=options.advanced.similarity_threshold,
-                    psm=options.advanced.psm,
-                    lang=options.advanced.lang,
-                    upscale=options.advanced.upscale,
-                    tesseract_cmd=options.advanced.tesseract_cmd,
-                )
+            ocr = OCRTextDiffStrategy(
+                similarity_threshold=options.advanced.similarity_threshold,
+                psm=options.advanced.psm,
+                lang=options.advanced.lang,
+                upscale=options.advanced.upscale,
+                tesseract_cmd=options.advanced.tesseract_cmd,
             )
+            if watch is None:
+                stages.append(ocr)
+            else:
+                from screen_watch.compare.text_watch import TextWatchStrategy  # noqa: PLC0415
+
+                stages.append(
+                    TextWatchStrategy(
+                        ocr,
+                        text=watch.text,
+                        expect=watch.expect,
+                        case_sensitive=watch.case_sensitive,
+                        ignore_accents=watch.ignore_accents,
+                    )
+                )
     return ComparePipeline(stages)
 
 

@@ -112,3 +112,16 @@ def test_two_webhooks_with_distinct_ids_are_independent(make_frame):
     assert chain.dispatch(_result(make_frame), _frame(make_frame)) is DispatchOutcome.FIRED
     assert fast.calls == 2
     assert slow.calls == 1
+
+
+def test_last_errors_exposes_failures_even_when_another_fires(make_frame):
+    boom = FakeNotifier(name="telegram", uid="telegram", boom=True)
+    ok = FakeNotifier(name="log", uid="log")
+    chain = AlertChain([boom, ok])
+
+    assert chain.dispatch(_result(make_frame), _frame(make_frame)) is DispatchOutcome.FIRED
+    assert chain.last_errors == [("telegram", "boom")]
+
+    boom.enabled = False
+    assert chain.dispatch(_result(make_frame), _frame(make_frame)) is DispatchOutcome.FIRED
+    assert chain.last_errors == []

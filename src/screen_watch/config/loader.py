@@ -34,6 +34,7 @@ from screen_watch.config.schema import (
     VALID_SYSLOG_FACILITIES,
     VALID_SYSLOG_LEVELS,
     VALID_SYSLOG_PROTOCOLS,
+    VALID_TEXT_WATCH_EXPECTS,
     AdvancedOptions,
     AlertOptions,
     AppConfig,
@@ -48,6 +49,7 @@ from screen_watch.config.schema import (
     ScheduleOptions,
     SyslogOptions,
     TargetConfig,
+    TextWatchOptions,
     UiOptions,
     WebhookOptions,
 )
@@ -396,6 +398,50 @@ def parse_actions(raw: Any, prefix: str = "actions", mode: str | None = None):
         ) from exc
 
 
+def parse_text_watch(
+    raw: Any, field_name: str = "compare_options.advanced.text_watch"
+) -> TextWatchOptions:
+    """Valida um `text_watch` (YAML do perfil ou `overrides` da selecao)."""
+    if not isinstance(raw, dict):
+        raise ConfigError(code="config.text_watch_not_mapping", params={"field": field_name})
+    text = _as_str(raw.get("text", ""), f"{field_name}.text")
+    if not text.strip():
+        raise ConfigError(
+            code="config.text_watch_text_required", params={"field": field_name}
+        )
+    expect = (_as_str(raw.get("expect", "appears"), f"{field_name}.expect") or "appears").lower()
+    if expect not in VALID_TEXT_WATCH_EXPECTS:
+        raise ConfigError(
+            code="config.text_watch_invalid_expect",
+            params={
+                "field": f"{field_name}.expect",
+                "value": expect,
+                "valid": VALID_TEXT_WATCH_EXPECTS,
+            },
+        )
+    return TextWatchOptions(
+        text=text,
+        expect=expect,
+        case_sensitive=_as_watch_bool(
+            raw.get("case_sensitive"), f"{field_name}.case_sensitive", False
+        ),
+        ignore_accents=_as_watch_bool(
+            raw.get("ignore_accents"), f"{field_name}.ignore_accents", True
+        ),
+    )
+
+
+def _as_watch_bool(value: Any, field_name: str, default: bool) -> bool:
+    if value is None:
+        return default
+    if not isinstance(value, bool):
+        raise ConfigError(
+            code="config.text_watch_not_bool",
+            params={"field": field_name, "value": value},
+        )
+    return value
+
+
 def parse_overrides(raw: Any) -> dict[str, Any]:
     """Normaliza os `overrides` de uma selecao (doc, secao 12.3).
 
@@ -423,6 +469,8 @@ def parse_overrides(raw: Any) -> dict[str, Any]:
         if not isinstance(actions_raw, (list, tuple)):
             raise ConfigError(code="config.overrides_actions_not_list")
         out["actions"] = tuple(actions_raw)
+    if raw.get("text_watch") is not None:
+        out["text_watch"] = parse_text_watch(raw["text_watch"], "overrides.text_watch")
     return out
 
 
@@ -438,6 +486,7 @@ def _parse_compare_options(raw: Any) -> CompareOptions:
             raise ConfigError(code="config.compare_section_not_mapping", params={"name": name})
 
     tesseract_cmd = advanced.get("tesseract_cmd")
+    text_watch_raw = advanced.get("text_watch")
     return CompareOptions(
         light=LightOptions(
             threshold=_as_float(light.get("threshold", 12.0), "compare_options.light.threshold")
@@ -457,6 +506,11 @@ def _parse_compare_options(raw: Any) -> CompareOptions:
             tesseract_cmd=(
                 _as_str(tesseract_cmd, "compare_options.advanced.tesseract_cmd")
                 if tesseract_cmd
+                else None
+            ),
+            text_watch=(
+                parse_text_watch(text_watch_raw, "compare_options.advanced.text_watch")
+                if text_watch_raw is not None
                 else None
             ),
         ),
@@ -802,17 +856,29 @@ def _alert_to_dict(alert: AlertOptions) -> dict[str, Any]:
     return data
 
 
+def _text_watch_to_dict(options: TextWatchOptions) -> dict[str, Any]:
+    return {
+        "text": options.text,
+        "expect": options.expect,
+        "case_sensitive": options.case_sensitive,
+        "ignore_accents": options.ignore_accents,
+    }
+
+
 def _compare_options_to_dict(options: CompareOptions) -> dict[str, Any]:
+    advanced: dict[str, Any] = {
+        "similarity_threshold": options.advanced.similarity_threshold,
+        "psm": options.advanced.psm,
+        "lang": options.advanced.lang,
+        "upscale": options.advanced.upscale,
+        "tesseract_cmd": options.advanced.tesseract_cmd,
+    }
+    if options.advanced.text_watch is not None:
+        advanced["text_watch"] = _text_watch_to_dict(options.advanced.text_watch)
     return {
         "light": {"threshold": options.light.threshold},
         "default": {"hash_size": options.default.hash_size, "threshold": options.default.threshold},
-        "advanced": {
-            "similarity_threshold": options.advanced.similarity_threshold,
-            "psm": options.advanced.psm,
-            "lang": options.advanced.lang,
-            "upscale": options.advanced.upscale,
-            "tesseract_cmd": options.advanced.tesseract_cmd,
-        },
+        "advanced": advanced,
     }
 
 

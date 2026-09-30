@@ -22,9 +22,12 @@ Runs on **Windows and Linux**, capturing pixels only (it never touches the watch
   seconds. The ROI is anchored to the window — if the window moves, the ROI follows (Model B,
   doc §3.3).
 - **Detects visual changes** in three modes: `light` (mean color), `default` (perceptual hash) and
-  `advanced` (OCR + text diff; requires Tesseract).
+  `advanced` (OCR + text diff; requires Tesseract), including a **text watch** that fires only when a
+  text **appears/disappears** in the ROI (`text_watch`, advanced only).
 - **Alerts** through sound, popup, Telegram, a JSONL log, a **webhook**, an **HTTP POST** and
-  **syslog**, with per-channel minimum severity and cooldown.
+  **syslog**, with per-channel minimum severity and cooldown. The sound plays **WAV/MP3/M4A/AAC/OGG/
+  FLAC/WMA** depending on the context (GUI via Qt Multimedia; CLI via `miniaudio`), and the GUI has a
+  picker that previews the file and hands you the `file: "..."` snippet for the YAML.
 - **Masks** to ignore areas that change on their own (clock, spinner, cursor).
 - **Evidence**: prints of the baseline and of each change — opt-in.
 - **Pseudo-human actions** (click, keys, text) when armed — rehearsal by default, audited in
@@ -71,7 +74,7 @@ its own `severity_min` and `cooldown_s`:
 
 | Channel (`type`) | What it does | Details |
 |---|---|---|
-| `sound` | plays a local sound | [wiki/Alerts.md](wiki/Alerts.md) |
+| `sound` | plays a local sound (WAV/MP3/M4A/AAC/OGG/FLAC…) | [wiki/Alerts.md](wiki/Alerts.md) |
 | `popup` | local notification | [wiki/Alerts.md](wiki/Alerts.md) |
 | `telegram` | message + ROI image via bot | **[Telegram setup — step by step](wiki/Telegram-Setup.md)** |
 | `log` | one JSON line per alert (`logs/alerts.jsonl`) | [wiki/Alerts.md](wiki/Alerts.md) |
@@ -162,7 +165,10 @@ example: `python -m screen_watch --language en-US gui`.
 - **Telegram** (optional): token via the `TELEGRAM_BOT_TOKEN` environment variable (never in the
   YAML) — step-by-step in [wiki/Telegram-Setup.md](wiki/Telegram-Setup.md).
 - **Actions and global hotkeys** (optional): the `input` extra (`pynput`).
-- **Sound** (optional): `winsound` on Windows; on Linux, a player (`paplay`/`aplay`/`ffplay`).
+- **Sound** (optional, but included in the installers): the CLI/`run` uses **`miniaudio`**
+  (WAV/MP3/OGG/FLAC); the GUI uses **Qt Multimedia** (adds M4A/AAC/WMA on Windows/macOS). On Linux
+  the GUI falls back on the GStreamer plugins, and the legacy path uses `winsound` (WAV) or an
+  external player (`paplay`/`aplay`/`ffplay`).
 - **Linux**: an **X11** session — Wayland is not supported.
 
 **To run from source:** Python **3.11+** and the extras you need:
@@ -221,9 +227,11 @@ creates the GitHub Release. `workflow_dispatch` generates artifacts only (no rel
 ## Current status
 
 **Implemented:** capture and anchoring (Model B), comparison modes (`light`/`default`/`advanced`)
-with pipeline and short-circuit, alerts with cooldown/re-arm, evidence, pseudo-human actions (with
-GUI editor and recorder), scheduler, profiles, full CLI, GUI + tray with i18n (pt-BR/en-US),
-packaging (Inno Setup and `.deb`) and tag-driven CI/release.
+with pipeline and short-circuit (`advanced` gated by phash, bypassed by `text_watch`), alerts
+(sound/popup/Telegram/log + webhook/HTTP POST/syslog) with cooldown/re-arm and send test,
+**selectable sound (MP3/M4A/OGG/FLAC…)** and the **`text_watch`** filter (appears/disappears),
+evidence, pseudo-human actions (with GUI editor and recorder), scheduler, profiles, full CLI,
+GUI + tray with i18n (pt-BR/en-US), packaging (Inno Setup and `.deb`) and tag-driven CI/release.
 
 **Manual validation pending:** GUI/tray/overlay at 100/125/150% (doc §5.1, §9.5) and bundle details
 on a clean machine (icon, `StartupWMClass`, package size, SmartScreen warning) — checklist in
@@ -237,8 +245,9 @@ is demand.
 - **Wayland** cannot capture; **occluded windows** compare whatever is in front; **ARM** and
   **macOS** are not part of the build.
 - **Tray on GNOME** may not appear without a tray extension (the window keeps working).
-- **Sound on Linux** depends on an external player; without one it stays silent (the alert never
-  breaks).
+- **Sound on Linux** depends on GStreamer plugins (GUI) or on an external player (legacy); in the
+  CLI, `miniaudio` covers WAV/MP3/OGG/FLAC — **M4A/AAC** needs a player like `ffplay`, otherwise the
+  alert falls back to `beep`. It never breaks.
 - A minimized or missing window emits `target_unavailable` and the loop keeps trying (it never
   breaks).
 
@@ -263,7 +272,7 @@ Integration tests are opt-in (`TEST_REAL_CAPTURE`, `TEST_REAL_TELEGRAM`,
 | [**Wiki**](wiki/Home.md) | usage and feature details: CLI, GUI, config, actions, alerts, evidence, languages, DPI, build |
 | [`doc/00-Architecture_and_Specification.md`](doc/00-Architecture_and_Specification.md) | architecture and specification — **single source of truth for the design** |
 | [`doc/01-Build_and_Release.md`](doc/01-Build_and_Release.md) | installer build and release pipeline |
-| [`doc/releases/`](doc/releases/v0.5.0.md) | per-version release notes (detail file) |
+| [`doc/releases/`](doc/releases/v0.6.0.md) | per-version release notes (detail file) |
 | [`CHANGELOG.md`](CHANGELOG.md) | changes per version (semantic) |
 | [`README.pt-BR.md`](README.pt-BR.md) | este guia em português |
 

@@ -64,6 +64,11 @@ class OCRTextDiffStrategy:
     def initialize(self, baseline: Frame) -> None:
         self._baseline_text = self._extract(baseline.rgb)
 
+    @property
+    def baseline_text(self) -> str:
+        """Texto do baseline (usado pelo `TextWatchStrategy` que envolve este OCR)."""
+        return self._baseline_text
+
     def compare(self, current: Frame) -> ComparisonResult:
         current_text = self._extract(current.rgb)
         ratio = difflib.SequenceMatcher(None, self._baseline_text, current_text).ratio()

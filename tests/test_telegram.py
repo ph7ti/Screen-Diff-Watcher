@@ -76,6 +76,14 @@ def test_missing_token_logs_and_returns(monkeypatch, make_frame, caplog):
     assert "TELEGRAM_BOT_TOKEN" in caplog.text
 
 
+def test_token_present_reflects_env(monkeypatch):
+    notifier = TelegramNotifier(chat_id="1", bot_token_env="MY_BOT_TOKEN")
+    monkeypatch.delenv("MY_BOT_TOKEN", raising=False)
+    assert notifier.token_present is False
+    monkeypatch.setenv("MY_BOT_TOKEN", "x")
+    assert notifier.token_present is True
+
+
 def test_custom_token_env(monkeypatch, make_frame):
     requests = _patch_post(monkeypatch)
     monkeypatch.setenv("MY_BOT_TOKEN", "CUSTOM")

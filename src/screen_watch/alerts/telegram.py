@@ -58,6 +58,11 @@ class TelegramNotifier:
     def _token(self) -> str | None:
         return os.environ.get(self.bot_token_env) or None
 
+    @property
+    def token_present(self) -> bool:
+        """True se a variavel de ambiente do token esta definida (para o teste de envio)."""
+        return self._token is not None
+
     @staticmethod
     def _png_bytes(frame: Frame) -> bytes:
         from PIL import Image  # noqa: PLC0415

@@ -9,7 +9,7 @@ An alert fires when the comparison confirms a **change** (`changed: true`) and t
 
 | Type (`type`) | What it does | Specific fields |
 |---|---|---|
-| `sound` | plays a local sound | `file` (WAV; default `alert.wav`) |
+| `sound` | plays a local sound | `file` (WAV/MP3/M4A/AAC/OGG/FLAC…; default `alert.wav`) |
 | `popup` | local notification (`plyer`) | — |
 | `telegram` | sends a message (and the ROI image) via bot | `bot_token_env`, `chat_id`, `attach_roi` |
 | `log` | writes a JSON line to `logs/alerts.jsonl` | `path` (optional; empty = default) |
@@ -47,13 +47,26 @@ log** (Telegram requires `chat_id`, so it does not enter the default).
 
 ### Sound
 
-- All playback goes through the `platform/audio.py` boundary; `alerts/` does not know `sys.platform`.
-- Windows: `winsound` (stdlib); without `alert.wav`, it uses `MessageBeep()`.
-- Linux/macOS: external player in order of preference — `paplay`, `aplay -q`,
-  `ffplay -nodisp -autoexit -loglevel quiet`; on macOS, `afplay`.
-- The `simpleaudio` extra (`pip install -e ".[sound]"`) is optional and does **not** enter the installers
-  (no reliable wheel for Python 3.13). Without any player, the sound is **silent** — the alert
-  never breaks.
+- All playback goes through the `platform/audio.py` boundary; `alerts/` does not know `sys.platform`,
+  Qt or miniaudio.
+- **GUI**: `QMediaPlayer` (QtMultimedia) created on the GUI thread — WAV/MP3/M4A/AAC/FLAC/WMA via
+  Media Foundation (Windows), GStreamer (Linux, depends on the installed plugins) or AVFoundation
+  (macOS). Playing again interrupts the previous sound.
+- **CLI/`run`** (no Qt application): **miniaudio** (core dependency) plays WAV/MP3/OGG/FLAC on a
+  **daemon thread** (it never blocks the loop). **No AAC/M4A** — it falls back to an external player
+  when present, otherwise `beep`.
+- **Legacy fallback**: `winsound` (stdlib; WAV only) on Windows; on Linux/macOS an external player in
+  order of preference — `paplay`, `aplay -q`, `ffplay -nodisp -autoexit -loglevel quiet`; on macOS,
+  `afplay`.
+- `file` may be **absolute** or **relative**: relative is looked up in **`app-data/sounds/`** first
+  and then in the CWD. A missing file — or a format with no decoder — falls back to `beep()` with a
+  log warning (never silence nor an exception).
+- The `simpleaudio` extra (`pip install -e ".[sound]"`) remains optional and does **not** enter the
+  installers (no reliable wheel for Python 3.13); it is only tried for `.wav`.
+- **GUI selector**: the **Alert sound** row previews any file with **Play** and shows the
+  `file: "<path>"` snippet to paste into the YAML — it **does not persist** anything (the YAML is
+  read at start).
+- Full format matrix per context: [v0.6.0 release notes](../doc/releases/v0.6.0.md).
 
 ### Popup
 

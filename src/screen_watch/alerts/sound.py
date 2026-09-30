@@ -2,14 +2,17 @@
 
 Tenta `simpleaudio` (extra opcional `sound`, sem wheel confiavel no 3.13). Sem
 ele, delega a `platform/audio.py`, que concentra a fronteira de plataforma
-(`winsound` no Windows; player externo no Linux/macOS). `alerts/` nao conhece
-`sys.platform` nem `winsound`.
+(player Qt na GUI; `miniaudio` no CLI; `winsound`/player externo no legado).
+`alerts/` nao conhece `sys.platform`, `winsound`, Qt nem miniaudio.
+
+O `file` relativo e resolvido por `platform/audio.py` (``app_home()/sounds`` e
+depois o CWD), de modo que o caminho vale para o app instalado.
 """
 
 from __future__ import annotations
 
 import logging
-import os
+from pathlib import Path
 
 from screen_watch.capture.frame import Frame
 from screen_watch.compare.protocol import ComparisonResult
@@ -35,22 +38,27 @@ class SoundNotifier:
         self._playback: object | None = None
 
     def notify(self, result: ComparisonResult, frame: Frame) -> None:
-        if self._play_simpleaudio():
+        from screen_watch.platform.audio import play_file, resolve_sound_path  # noqa: PLC0415
+
+        path = resolve_sound_path(self.file)
+        if self._play_simpleaudio(path):
             return
-        from screen_watch.platform.audio import play_file  # noqa: PLC0415
+        play_file(path)
 
-        play_file(self.file)
-
-    def _play_simpleaudio(self) -> bool:
-        if not os.path.exists(self.file):
+    def _play_simpleaudio(self, path: str) -> bool:
+        # `simpleaudio` so decodifica WAV; para os demais formatos o despacho de
+        # `play_file` (Qt/miniaudio) e o caminho certo.
+        if Path(path).suffix.lower() != ".wav":
+            return False
+        if not Path(path).is_file():
             return False
         try:
             import simpleaudio  # noqa: PLC0415
         except Exception:  # pragma: no cover - depende do ambiente
             return False
         try:
-            self._playback = simpleaudio.WaveObject.from_wave_file(self.file).play()
+            self._playback = simpleaudio.WaveObject.from_wave_file(path).play()
             return True
         except Exception as exc:  # pragma: no cover - depende do ambiente
-            log.warning("simpleaudio could not play %s: %s", self.file, exc)
+            log.warning("simpleaudio could not play %s: %s", path, exc)
             return False

@@ -3,6 +3,66 @@
 Todas as mudanças relevantes deste projeto. Formato inspirado em "Keep a Changelog";
 versionamento semântico. Versão: `screen_watch.__version__` (fonte única).
 
+## [0.6.0] — 2026-09-30
+
+Detalhes e exemplos: [`doc/releases/v0.6.0.md`](doc/releases/v0.6.0.md)
+([PT](doc/releases/v0.6.0.pt-BR.md)).
+
+### Adicionado
+
+- **Som selecionável e em mais formatos** (`.wav`, `.mp3`, `.m4a`, `.aac`, `.ogg`, `.oga`, `.flac`,
+  `.wma` conforme a camada): a GUI toca pelo **`QMediaPlayer`** (QtMultimedia, já empacotado), o
+  CLI/`run` usa **`miniaudio`** (agora dependência core; thread daemon, sem bloquear o loop) e o
+  backend legado (`winsound`/`paplay`/`aplay`/`ffplay`/`afplay`) segue como fallback. `file` relativo
+  procura em `app-data/sounds/` **antes** do CWD; arquivo ausente ou formato sem decoder cai no
+  `beep()` + aviso (nunca silêncio nem exceção). O `features` mostra camadas, formatos e a pasta.
+- **Grupo “Detecção e alertas” na GUI**: linha **Som do alerta** com o caminho efetivo,
+  **Escolher…** (só pré-visualiza; nada é gravado), **Reproduzir** e **Copiar caminho** (trecho
+  `file: "<caminho>"` para colar no alerta `sound` do YAML);
+- **`text_watch` — alertar quando um texto aparece/desaparece na ROI** (somente no modo `advanced`):
+  com o filtro configurado (`compare_options.advanced.text_watch` no perfil ou
+  `overrides.text_watch` na seleção, que tem precedência), o alerta dispara **somente na transição**
+  escolhida (`expect: appears|disappears`) e as demais mudanças de texto não disparam. Casamento por
+  substring com `case_sensitive: false` e `ignore_accents: true` (NFKD + remoção de diacríticos nos
+  dois lados) por padrão; a transição vale `severity: 3`. Na GUI, a linha **Verificar texto** edita o
+  override da seleção atual (habilitada só no `advanced`) e é limpa ao trocar o modo.
+
+### Corrigido
+
+- **Telegram não enviava** quando o `chat_id` do perfil estava com o placeholder do `init-config`
+  (`123456789`): o erro do Telegram ("chat not found") era apenas logado. Agora o `test-alert`
+  reporta `alert <id> failed: ...` e retorna código != 0 mesmo que outro canal (som/popup) tenha
+  funcionado.
+- `test-alert --only <id>` e o botão **Testar alerta…** sinalizam **token/URL ausentes** como falha
+  (`TELEGRAM_BOT_TOKEN not set` / `no url resolved`) em vez de reportar "sent".
+- `httpx`/`httpcore` não logam mais a URL completa em INFO — ela carregava o **token do Telegram** e
+  segredos de webhook (vazamento em logs).
+
+### Mudado
+
+- **Modo `advanced`**: agora o `phash` (`default`) roda como **gate de pixel** antes do OCR
+  (`MODE_STAGES["advanced"] = ("default", "advanced")`). O OCR só roda/pontua quando os pixels
+  mudaram, reduzindo falsos positivos ("mudanças" repetidas sem alteração real). O threshold do gate
+  é `compare_options.default.threshold`.
+- **Com `text_watch` configurado o gate é bypassado** (`("advanced",)`): o OCR roda a cada tick e o
+  veredito do filtro é autoritativo — o `changed` do OCR não é propagado e `score`/`threshold` dele
+  ficam apenas no `detail` (calibração pelo `compare-modes`). Sem o bypass o gate esconderia a
+  transição.
+- **Seleção de ROI**: uma ROI que não cabe inteiramente na janela é **rejeitada**
+  (`runtime.roi_outside_window`) em vez de salva com um aviso. Uma ROI fora da janela fazia o tick
+  capturar uma região alheia ao alvo, gerando prints e alertas que não correspondiam à janela.
+
+### Notas
+
+- `text_watch` fora do `advanced` é erro de config (`config.text_watch_needs_advanced`); a GUI limpa
+  o override ao trocar o modo. Como o filtro decide o `changed`, **as ações também só rodam na
+  transição** configurada.
+- Custo do bypass: OCR a cada tick (100–500 ms; o intervalo default é 2 s); o veredito por presença
+  não sofre o ruído de OCR que motivou o gate.
+- Matriz de formatos: a GUI no Windows (Media Foundation) toca M4A/AAC; no CLI isso depende de um
+  player externo (`ffplay`) — senão `beep`. No Linux (GUI), depende dos plugins do GStreamer.
+- 5 códigos de erro novos (`config.text_watch_*`), chaves `main.*`/`help.*` nos dois catálogos.
+
 ## [0.5.0] — 2026-09-30
 
 Detalhes e exemplos: [`doc/releases/v0.5.0.md`](doc/releases/v0.5.0.md)

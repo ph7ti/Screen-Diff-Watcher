@@ -3,12 +3,14 @@ from __future__ import annotations
 import pytest
 
 from screen_watch.config.schema import (
+    AdvancedOptions,
     AlertOptions,
     CompareOptions,
     GlobalDefaults,
     LightOptions,
     ProfileOptions,
     TargetConfig,
+    TextWatchOptions,
 )
 from screen_watch.errors import ConfigError
 from screen_watch.persistence.selection import (
@@ -18,8 +20,10 @@ from screen_watch.persistence.selection import (
     from_target_config,
     load_selection,
     override_actions,
+    override_text_watch,
     resolve_actions,
     set_override_actions,
+    set_override_text_watch,
     to_target_config,
 )
 
@@ -403,3 +407,138 @@ def test_build_target_applies_action_filter():
 
     unfiltered = build_target(selection, _profile(mode="advanced"), name="x")
     assert [action.name for action in unfiltered.actions] == ["a", "b"]
+
+
+# -- text_watch (override da selecao > perfil) -----------------------------
+
+
+def test_override_text_watch_round_trip(tmp_path):
+    selection = Selection(
+        window_handle=1,
+        origin_at_selection=(0, 0),
+        roi_relative=(1, 2, 3, 4),
+        mode="advanced",
+        overrides={"poll_interval_s": 1.5},
+    )
+    assert override_text_watch(selection) is None
+
+    watch = TextWatchOptions(
+        text="CONCLUÍDO", expect="disappears", case_sensitive=True, ignore_accents=False
+    )
+    updated = set_override_text_watch(selection, watch)
+
+    assert updated.overrides["poll_interval_s"] == 1.5
+    assert override_text_watch(updated) == watch
+
+    path = tmp_path / "s.json"
+    dump_selection(path, updated)
+    assert override_text_watch(load_selection(path)) == watch
+
+
+def test_set_override_text_watch_none_removes_key():
+    selection = Selection(
+        window_handle=1,
+        origin_at_selection=(0, 0),
+        roi_relative=(1, 2, 3, 4),
+        overrides={"text_watch": {"text": "ok"}, "rearm": False},
+    )
+    updated = set_override_text_watch(selection, None)
+    assert "text_watch" not in updated.overrides
+    assert updated.overrides["rearm"] is False
+
+    only_watch = Selection(
+        window_handle=1,
+        origin_at_selection=(0, 0),
+        roi_relative=(1, 2, 3, 4),
+        overrides={"text_watch": {"text": "ok"}},
+    )
+    assert set_override_text_watch(only_watch, None).overrides is None
+
+
+def test_override_text_watch_rejects_invalid_raw():
+    selection = Selection(
+        window_handle=1,
+        origin_at_selection=(0, 0),
+        roi_relative=(1, 2, 3, 4),
+        overrides={"text_watch": {"text": "  "}},
+    )
+    with pytest.raises(ConfigError):
+        override_text_watch(selection)
+
+
+def test_build_target_applies_text_watch_override():
+    selection = Selection(
+        window_handle=1,
+        origin_at_selection=(0, 0),
+        roi_relative=(1, 2, 3, 4),
+        mode="advanced",
+        overrides={"text_watch": {"text": "ok", "expect": "disappears"}},
+    )
+    target = build_target(selection, _profile(mode="advanced"), name="x")
+    assert target.compare_options.advanced.text_watch == TextWatchOptions(
+        text="ok", expect="disappears"
+    )
+
+
+def test_build_target_override_text_watch_wins_over_profile():
+    profile = ProfileOptions(
+        defaults=GlobalDefaults(
+            compare_options=CompareOptions(
+                advanced=AdvancedOptions(text_watch=TextWatchOptions(text="perfil"))
+            )
+        )
+    )
+    selection = Selection(
+        window_handle=1,
+        origin_at_selection=(0, 0),
+        roi_relative=(1, 2, 3, 4),
+        mode="advanced",
+        overrides={"text_watch": {"text": "selecao"}},
+    )
+    target = build_target(selection, profile, name="x")
+    assert target.compare_options.advanced.text_watch.text == "selecao"
+
+
+def test_build_target_uses_profile_text_watch_without_override():
+    profile = ProfileOptions(
+        defaults=GlobalDefaults(
+            compare_options=CompareOptions(
+                advanced=AdvancedOptions(text_watch=TextWatchOptions(text="perfil"))
+            )
+        )
+    )
+    selection = Selection(
+        window_handle=1, origin_at_selection=(0, 0), roi_relative=(1, 2, 3, 4), mode="advanced"
+    )
+    target = build_target(selection, profile, name="x")
+    assert target.compare_options.advanced.text_watch.text == "perfil"
+
+
+def test_build_target_rejects_text_watch_outside_advanced():
+    selection = Selection(
+        window_handle=1,
+        origin_at_selection=(0, 0),
+        roi_relative=(1, 2, 3, 4),
+        mode="default",
+        overrides={"text_watch": {"text": "ok"}},
+    )
+    with pytest.raises(ConfigError) as excinfo:
+        build_target(selection, _profile(mode="default"), name="x")
+    assert excinfo.value.code == "config.text_watch_needs_advanced"
+
+
+def test_build_target_rejects_profile_text_watch_outside_advanced():
+    profile = ProfileOptions(
+        defaults=GlobalDefaults(
+            mode="light",
+            compare_options=CompareOptions(
+                advanced=AdvancedOptions(text_watch=TextWatchOptions(text="perfil"))
+            ),
+        )
+    )
+    selection = Selection(
+        window_handle=1, origin_at_selection=(0, 0), roi_relative=(1, 2, 3, 4), mode="light"
+    )
+    with pytest.raises(ConfigError) as excinfo:
+        build_target(selection, profile, name="x")
+    assert excinfo.value.code == "config.text_watch_needs_advanced"

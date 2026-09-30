@@ -6,8 +6,8 @@ from screen_watch.compare.pipeline import MODE_STAGES, ComparePipeline
 from screen_watch.compare.protocol import ComparisonResult
 
 
-def test_advanced_mode_is_ocr_only():
-    assert MODE_STAGES["advanced"] == ("advanced",)
+def test_advanced_mode_gates_ocr_with_phash():
+    assert MODE_STAGES["advanced"] == ("default", "advanced")
 
 
 class RecordingStage:
@@ -56,3 +56,46 @@ def test_severity_is_enriched_on_final_result(make_frame):
     pipeline.initialize(make_frame(np.zeros((4, 4, 3), dtype=np.uint8)))
     result = pipeline.compare(make_frame(np.zeros((4, 4, 3), dtype=np.uint8)))
     assert result.severity == 3
+
+
+def test_build_pipeline_keeps_the_gate_without_watch():
+    from screen_watch.app import build_pipeline
+    from screen_watch.config.schema import CompareOptions
+
+    pipeline = build_pipeline("advanced", CompareOptions())
+    assert [stage.name for stage in pipeline.stages] == ["default", "advanced"]
+
+
+def test_build_pipeline_ignores_empty_watch_text():
+    from screen_watch.app import build_pipeline
+    from screen_watch.config.schema import AdvancedOptions, CompareOptions, TextWatchOptions
+
+    options = CompareOptions(advanced=AdvancedOptions(text_watch=TextWatchOptions(text=" ")))
+    pipeline = build_pipeline("advanced", options)
+    assert [stage.name for stage in pipeline.stages] == ["default", "advanced"]
+
+
+def test_build_pipeline_with_text_watch_bypasses_the_phash_gate(monkeypatch, make_frame):
+    from screen_watch.app import build_pipeline
+    from screen_watch.compare.advanced import OCRTextDiffStrategy
+    from screen_watch.config.schema import AdvancedOptions, CompareOptions, TextWatchOptions
+
+    texts = iter(["", "CONCLUIDO"])
+
+    def fake_extract(self, rgb):
+        return next(texts)
+
+    monkeypatch.setattr(OCRTextDiffStrategy, "_extract", fake_extract)
+    options = CompareOptions(
+        advanced=AdvancedOptions(text_watch=TextWatchOptions(text="concluido"))
+    )
+    pipeline = build_pipeline("advanced", options)
+    # Sem o gate phash: o OCR roda a cada tick e o veredito do watch e autoritativo.
+    assert [stage.name for stage in pipeline.stages] == ["advanced"]
+
+    pipeline.initialize(make_frame(np.zeros((4, 4, 3), dtype=np.uint8)))
+    current = make_frame(np.zeros((4, 4, 3), dtype=np.uint8))  # pixels identicos
+    result = pipeline.compare(current)
+    assert result.changed is True
+    assert result.severity == 3
+    assert result.detail["text_watch"]["present_now"] is True

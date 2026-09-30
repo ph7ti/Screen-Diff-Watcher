@@ -17,6 +17,7 @@ Point = tuple[int, int]
 
 VALID_MODES = ("light", "default", "advanced")
 VALID_DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+VALID_TEXT_WATCH_EXPECTS = ("appears", "disappears")
 VALID_ALERT_TYPES = (
     "sound",
     "popup",
@@ -78,6 +79,20 @@ class DefaultOptions:
 
 
 @dataclass(frozen=True)
+class TextWatchOptions:
+    """Filtro de presenca de texto na ROI (somente no modo `advanced`).
+
+    Com um `text_watch` ativo o OCR roda a cada tick (sem o gate de phash) e o
+    alerta dispara somente na transicao escolhida.
+    """
+
+    text: str = ""
+    expect: str = "appears"
+    case_sensitive: bool = False
+    ignore_accents: bool = True
+
+
+@dataclass(frozen=True)
 class AdvancedOptions:
     similarity_threshold: float = 0.92
     psm: int = 6
@@ -85,6 +100,8 @@ class AdvancedOptions:
     upscale: int = 2
     # Caminho do executavel do Tesseract quando ele nao esta no PATH.
     tesseract_cmd: str | None = None
+    # Filtro por presenca de texto (`None` = so o diff de OCR normal).
+    text_watch: TextWatchOptions | None = None
 
 
 @dataclass(frozen=True)

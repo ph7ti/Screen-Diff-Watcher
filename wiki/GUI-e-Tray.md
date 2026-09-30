@@ -14,6 +14,13 @@
   `Seleção WhatsApp — Região 120,340 400x80 — advanced`). Duplo clique inicia/para.
 - **Linha de ações de arquivo**: **Novo Target** / **Remover** / **Recarregar** / **Abrir YAML** /
   **Prints**, mais o checkbox **Gravar prints (evidências)**.
+- **Detecção e alertas**: linha **Som do alerta** (caminho efetivo; **Escolher…** para
+  pré-visualizar, **Reproduzir** e **Copiar caminho** com o trecho `file: "..."` — o seletor **não
+  persiste**) e linha **Verificar texto** (texto, **Aparece**/**Desaparece**, **Diferenciar
+  maiúsculas**, **Ignorar acentos**; habilitada **somente no `advanced`** e gravada em
+  `overrides.text_watch` da **seleção atual**). Trocar o modo para fora do `advanced` limpa o
+  override. Detalhes em [Alertas](Alertas.md) e nas
+  [notas da v0.6.0](../doc/releases/v0.6.0.pt-BR.md).
 - **Ações da sessão (aplicam no próximo start)**: checklist com as ações resolvidas, contador
   "N de M selecionadas" e a coluna de botões (`Nova ação…`, `Editar…`, `Remover Ação`, `Armar Ação`,
   `Executar ação`).

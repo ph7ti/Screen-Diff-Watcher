@@ -14,9 +14,10 @@ from screen_watch.compare.protocol import CompareStrategy, ComparisonResult, com
 MODE_STAGES: dict[str, tuple[str, ...]] = {
     "light": ("light",),
     "default": ("default",),
-    # OCR e o detector do modo advanced: roda sozinho, sem gate de phash/mean
-    # (doc, secao 10.5 e nota de design do plano).
-    "advanced": ("advanced",),
+    # `advanced` roda o phash (`default`) como gate **antes** do OCR: so roda/pontua o
+    # OCR quando os pixels mudaram. Sem o gate, ruido de OCR sobre quadros quase
+    # identicos virava "mudanca" a cada tick (falso positivo; doc, secao 10.5).
+    "advanced": ("default", "advanced"),
 }
 
 

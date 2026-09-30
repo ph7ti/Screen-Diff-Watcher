@@ -26,6 +26,15 @@ _EN: dict[str, str] = {
     "config.overrides_actions_not_list": "overrides.actions must be a list",
     "config.compare_options_not_mapping": "compare_options must be a mapping",
     "config.compare_section_not_mapping": "compare_options.{name} must be a mapping",
+    "config.text_watch_not_mapping": "{field} must be a mapping",
+    "config.text_watch_text_required": "{field}.text is required (non-empty)",
+    "config.text_watch_invalid_expect": (
+        "invalid {field}.expect: {value!r}; use one of {valid}"
+    ),
+    "config.text_watch_not_bool": "{field} must be true/false (got {value!r})",
+    "config.text_watch_needs_advanced": (
+        "text_watch requires mode 'advanced' (OCR); selection is {mode!r}"
+    ),
     "config.alert_not_mapping": "{field} must be a mapping",
     "config.alert_missing_type": "{field} requires 'type'",
     "config.target_not_mapping": "each target must be a mapping",
@@ -148,6 +157,9 @@ _EN: dict[str, str] = {
     "runtime.selection_cancelled": "selection cancelled",
     "runtime.window_missing_after_selection": (
         "window not found after selection: handle={handle}"
+    ),
+    "runtime.roi_outside_window": (
+        "ROI {roi} does not fit inside window {window}; select a region fully inside the window"
     ),
     "runtime.already_running": "a target is already running",
 }

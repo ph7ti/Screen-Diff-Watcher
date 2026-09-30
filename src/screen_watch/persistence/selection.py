@@ -22,6 +22,7 @@ from screen_watch.config.schema import (
     ProfileOptions,
     ScheduleOptions,
     TargetConfig,
+    TextWatchOptions,
 )
 from screen_watch.errors import ConfigError
 
@@ -151,6 +152,42 @@ def set_override_actions(
     return replace(selection, overrides=overrides or None)
 
 
+def override_text_watch(selection: Selection) -> TextWatchOptions | None:
+    """`overrides.text_watch` normalizado (None se ausente).
+
+    `ConfigError` se o texto estiver vazio/invalido (quem chama decide tratar).
+    """
+    overrides = selection.overrides
+    if not isinstance(overrides, dict):
+        return None
+    raw = overrides.get("text_watch")
+    if raw is None:
+        return None
+    from screen_watch.config.loader import parse_text_watch  # noqa: PLC0415
+
+    return parse_text_watch(raw, "overrides.text_watch")
+
+
+def set_override_text_watch(
+    selection: Selection, watch: TextWatchOptions | None
+) -> Selection:
+    """Devolve uma copia da selecao com `overrides.text_watch` substituido.
+
+    `None` remove a chave (volta a herdar o `text_watch` do perfil, se houver).
+    """
+    overrides = dict(selection.overrides or {})
+    if watch is None:
+        overrides.pop("text_watch", None)
+    else:
+        overrides["text_watch"] = {
+            "text": watch.text,
+            "expect": watch.expect,
+            "case_sensitive": watch.case_sensitive,
+            "ignore_accents": watch.ignore_accents,
+        }
+    return replace(selection, overrides=overrides or None)
+
+
 def _resolve_mode(selection: Selection, overrides: dict[str, Any], mode: str | None) -> str:
     from screen_watch.config.schema import VALID_MODES  # noqa: PLC0415
 
@@ -217,6 +254,7 @@ def build_target(
     actions = _actions_for_overrides(overrides, profile, resolved_mode)
     if action_filter is not None:
         actions = filter_actions(actions, action_filter)
+    compare_options = _compare_options_with_watch(defaults.compare_options, overrides, resolved_mode)
     return TargetConfig(
         name=name,
         window_handle=selection.window_handle,
@@ -227,11 +265,33 @@ def build_target(
         poll_interval_s=overrides.get("poll_interval_s", defaults.poll_interval_s),
         rearm=overrides.get("rearm", defaults.rearm),
         masks=overrides.get("masks", selection.masks),
-        compare_options=defaults.compare_options,
+        compare_options=compare_options,
         alerts=overrides.get("alerts", profile.alerts),
         actions=actions,
         humanize=defaults.humanize,
         schedule=schedule or ScheduleOptions(),
+    )
+
+
+def _compare_options_with_watch(
+    compare_options: CompareOptions, overrides: dict[str, Any], mode: str
+) -> CompareOptions:
+    """Aplica o `text_watch` (override > perfil) ao `advanced` do `CompareOptions`.
+
+    Fora do modo `advanced` o filtro e invalido (`config.text_watch_needs_advanced`);
+    o OCR nao roda nos demais modos.
+    """
+    watch = overrides.get("text_watch")
+    if watch is None:
+        watch = compare_options.advanced.text_watch
+    if watch is None:
+        return compare_options
+    if mode != "advanced":
+        raise ConfigError(
+            code="config.text_watch_needs_advanced", params={"mode": mode}
+        )
+    return replace(
+        compare_options, advanced=replace(compare_options.advanced, text_watch=watch)
     )
 
 

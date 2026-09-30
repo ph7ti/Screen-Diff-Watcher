@@ -129,6 +129,11 @@ def send_test(target, alert_id: str, frame: Frame | None = None) -> TestOutcome:
             + (f" (check {url_env})" if url_env else " (check url/url_env)"),
         )
 
+    if alert.type == "telegram" and not getattr(notifier, "token_present", True):
+        return TestOutcome(
+            False, f"alert {alert_id!r} (telegram): {alert.bot_token_env} not set"
+        )
+
     if frame is None:
         frame = _synthetic_frame(target)
         if getattr(notifier, "attach_roi", False):

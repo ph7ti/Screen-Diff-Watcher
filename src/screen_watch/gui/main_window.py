@@ -13,12 +13,15 @@ from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QCheckBox,
     QComboBox,
+    QFileDialog,
     QGroupBox,
     QHBoxLayout,
     QInputDialog,
     QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMainWindow,
@@ -42,6 +45,9 @@ POLL_MS = 200
 TARGET_ROLE = 1
 ACTION_NAME_ROLE = 2
 MODES = ("light", "default", "advanced")
+SOUND_FILTER = (
+    "Audio (*.wav *.mp3 *.m4a *.aac *.ogg *.oga *.flac *.wma);;All files (*)"
+)
 
 
 def _window_icon() -> QIcon | None:
@@ -77,6 +83,11 @@ class MainWindow(QMainWindow):
         self._actions_stem: str | None = None
         self._hotkeys: object | None = None
         self._help_filters: list[object] = []
+        # Som escolhido no seletor para pre-visualizar (nunca persistido).
+        self._sound_choice: str | None = None
+        # Selecao cujo texto do watch foi editado sem commit (guarda contra
+        # `editingFinished` depois de trocar a selecao).
+        self._watch_edit_stem: str | None = None
 
         self._timer = QTimer(self)
         self._timer.setInterval(POLL_MS)
@@ -187,6 +198,50 @@ class MainWindow(QMainWindow):
         buttons.addStretch(1)
         upper_layout.addLayout(buttons)
 
+        alerts_group = QGroupBox(tr("main.alerts_group"))
+        alerts_layout = QVBoxLayout(alerts_group)
+
+        sound_row = QHBoxLayout()
+        sound_row.addWidget(QLabel(tr("main.sound_label")))
+        self.sound_path = QLineEdit()
+        self.sound_path.setReadOnly(True)
+        sound_row.addWidget(self.sound_path, 3)
+        self.btn_sound_choose = QPushButton(tr("main.sound_choose"))
+        self.btn_sound_play = QPushButton(tr("main.sound_play"))
+        self.btn_sound_copy = QPushButton(tr("main.sound_copy"))
+        sound_row.addWidget(self.btn_sound_choose)
+        sound_row.addWidget(self.btn_sound_play)
+        sound_row.addWidget(self.btn_sound_copy)
+        alerts_layout.addLayout(sound_row)
+
+        sound_bottom = QHBoxLayout()
+        self.sound_snippet = QLabel("")
+        self.sound_snippet.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        sound_bottom.addWidget(self.sound_snippet, 1)
+        sound_bottom.addWidget(QLabel(tr("main.sound_note")))
+        alerts_layout.addLayout(sound_bottom)
+
+        watch_row = QHBoxLayout()
+        watch_row.addWidget(QLabel(tr("main.text_watch_label")))
+        watch_row.addWidget(QLabel(tr("main.text_watch_text")))
+        self.text_watch_edit = QLineEdit()
+        watch_row.addWidget(self.text_watch_edit, 3)
+        watch_row.addWidget(QLabel(tr("main.text_watch_action")))
+        self.expect_combo = QComboBox()
+        self.expect_combo.addItem(tr("main.text_watch_appears"), "appears")
+        self.expect_combo.addItem(tr("main.text_watch_disappears"), "disappears")
+        watch_row.addWidget(self.expect_combo)
+        self.case_check = QCheckBox(tr("main.text_watch_case"))
+        self.accents_check = QCheckBox(tr("main.text_watch_accents"))
+        self.accents_check.setChecked(True)
+        watch_row.addWidget(self.case_check)
+        watch_row.addWidget(self.accents_check)
+        watch_row.addWidget(QLabel(tr("main.text_watch_note")))
+        watch_row.addStretch(1)
+        alerts_layout.addLayout(watch_row)
+
+        upper_layout.addWidget(alerts_group)
+
         actions_group = QGroupBox(tr("main.actions_session"))
         actions_layout = QHBoxLayout(actions_group)
         actions_left = QVBoxLayout()
@@ -267,6 +322,14 @@ class MainWindow(QMainWindow):
         self.btn_open_captures.clicked.connect(self._open_captures)
         self.btn_test_alert.clicked.connect(self._test_alert)
         self.chk_evidence.toggled.connect(self._toggle_evidence)
+        self.btn_sound_choose.clicked.connect(self._choose_sound)
+        self.btn_sound_play.clicked.connect(self._play_sound)
+        self.btn_sound_copy.clicked.connect(self._copy_sound_snippet)
+        self.text_watch_edit.textEdited.connect(self._mark_text_watch_edited)
+        self.text_watch_edit.editingFinished.connect(self._commit_text_watch)
+        self.expect_combo.currentIndexChanged.connect(self._save_text_watch)
+        self.case_check.toggled.connect(self._save_text_watch)
+        self.accents_check.toggled.connect(self._save_text_watch)
 
         # ajuda no hover (>2 s)
         self._help(self.btn_start, "window.start")
@@ -292,6 +355,13 @@ class MainWindow(QMainWindow):
         self._help(self.btn_action_new, "window.action_new")
         self._help(self.btn_action_edit, "window.action_edit")
         self._help(self.btn_action_remove, "window.action_remove")
+        self._help(self.btn_sound_choose, "window.sound_choose")
+        self._help(self.btn_sound_play, "window.sound_play")
+        self._help(self.btn_sound_copy, "window.sound_copy")
+        self._help(self.text_watch_edit, "window.text_watch")
+        self._help(self.expect_combo, "window.text_watch_expect")
+        self._help(self.case_check, "window.text_watch_case")
+        self._help(self.accents_check, "window.text_watch_accents")
 
         self._update_action_status()
 
@@ -342,6 +412,7 @@ class MainWindow(QMainWindow):
         if self.list.count():
             self.list.setCurrentRow(0)
         self._populate_actions()
+        self._refresh_alerts_group()
 
     def _populate_arm_menu(self) -> None:
         self._arm_menu.clear()
@@ -414,6 +485,7 @@ class MainWindow(QMainWindow):
         self._update_action_status()
         self._populate_actions()
         self._print_action_summary()
+        self._refresh_alerts_group()
 
     def _select_profile(self, name: str) -> None:
         index = self.profile_combo.findText(name)
@@ -484,12 +556,14 @@ class MainWindow(QMainWindow):
         selected = self._selected()
         if selected is None:
             self._populate_actions()
+            self._refresh_alerts_group()
             return
         self.mode_combo.blockSignals(True)
         self.mode_combo.setCurrentText(self._entry_mode(selected))
         self.mode_combo.blockSignals(False)
         self._populate_actions()
         self._print_action_summary()
+        self._refresh_alerts_group()
 
     def _action_check_states(self) -> dict[str, bool]:
         states: dict[str, bool] = {}
@@ -771,12 +845,24 @@ class MainWindow(QMainWindow):
     def _mode_changed(self, mode: str) -> None:
         selected = self._selected()
         if selected is None:
+            self._update_watch_state()
             return
         _kind, value = selected
         try:
-            from screen_watch.persistence.selection import dump_selection, load_selection
+            from screen_watch.persistence.selection import (
+                dump_selection,
+                load_selection,
+                set_override_text_watch,
+            )
 
-            dump_selection(value, replace(load_selection(value), mode=mode))
+            selection = load_selection(value)
+            overrides = selection.overrides if isinstance(selection.overrides, dict) else {}
+            if mode != "advanced" and "text_watch" in overrides:
+                # O filtro de texto exige o modo advanced; sem isto o start falharia
+                # com config.text_watch_needs_advanced.
+                selection = set_override_text_watch(selection, None)
+                self._append(f"text_watch cleared (requires advanced): {Path(value).stem}")
+            dump_selection(value, replace(selection, mode=mode))
         except (ConfigError, OSError, ValueError) as exc:
             self._append(f"could not save the mode: {exc}")
             return
@@ -784,6 +870,158 @@ class MainWindow(QMainWindow):
         if item is not None:
             item.setText(self._label_for("selection", value))
         self._append(f"mode of {Path(value).stem} -> {mode}")
+        self._refresh_alerts_group()
+
+    # -- deteccao e alertas (som + texto) ----------------------------------
+    def _refresh_alerts_group(self) -> None:
+        self._populate_sound()
+        self._populate_text_watch()
+        self._update_watch_state()
+
+    @staticmethod
+    def _first_sound_file(alerts) -> str | None:
+        for alert in alerts or ():
+            if alert.type == "sound":
+                return alert.file
+        return None
+
+    def _effective_sound_file(self) -> str | None:
+        selected = self._selected()
+        if selected is not None:
+            try:
+                target = self._resolve_target(self.mode_combo.currentText())
+            except Exception:
+                target = None
+            if target is not None:
+                return self._first_sound_file(target.alerts)
+        from screen_watch.app import profile_from_config
+
+        try:
+            profile = profile_from_config(self._config, self._profile)
+        except Exception:
+            return None
+        return self._first_sound_file(profile.alerts)
+
+    def _populate_sound(self) -> None:
+        effective = self._effective_sound_file()
+        self.sound_path.setText(effective or tr("main.sound_none"))
+        value = self._sound_choice or effective
+        self.sound_snippet.setText(tr("main.sound_snippet", path=value) if value else "")
+        self.btn_sound_play.setEnabled(bool(value))
+
+    def _choose_sound(self) -> None:
+        from screen_watch.platform.paths import app_home, sounds_dir
+
+        start = sounds_dir() if sounds_dir().is_dir() else app_home()
+        path, _selected = QFileDialog.getOpenFileName(
+            self, tr("main.sound_choose"), str(start), SOUND_FILTER
+        )
+        if not path:
+            return
+        self._sound_choice = path
+        self.sound_snippet.setText(tr("main.sound_snippet", path=path))
+        self.btn_sound_play.setEnabled(True)
+        self._append(f"sound chosen for preview (not saved): {path}")
+
+    def _play_sound(self) -> None:
+        from screen_watch.platform.audio import play_file, resolve_sound_path
+
+        value = self._sound_choice or self._effective_sound_file()
+        if not value:
+            return
+        resolved = resolve_sound_path(value)
+        if not Path(resolved).is_file():
+            self._append(tr("main.sound_not_found", path=value))
+            return
+        if not play_file(resolved):
+            self._append(f"could not play: {resolved}")
+
+    def _copy_sound_snippet(self) -> None:
+        text = self.sound_snippet.text()
+        if not text:
+            return
+        QApplication.clipboard().setText(text)
+        self._append(f"copied: {text}")
+
+    def _populate_text_watch(self) -> None:
+        from screen_watch.persistence.selection import load_selection, override_text_watch
+
+        watch = None
+        selected = self._selected()
+        if selected is not None:
+            _kind, value = selected
+            try:
+                watch = override_text_watch(load_selection(value))
+            except (ConfigError, OSError, ValueError) as exc:
+                self._append(f"text_watch unavailable: {exc}")
+        widgets = (self.text_watch_edit, self.expect_combo, self.case_check, self.accents_check)
+        for widget in widgets:
+            widget.blockSignals(True)
+        self.text_watch_edit.setText(watch.text if watch is not None else "")
+        index = self.expect_combo.findData(watch.expect if watch is not None else "appears")
+        self.expect_combo.setCurrentIndex(max(0, index))
+        self.case_check.setChecked(watch is not None and watch.case_sensitive)
+        self.accents_check.setChecked(watch.ignore_accents if watch is not None else True)
+        for widget in widgets:
+            widget.blockSignals(False)
+
+    def _update_watch_state(self) -> None:
+        enabled = self._selected() is not None and self.mode_combo.currentText() == "advanced"
+        for widget in (self.text_watch_edit, self.expect_combo, self.case_check, self.accents_check):
+            widget.setEnabled(enabled)
+
+    def _mark_text_watch_edited(self, _text: str) -> None:
+        selected = self._selected()
+        self._watch_edit_stem = Path(selected[1]).stem if selected is not None else None
+
+    def _commit_text_watch(self) -> None:
+        """Commita o texto editado somente se a selecao nao mudou no meio."""
+        selected = self._selected()
+        stem = Path(selected[1]).stem if selected is not None else None
+        edited = self._watch_edit_stem
+        self._watch_edit_stem = None
+        if stem is None or edited != stem:
+            return
+        self._save_text_watch()
+
+    def _save_text_watch(self, *_args) -> None:
+        if self.mode_combo.currentText() != "advanced":
+            return
+        selected = self._selected()
+        if selected is None:
+            return
+        _kind, value = selected
+        from screen_watch.config.schema import TextWatchOptions
+        from screen_watch.persistence.selection import (
+            dump_selection,
+            load_selection,
+            set_override_text_watch,
+        )
+
+        text = self.text_watch_edit.text()
+        try:
+            selection = load_selection(value)
+            watch = (
+                TextWatchOptions(
+                    text=text,
+                    expect=self.expect_combo.currentData() or "appears",
+                    case_sensitive=self.case_check.isChecked(),
+                    ignore_accents=self.accents_check.isChecked(),
+                )
+                if text.strip()
+                else None
+            )
+            dump_selection(value, set_override_text_watch(selection, watch))
+        except (ConfigError, OSError, ValueError) as exc:
+            self._append(f"could not save the text watch: {exc}")
+            return
+        if watch is None:
+            self._append(f"text_watch of {Path(value).stem}: cleared (applies on next start)")
+        else:
+            self._append(
+                f"text_watch of {Path(value).stem} -> {watch.expect} {watch.text!r} "
+                "(applies on next start)"
+            )
 
     def _toggle_clicked(self) -> None:
         if self._controller.running:
@@ -1211,6 +1449,14 @@ def run_gui(config_path, profile: str | None = None) -> int:
     icon = _window_icon()
     if icon is not None:
         app.setWindowIcon(icon)
+    from screen_watch.platform.audio import install_qt_player, uninstall_qt_player
+
+    # Player de audio criado no thread da GUI (o `AlertChain` despacha na thread
+    # do loop; `QMediaPlayer` nao pode ser criado/usado la).
+    if not install_qt_player():
+        import logging
+
+        logging.getLogger(__name__).debug("Qt sound player unavailable; using miniaudio/legacy")
     events = new_event_queue()
     controller = MonitorController(events)
     window = MainWindow(controller, config_path, profile=profile, on_quit=app.quit)
@@ -1223,3 +1469,4 @@ def run_gui(config_path, profile: str | None = None) -> int:
     finally:
         stop_tray(tray)
         controller.stop()
+        uninstall_qt_player()

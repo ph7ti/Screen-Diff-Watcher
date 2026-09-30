@@ -31,9 +31,13 @@ class AlertChain:
     def __init__(self, notifiers: list[Notifier]) -> None:
         self.notifiers = notifiers
         self._last_attempt: dict[str, float] = {}
+        # Falhas do ultimo dispatch: `(uid, mensagem)`, para o CLI/GUI reportarem
+        # o canal que falhou mesmo quando outro teve sucesso (o outcome seria FIRED).
+        self.last_errors: list[tuple[str, str]] = []
 
     def dispatch(self, result: ComparisonResult, frame: Frame) -> DispatchOutcome:
         now = time.time()
+        self.last_errors = []
         enabled = [n for n in self.notifiers if n.enabled]
         if not enabled:
             return DispatchOutcome.NONE_ENABLED
@@ -55,6 +59,7 @@ class AlertChain:
                 fired = True
             except Exception as exc:
                 log.error("notifier %s failed: %s", notifier.name, exc)
+                self.last_errors.append((key, str(exc)))
                 # Backoff: registra a tentativa para nao martelar a cada tick
                 # enquanto a falha persistir (ex.: token/rede fora).
                 self._last_attempt[key] = now

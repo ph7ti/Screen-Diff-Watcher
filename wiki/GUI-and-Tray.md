@@ -15,6 +15,12 @@
   `Selection WhatsApp — Region 120,340 400x80 — advanced`). Double-click starts/stops.
 - **File actions row**: **New Target** / **Remove** / **Reload** / **Open YAML** /
   **Captures**, plus the **Record captures (evidence)** checkbox.
+- **Detection and alerts**: **Alert sound** row (effective path; **Choose…** to preview, **Play** and
+  **Copy path** with the `file: "..."` snippet — the selector **does not persist**) and **Watch
+  text** row (text, **Appears**/**Disappears**, **Match case**, **Ignore accents**; enabled **only in
+  `advanced`** and written to `overrides.text_watch` of the **current selection**). Switching the
+  mode away from `advanced` clears the override. Details in [Alerts](Alerts.md) and the
+  [v0.6.0 release notes](../doc/releases/v0.6.0.md).
 - **Session actions (apply on next start)**: checklist with the resolved actions, counter
   "N of M selected" and the button column (`New action…`, `Edit…`, `Remove Action`, `Arm Action`,
   `Run action`).

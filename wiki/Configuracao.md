@@ -128,10 +128,37 @@ Usada pelas ações pseudo-humanas:
 
 Não há UI para humanização: edite o YAML.
 
+### Verificação de texto (`defaults.compare_options.advanced.text_watch`)
+
+Alerta somente quando um texto **aparece** ou **desaparece** na ROI — **somente no modo
+`advanced`**. Pode ficar no perfil (paridade para quem usa só CLI) ou no `overrides` da seleção (a
+linha **Verificar texto** da GUI grava lá; o **override tem precedência**):
+
+```yaml
+compare_options:
+  advanced:
+    text_watch: { text: "CONCLUÍDO", expect: "appears",
+                  case_sensitive: false, ignore_accents: true }
+```
+
+```json
+"overrides": { "text_watch": { "text": "CONCLUÍDO", "expect": "appears",
+                               "case_sensitive": false, "ignore_accents": true } }
+```
+
+- `expect`: `appears` (default) ou `disappears`; `text` é obrigatório (não vazio).
+- Casamento por substring; `case_sensitive: false` e `ignore_accents: true` por padrão (NFKD +
+  remoção de diacríticos nos dois lados — robusto para OCR em pt-BR).
+- **Somente no `advanced`**: fora dele é erro de validação (`config.text_watch_needs_advanced`); a
+  GUI limpa o override ao trocar o modo.
+- Com o filtro configurado o **gate de phash é bypassado** (o OCR roda a cada tick e o veredito do
+  filtro é autoritativo) e **as ações também só rodam na transição** — detalhes nas
+  [notas da v0.6.0](../doc/releases/v0.6.0.pt-BR.md).
+
 ## Seleção JSON v2 e overrides
 
 Cada seleção pode trazer `overrides` que **substituem** (não somam) os valores do perfil para aquele
-alvo: `mode`, `poll_interval_s`, `rearm`, `masks`, `alerts` e `actions`.
+alvo: `mode`, `poll_interval_s`, `rearm`, `masks`, `alerts`, `actions` e `text_watch`.
 
 ```json
 {
@@ -143,12 +170,14 @@ alvo: `mode`, `poll_interval_s`, `rearm`, `masks`, `alerts` e `actions`.
   "roi_relative": [120, 340, 400, 80],
   "mode": "advanced",
   "masks": [],
-  "overrides": { "poll_interval_s": 1.5, "rearm": false }
+  "overrides": { "poll_interval_s": 1.5, "rearm": false,
+                 "text_watch": { "text": "CONCLUÍDO", "expect": "appears" } }
 }
 ```
 
 - **Precedência do modo**: modo explícito (seletor da GUI) > `overrides.mode` > `selection.mode`.
-- Overrides de `actions` são validados com o modo resolvido (filtros `text_*` exigem `advanced`).
+- Overrides de `actions` são validados com o modo resolvido (filtros `text_*` exigem `advanced`);
+  `text_watch` **exige `advanced`** (`config.text_watch_needs_advanced`).
 - Seleções `version: 1` continuam carregando (sem overrides/`app_name`).
 - `window_handle` é a chave de lookup; `roi_relative` é a fonte de verdade da ROI a cada tick.
 

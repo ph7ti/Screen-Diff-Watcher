@@ -21,9 +21,12 @@ Roda no **Windows e no Linux**, capturando apenas pixels (não toca no aplicativ
 - **Monitora uma ROI de uma janela**: você desenha o retângulo e o app captura só aquela área a
   cada N segundos. A ROI é ancorada à janela — se ela se mover, a ROI acompanha (Modelo B, doc §3.3).
 - **Detecta mudanças visuais** em três modos: `light` (cor média), `default` (hash perceptivo) e
-  `advanced` (OCR + diff de texto; exige Tesseract).
+  `advanced` (OCR + diff de texto; exige Tesseract), incluindo a **verificação de texto** que dispara
+  só quando um texto **aparece/desaparece** na ROI (`text_watch`, somente no `advanced`).
 - **Alerta** por som, popup, Telegram, log JSONL, **webhook**, **HTTP POST** e **syslog**, com severidade
-  mínima e cooldown por canal.
+  mínima e cooldown por canal. O som toca **WAV/MP3/M4A/AAC/OGG/FLAC/WMA** conforme o contexto (GUI
+  via Qt Multimedia; CLI via `miniaudio`), e a GUI tem um seletor que pré-visualiza e entrega o trecho
+  `file: "..."` para o YAML.
 - **Máscaras** para ignorar áreas que mudam sozinhas (relógio, spinner, cursor).
 - **Evidências**: prints do baseline e de cada mudança — opt-in.
 - **Ações pseudo-humanas** (clique, teclas, texto) quando armadas — ensaio por padrão e auditoria
@@ -68,7 +71,7 @@ um com seu `severity_min` e `cooldown_s`:
 
 | Canal (`type`) | O que faz | Detalhes |
 |---|---|---|
-| `sound` | toca um som local | [wiki/Alertas.md](wiki/Alertas.md) |
+| `sound` | toca um som local (WAV/MP3/M4A/AAC/OGG/FLAC…) | [wiki/Alertas.md](wiki/Alertas.md) |
 | `popup` | notificação local | [wiki/Alertas.md](wiki/Alertas.md) |
 | `telegram` | mensagem + imagem da ROI via bot | **[Configuração do Telegram — passo a passo](wiki/Configuracao-Telegram.md)** |
 | `log` | uma linha JSON por alerta (`logs/alerts.jsonl`) | [wiki/Alertas.md](wiki/Alertas.md) |
@@ -159,7 +162,10 @@ exemplo: `python -m screen_watch --language en-US gui`.
 - **Telegram** (opcional): token via variável de ambiente `TELEGRAM_BOT_TOKEN` (nunca no YAML) —
   passo a passo em [wiki/Configuracao-Telegram.md](wiki/Configuracao-Telegram.md).
 - **Ações e hotkeys globais** (opcional): extra `input` (`pynput`).
-- **Som** (opcional): `winsound` no Windows; no Linux, um player (`paplay`/`aplay`/`ffplay`).
+- **Som** (opcional, mas incluído nos instaladores): o CLI/`run` usa **`miniaudio`**
+  (WAV/MP3/OGG/FLAC); a GUI usa **Qt Multimedia** (ganha M4A/AAC/WMA no Windows/macOS). No Linux a
+  GUI depende dos plugins do GStreamer, e o caminho legado usa `winsound` (WAV) ou um player externo
+  (`paplay`/`aplay`/`ffplay`).
 - **Linux**: sessão **X11** — Wayland não é suportado.
 
 **Para rodar do código-fonte:** Python **3.11+** e os extras conforme o uso:
@@ -218,9 +224,11 @@ GitHub Release. `workflow_dispatch` gera só os artefatos (sem release).
 ## Estado atual
 
 **Implementado:** captura e ancoragem (Modelo B), modos de comparação (`light`/`default`/`advanced`)
-com pipeline e curto-circuito, alertas com cooldown/rearm, evidências, ações pseudo-humanas (com
-editor na GUI e gravador), agendador, perfis, CLI completa, GUI + tray com i18n (pt-BR/en-US),
-empacotamento (Inno Setup e `.deb`) e CI/release por tag.
+com pipeline e curto-circuito (`advanced` com gate de phash, bypassado pelo `text_watch`), alertas
+(som/popup/Telegram/log + webhook/HTTP POST/syslog) com cooldown/rearm e teste de envio, **som
+selecionável (MP3/M4A/OGG/FLAC…)** e o filtro **`text_watch`** (aparece/desaparece), evidências,
+ações pseudo-humanas (com editor na GUI e gravador), agendador, perfis, CLI completa, GUI + tray com
+i18n (pt-BR/en-US), empacotamento (Inno Setup e `.deb`) e CI/release por tag.
 
 **Validação manual pendente:** GUI/tray/overlay em 100/125/150% (doc §5.1, §9.5) e detalhes do
 bundle em máquina limpa (ícone, `StartupWMClass`, tamanho do pacote, aviso do SmartScreen) —
@@ -234,7 +242,9 @@ houver demanda.
 - **Wayland** não captura; **janela ocluída** compara o que estiver na frente; **ARM** e **macOS**
   não fazem parte do build.
 - **Tray no GNOME** pode não aparecer sem extensão de tray (a janela continua funcional).
-- **Som no Linux** depende de um player externo; sem ele, fica silencioso (o alerta nunca quebra).
+- **Som no Linux** depende dos plugins do GStreamer (GUI) ou de um player externo (legado); no CLI, o
+  `miniaudio` cobre WAV/MP3/OGG/FLAC — **M4A/AAC** precisa de um player como `ffplay`, senão o alerta
+  cai no `beep`. Nunca quebra.
 - Janela minimizada ou ausente emite `target_unavailable` e o loop segue tentando (nunca quebra).
 
 Lista completa, escala de tela (DPI) e notas de robustez:
@@ -258,7 +268,7 @@ escada de scripts e CI em [wiki/Desenvolvimento-Testes-e-CI.md](wiki/Desenvolvim
 | [**Wiki**](wiki/Home-pt-BR.md) | detalhes de uso e recursos: CLI, GUI, config, ações, alertas, evidências, idiomas, DPI, build |
 | [`doc/00-Documento_de_Arquitetura_e_Especificação.md`](doc/00-Documento_de_Arquitetura_e_Especificação.md) | arquitetura e especificação — **fonte única de verdade do design** |
 | [`doc/01-Build_e_Release.md`](doc/01-Build_e_Release.md) | pipeline de build e release dos instaladores |
-| [`doc/releases/`](doc/releases/v0.5.0.pt-BR.md) | notas de release por versão (arquivo de detalhe) |
+| [`doc/releases/`](doc/releases/v0.6.0.pt-BR.md) | notas de release por versão (arquivo de detalhe) |
 | [`CHANGELOG.md`](CHANGELOG.md) | mudanças por versão (semântico) |
 | [`README.md`](README.md) | este guia em inglês |
 

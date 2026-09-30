@@ -20,6 +20,8 @@ dependencies = [
     "plyer>=2.1",
     "httpx>=0.27",
     "PyYAML>=6.0",
+    # Audio no CLI/`run` (sem aplicacao Qt): WAV/MP3/OGG/FLAC em thread daemon.
+    "miniaudio>=1.61",
 ]
 
 [project.optional-dependencies]

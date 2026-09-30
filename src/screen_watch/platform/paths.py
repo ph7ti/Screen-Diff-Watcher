@@ -25,6 +25,7 @@ ENV_HOME = "SCREEN_WATCH_HOME"
 CONFIG_FILENAME = "config.yaml"
 SELECTIONS_DIRNAME = "selections"
 LOGS_DIRNAME = "logs"
+SOUNDS_DIRNAME = "sounds"
 STATE_FILENAME = "state.json"
 
 _ERROR_INSUFFICIENT_BUFFER = 122
@@ -94,6 +95,11 @@ def logs_dir() -> Path:
     return app_home() / LOGS_DIRNAME
 
 
+def sounds_dir() -> Path:
+    """Pasta de sons do usuario (``app_home()/sounds``); `file` relativo procura aqui."""
+    return app_home() / SOUNDS_DIRNAME
+
+
 def alerts_log_path() -> Path:
     """Caminho padrao do log de alertas (JSONL) em app-data/logs/."""
     return logs_dir() / "alerts.jsonl"
@@ -147,6 +153,6 @@ def update_state(**fields: Any) -> dict[str, Any]:
 def ensure_dirs() -> Path:
     """Cria as pastas de app-data se faltarem e devolve a raiz."""
     home = app_home()
-    for path in (home, selections_dir(), logs_dir()):
+    for path in (home, selections_dir(), logs_dir(), sounds_dir()):
         path.mkdir(parents=True, exist_ok=True)
     return home

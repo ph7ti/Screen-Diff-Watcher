@@ -22,6 +22,10 @@ def main(argv: list[str] | None = None) -> int:
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+    # `httpx`/`httpcore` logam a URL completa em INFO — ela carrega o token do
+    # Telegram e segredos de webhook. Silencia para nao vazar segredo no log.
+    for noisy in ("httpx", "httpcore"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
     _resolve_language(args)
     return int(args.func(args))
 

@@ -35,7 +35,10 @@ def _collect(name):
 
 
 # `pystray`/`pynput`/`plyer`/`pywinctl`/`mss` escolhem backend por import dinamico.
-hiddenimports = []
+# `miniaudio` (som no CLI, importado dentro de funcoes) e `PyQt6.QtMultimedia`
+# (player da GUI, import preguicoso) entram explicitos para o bundle nao depender
+# so da analise estatica; o hook do PyQt6 coleta os plugins de `multimedia/`.
+hiddenimports = ["miniaudio", "PyQt6.QtMultimedia"]
 for module in ("pynput", "pystray", "plyer", "pywinctl", "pymonctl", "mss"):
     hiddenimports += _collect(module)
 

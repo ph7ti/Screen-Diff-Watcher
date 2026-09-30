@@ -32,6 +32,13 @@ HELP_KEYS: tuple[str, ...] = (
     "window.action_new",
     "window.action_edit",
     "window.action_remove",
+    "window.sound_choose",
+    "window.sound_play",
+    "window.sound_copy",
+    "window.text_watch",
+    "window.text_watch_expect",
+    "window.text_watch_case",
+    "window.text_watch_accents",
     # editor
     "editor.name",
     "editor.enabled",

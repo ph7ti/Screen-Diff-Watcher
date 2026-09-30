@@ -4,7 +4,7 @@
 
 > **Purpose of this document**: to serve as the **single source of truth for the design** so that
 > another AI (or developer) can continue the project without having to reconstruct decisions, and to
-> record **what is implemented** (reference: v0.3.0). Every decision recorded here was made
+> record **what is implemented** (reference: v0.6.0). Every decision recorded here was made
 > deliberately; where there are alternatives, they are listed as "rejected" with the reason.
 >
 > **Maintenance rule**: do not replace a recorded decision with a "more modern" alternative
@@ -56,14 +56,19 @@ alert the user when that panel undergoes a visual change, without requiring the 
 looking at the screen. Natural extension: react to the change with a simple action (e.g., click
 "Refresh") when that is explicitly armed.
 
-### 1.4 Implementation status (v0.3.0)
+### 1.4 Implementation status (v0.6.0)
 
 Implemented and covered by tests: platform boundary, capture/anchoring (Model B), the three
-comparison modes, pipeline with short-circuit, alerts (sound/popup/Telegram/log) with cooldown and
-re-arm, evidence, pseudo-human actions (arming, rehearsal, limits, auditing, GUI editor,
-recorder), scheduler (suspends actions only), profiles + v1→v2 migration, selection JSON v2 with
-overrides, CLI (`init-config` … `validate-i18n`), GUI + tray with i18n and hover help, packaging
-(PyInstaller; Inno Setup on Windows; `.deb` on Linux) and tag-based release pipeline.
+comparison modes, pipeline with short-circuit (`advanced` gated by phash and bypassed by
+`text_watch`), alerts (sound/popup/Telegram/log plus `webhook`/`http_post`/`syslog`, with payload
+template, stable `id` and cooldown) with re-arm, **selectable sound (Qt Multimedia in the GUI,
+`miniaudio` in the CLI, legacy fallback)** and the **`text_watch`** presence filter
+(appears/disappears, advanced only, per-selection override), send test per channel (`test-alert
+--list/--only` and the GUI button), evidence, pseudo-human
+actions (arming, rehearsal, limits, auditing, GUI editor, recorder), scheduler (suspends actions
+only), profiles + v1→v2 migration, selection JSON v2 with overrides, CLI (`init-config` …
+`validate-i18n`), GUI + tray with i18n and hover help, packaging (PyInstaller; Inno Setup on
+Windows; `.deb` on Linux) and tag-based release pipeline.
 
 Pending **manual validation** items (not automatable in CI):
 
@@ -153,9 +158,10 @@ Each item below is a closed decision. Format: **Decision → Reason → Rejected
   3. **Advanced** — `OCRTextDiffStrategy` (`pytesseract` + `difflib.SequenceMatcher`).
 - **Reason**: each mode covers a cost/sensitivity trade-off; the cheap strategy vetoes the expensive
   ones when composed in the pipeline (§10.5).
-- **Implementation details**: each mode maps to **one stage** (`MODE_STAGES`), with the
-  pipeline keeping the short-circuit for future compositions. `advanced` runs OCR **as the
-  detector**, with no phash/mean gate (decision recorded in §10.5).
+- **Implementation details**: `light`/`default` map to **one stage**; `advanced` maps to
+  **two** (`default` → `advanced`), so the phash acts as a **pixel gate** before the OCR: if the
+  pixels did not change, the pipeline short-circuits and OCR does not run/score. This avoids OCR
+  noise on nearly-identical frames producing a "change" every tick (updated §10.5).
 - **Rejected alternatives**:
   - phash only — does not distinguish semantic change from structural noise in some cases.
   - OCR only — too expensive per tick, unfeasible at 1 Hz.
@@ -174,7 +180,9 @@ Each item below is a closed decision. Format: **Decision → Reason → Rejected
 
 - **Decision**: chain of notifiers (**Chain of Responsibility**), each with `enabled`,
   `severity_min` and `cooldown_s`. Implemented in the prototype:
-  - **Local sound** — behind the `platform/audio.py` boundary (`winsound` on Windows;
+  - **Local sound** — behind the `platform/audio.py` boundary: Qt Multimedia in the GUI
+    (`QMediaPlayer`, WAV/MP3/M4A/AAC/…), `miniaudio` in the CLI/`run` (core dependency;
+    WAV/MP3/OGG/FLAC on a daemon thread) and the legacy fallback (`winsound` on Windows;
     `paplay`/`aplay`/`ffplay` on Linux; `afplay` on macOS). The `simpleaudio` extra remains optional.
   - **Local popup** (`plyer.notification`).
   - **Telegram Bot webhook** (`httpx`, `sendPhoto`/`sendMessage`, 5 s timeout; token via
@@ -190,6 +198,8 @@ Each item below is a closed decision. Format: **Decision → Reason → Rejected
   - FCM — disproportionate setup complexity.
   - `simpleaudio` as the only sound route — no reliable wheel for Python 3.13; it became an optional
     extra (`pip install -e ".[sound]"`), with fallback to an external player.
+  - Qt Multimedia as the **only** sound route — it requires a `QCoreApplication`, so the CLI/`run`
+    cannot use it (hence `miniaudio` in the core).
 
 ### 3.7 GUI and selection overlay
 
@@ -723,8 +733,11 @@ is the identity. **Do not assume that** — test at 125%, 150%, 200%.
 Before persisting:
 
 1. **Minimum area**: reject rectangles smaller than 10×10 logical pixels (`MIN_ROI_SIDE = 10`).
-2. **Inside the target window**: convert to relative and check. If it extrapolates, **allow but log
-   a warning** (some apps have popups outside the main rect).
+2. **Inside the target window**: convert to relative and check with `fits_in_window`. If it
+   extrapolates (x/y < 0 or x+w/y+h beyond the window), **reject** with `runtime.roi_outside_window`
+   and do not persist — a ROI outside the window would make the tick capture a region unrelated to
+   the target (e.g., another monitor), producing prints/alerts that do not match the window.
+   *(Changed from "allow but log a warning" — the old behavior silently produced wrong prints.)*
 3. **Origin captured before I/O**: see §7.1.
 
 ---
@@ -860,13 +873,39 @@ class OCRTextDiffStrategy:
 - **Performance**: OCR takes 100–500 ms per call. In `advanced` mode it **is** the detector (it runs
   on every tick); that is why it is not combined with OCR at 1 Hz — the default interval is 2 s.
 
+**Text watch (`compare/text_watch.py::TextWatchStrategy`, optional)**:
+
+```python
+class TextWatchStrategy:              # wraps OCRTextDiffStrategy in advanced mode
+    name = "advanced"
+    def initialize(self, baseline):   # OCR of the baseline; stores present_before
+    def compare(self, current):       # changed = expected presence transition (severity=3)
+                                      # detail = {baseline_text, current_text, ocr_score,
+                                      #           ocr_threshold, text_watch: {...}}
+```
+
+- **Filter semantics**: with a `text_watch` configured (`compare_options.advanced.text_watch` in the
+  profile or `overrides.text_watch` in the selection, which takes precedence), the alert fires
+  **only on the configured transition** (`expect: appears|disappears`); other text changes do not.
+  The `changed` from the OCR is **not** propagated — only the watch verdict is authoritative — and the
+  OCR `score`/`threshold` stay in the `detail` (visible in `compare-modes`).
+- **Matching**: substring, `case_sensitive: false` and `ignore_accents: true` by default
+  (NFKD + diacritics removal on both sides). `text` is required (non-empty).
+- **Severity = 3** on the transition (definitive event): a severity derived from the OCR score could
+  stay below `severity_min` and the alert would fail silently.
+- **Presence state follows the stream** (edge filter): a transition fires once; re-arm/re-baseline
+  recomputes the baseline presence, so the state never desyncs.
+- **Only `advanced`** (`config.text_watch_needs_advanced` elsewhere); the GUI clears the override
+  when the mode changes.
+- Because it decides `changed`, the **actions also run only on the transition**.
+
 ### 10.5 Pipeline with short-circuit
 
 ```python
 MODE_STAGES: dict[str, tuple[str, ...]] = {
     "light": ("light",),
     "default": ("default",),
-    "advanced": ("advanced",),   # OCR is the detector: runs alone, without a phash/mean gate
+    "advanced": ("default", "advanced"),  # phash gate: OCR only runs when the pixels changed
 }
 
 class ComparePipeline:
@@ -881,12 +920,14 @@ class ComparePipeline:
         return last
 ```
 
-**Recorded decision (change from the original recommendation)**: `advanced` mode runs **pure
-OCR**, and not `[MeanColor, PerceptualHash, OCRTextDiff]`. Reason: the cheap layers would work
-as a *gate* and could return `changed=False` before the OCR, masking text changes (which the
-advanced mode exists to catch); the OCR cost per tick is accepted with a default `poll_interval_s` of
-2 s. The short-circuit mechanism remains implemented and tested for future compositions
-(e.g., `[MeanColor, PerceptualHash]` as a "strict" mode).
+**Recorded decision (updated)**: `advanced` runs `("default", "advanced")` — the phash runs **before**
+the OCR as a *pixel gate*: the OCR only runs/scores when the pixels changed, which cut repeated false
+positives on near-identical frames (the OCR noise on static screens). **With a `text_watch`
+configured, the gate is bypassed** (`build_pipeline` builds `("advanced",)`): the OCR runs on every
+tick and the watch verdict (presence/absence, not similarity) is authoritative, so the transition is
+never hidden by the gate; the accepted cost is OCR per tick (100–500 ms, default interval 2 s). The
+short-circuit mechanism remains implemented and tested for other compositions (e.g.
+`[MeanColor, PerceptualHash]` as a "strict" mode).
 
 **Rule**: the first stage that returns `changed=False` ends the pipeline. The final verdict is from the
 last stage that ran, with `severity` computed when absent.
@@ -924,13 +965,18 @@ class Notifier(Protocol):
 
 **Sound (`sound.py`)**:
 - All playback goes through the `platform/audio.py` boundary; `alerts/` does **not** know
-  `sys.platform`.
-- Windows: `winsound` (stdlib); without `alert.wav`, it uses `MessageBeep()`.
-- Linux/macOS: external player in order of preference — `paplay`, `aplay -q`,
-  `ffplay -nodisp -autoexit -loglevel quiet`; on macOS, `afplay`.
+  `sys.platform`, Qt or miniaudio.
+- **Layers** (dispatch order): **Qt** (`QMediaPlayer`/QtMultimedia, created on the GUI thread via
+  `install_qt_player()`; playback queued with `QueuedConnection`, so the monitor-loop thread never
+  touches Qt) → **miniaudio** (core dependency; CLI/`run`; runs on a **daemon thread**, WAV/MP3/OGG/
+  FLAC, no AAC/M4A) → **legacy** (`winsound`, WAV only; `paplay`/`aplay -q`/`ffplay`/`afplay`).
+- Format matrix by context: GUI on Windows/macOS (Media Foundation/AVFoundation) plays M4A/AAC; on
+  Linux the GUI depends on the GStreamer plugins; the CLI relies on miniaudio (M4A/AAC only through
+  an external player, otherwise `beep`).
+- A relative `file` is resolved by `platform/audio.py::resolve_sound_path` (`app_home()/sounds` first,
+  then the CWD). Missing file or unsupported format → `beep()` + log warning (never silence/exception).
 - Optional `simpleaudio` extra (`pip install -e ".[sound]"`); it does **not** go into the installers
-  (no reliable wheel for Python 3.13). With no player at all, the sound is silent — the alert never
-  breaks.
+  (no reliable wheel for Python 3.13) and is only tried for WAV.
 - **Do not use** `playsound` (abandoned).
 
 **Popup (`popup.py`)**:
@@ -1178,7 +1224,8 @@ The active profile is also written to `state.json.profile`.
 ### 12.3 Selection JSON and overrides
 
 Each selection is a JSON v2; `overrides` is optional and **replaces** (does not add to) the profile
-values for that target: `mode`, `poll_interval_s`, `rearm`, `masks`, `alerts` and `actions`.
+values for that target: `mode`, `poll_interval_s`, `rearm`, `masks`, `alerts`, `actions` and
+`text_watch` (the watch override is applied to `compare_options.advanced`).
 `version: 1` selections still load without overrides.
 
 ```json
@@ -1191,18 +1238,21 @@ values for that target: `mode`, `poll_interval_s`, `rearm`, `masks`, `alerts` an
   "roi_relative": [120, 340, 400, 80],
   "mode": "advanced",
   "masks": [],
-  "overrides": { "poll_interval_s": 1.5, "rearm": false }
+  "overrides": { "poll_interval_s": 1.5, "rearm": false,
+                 "text_watch": { "text": "CONCLUÍDO", "expect": "appears" } }
 }
 ```
 
 **Mode precedence**: explicit `mode` from `build_target` (GUI selector) > `overrides.mode` >
 `selection.mode`. `actions` overrides are parsed with the resolved mode (`text_*` filters require
-`advanced`; §11.4). `window_title_hint` is only a human hint; the lookup uses `window_handle`.
+`advanced`; §11.4) and so is `text_watch` (`config.text_watch_needs_advanced` otherwise).
+`window_title_hint` is only a human hint; the lookup uses `window_handle`.
 
 ### 12.4 State, app-data and writing
 
-`platform/paths.py` centralizes `app_home()`, `config_path()`, `selections_dir()`, `logs_dir()` and
-`state_path()`. Base: `%APPDATA%\screen_watch` on Windows, `~/.config/screen_watch` on Linux,
+`platform/paths.py` centralizes `app_home()`, `config_path()`, `selections_dir()`, `logs_dir()`,
+`sounds_dir()` (user sound files: relative `file` is looked up there first) and `state_path()`.
+Base: `%APPDATA%\screen_watch` on Windows, `~/.config/screen_watch` on Linux,
 `~/Library/Application Support/screen_watch` on macOS, or the `SCREEN_WATCH_HOME` override.
 
 `state.json` stores `{"last_selection": "...", "profile": "...", "language": "...",
@@ -1357,6 +1407,7 @@ Pinned in `pyproject.toml`. Organized by layer (mandatory core):
 | Tray | `pystray` | tray icon |
 | Alerts | `plyer` | popup |
 | Alerts | `httpx` | Telegram |
+| Alerts | `miniaudio` | CLI/`run` sound playback (WAV/MP3/OGG/FLAC; the GUI uses the bundled Qt Multimedia) |
 | Config | `PyYAML` | config |
 
 **Optional extras** (`pyproject.toml::[project.optional-dependencies]`):
@@ -1375,8 +1426,9 @@ Pinned in `pyproject.toml`. Organized by layer (mandatory core):
   `eng` traineddata. On Windows the installer downloads a pinned release (with SHA256 verification),
   and on the Linux `.deb` it becomes a `Depends:`. Path searchable via
   `compare_options.advanced.tesseract_cmd`.
-- **Sound on Linux**: an external player (`paplay`/`aplay`/`ffplay`); in the `.deb`,
-  `pulseaudio-utils` and `alsa-utils` come as `Recommends`.
+- **Sound on Linux**: the CLI/`run` uses the bundled `miniaudio`; for the legacy formats the GUI
+  depends on the GStreamer plugins and an external player (`paplay`/`aplay`/`ffplay`) remains a
+  fallback; in the `.deb`, `pulseaudio-utils` and `alsa-utils` come as `Recommends`.
 - **Linux**: X11 session (Wayland out of scope).
 
 ---

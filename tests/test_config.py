@@ -595,3 +595,80 @@ def test_alert_error_branches_by_code():
         with pytest.raises(ConfigError) as excinfo:
             parse_alerts([alert], "alerts")
         assert excinfo.value.code == code, (alert, excinfo.value.code)
+
+
+# -- text_watch (compare_options.advanced) ---------------------------------
+
+
+def _text_watch_config(watch) -> dict:
+    raw = _v2_dict()
+    raw["profiles"]["default"]["defaults"] = {
+        "mode": "advanced",
+        "compare_options": {"advanced": {"text_watch": watch}},
+    }
+    return raw
+
+
+def test_v2_parses_text_watch():
+    config = config_from_dict(_text_watch_config({"text": "CONCLUÍDO", "expect": "appears"}))
+    watch = config.resolve().defaults.compare_options.advanced.text_watch
+    assert watch.text == "CONCLUÍDO"
+    assert watch.expect == "appears"
+    assert watch.case_sensitive is False
+    assert watch.ignore_accents is True
+
+
+def test_v2_text_watch_is_optional():
+    config = config_from_dict(_v2_dict())
+    assert config.resolve().defaults.compare_options.advanced.text_watch is None
+
+
+def test_text_watch_error_branches_by_code():
+    cases = [
+        (3, "config.text_watch_not_mapping"),
+        ({}, "config.text_watch_text_required"),
+        ({"text": "   "}, "config.text_watch_text_required"),
+        ({"text": "x", "expect": "blink"}, "config.text_watch_invalid_expect"),
+        ({"text": "x", "case_sensitive": "yes"}, "config.text_watch_not_bool"),
+        ({"text": "x", "ignore_accents": "no"}, "config.text_watch_not_bool"),
+    ]
+    for watch, code in cases:
+        with pytest.raises(ConfigError) as excinfo:
+            config_from_dict(_text_watch_config(watch))
+        assert excinfo.value.code == code, (watch, excinfo.value.code)
+
+
+def test_parse_overrides_accepts_text_watch():
+    from screen_watch.config.loader import parse_overrides
+
+    parsed = parse_overrides({"text_watch": {"text": "ok", "expect": "disappears"}})
+    assert parsed["text_watch"].text == "ok"
+    assert parsed["text_watch"].expect == "disappears"
+
+    with pytest.raises(ConfigError):
+        parse_overrides({"text_watch": {"text": ""}})
+
+
+def test_compare_options_dict_includes_text_watch_only_when_set():
+    from screen_watch.config.loader import _compare_options_to_dict
+    from screen_watch.config.schema import AdvancedOptions, CompareOptions, TextWatchOptions
+
+    without = _compare_options_to_dict(CompareOptions())
+    assert "text_watch" not in without["advanced"]
+
+    with_watch = _compare_options_to_dict(
+        CompareOptions(advanced=AdvancedOptions(text_watch=TextWatchOptions(text="ok")))
+    )
+    assert with_watch["advanced"]["text_watch"] == {
+        "text": "ok",
+        "expect": "appears",
+        "case_sensitive": False,
+        "ignore_accents": True,
+    }
+
+    raw = _v2_dict()
+    raw["profiles"]["default"]["defaults"] = {
+        "mode": "advanced",
+        "compare_options": with_watch,
+    }
+    assert config_from_dict(raw).resolve().defaults.compare_options.advanced.text_watch.text == "ok"

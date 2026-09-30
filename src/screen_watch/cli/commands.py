@@ -26,7 +26,6 @@ MIN_ROI_SIDE = 10
 class CapturedSelection(NamedTuple):
     path: Path
     roi_relative: tuple[int, int, int, int]
-    fits_window: bool
 
 
 def _cmd_init_config(args: argparse.Namespace) -> int:
@@ -422,9 +421,11 @@ def _cmd_test_alert(args: argparse.Namespace) -> int:
         JsonlNotifier(path=log_path).notify(result, frame)
 
     print(f"target={target.name!r} handle={target.window_handle} roi={abs_rect}")
+    for name, message in chain.last_errors:
+        print(f"error: alert {name!r} failed: {message}")
     print(f"outcome: {outcome.value}")
     print(f"jsonl: {log_path}")
-    return 0 if outcome is DispatchOutcome.FIRED else 1
+    return 0 if outcome is DispatchOutcome.FIRED and not chain.last_errors else 1
 
 
 def _cmd_test_evidence(args: argparse.Namespace) -> int:
@@ -691,7 +692,14 @@ def capture_selection_for_window(
         device_pixel_ratio=result.device_pixel_ratio,
     )
     relative = to_relative(physical, (info.rect[0], info.rect[1]))
-    fits = fits_in_window(relative, (info.rect[2], info.rect[3]))
+    # Regra: a ROI tem de caber inteiramente na janela. Fora dela o `resolve` a cada
+    # tick capturaria uma area alheia a janela (ex.: outro monitor), produzindo prints
+    # e alertas sem relacao com o alvo.
+    if not fits_in_window(relative, (info.rect[2], info.rect[3])):
+        raise AppError(
+            code="runtime.roi_outside_window",
+            params={"roi": relative, "window": (info.rect[2], info.rect[3])},
+        )
 
     ensure_dirs()
     selection = Selection(
@@ -705,7 +713,7 @@ def capture_selection_for_window(
     file_name = name or _slugify(app_name or info.title or f"target-{handle}")
     path = selections_dir() / f"{file_name}.json"
     dump_selection(path, selection)
-    return CapturedSelection(path=path, roi_relative=relative, fits_window=fits)
+    return CapturedSelection(path=path, roi_relative=relative)
 
 
 def _cmd_select(args: argparse.Namespace) -> int:
@@ -722,8 +730,6 @@ def _cmd_select(args: argparse.Namespace) -> int:
         print(str(exc))
         return 1
 
-    if not captured.fits_window:
-        print("warning: the ROI extends beyond the window (allowed, but recorded)")
     print(f"selection written to: {captured.path} (roi_relative={captured.roi_relative})")
     return 0
 
@@ -847,6 +853,7 @@ def collect_features() -> dict[str, object]:
         "tesseract": _tesseract_info(),
         "input": {"available": input_available()},
         "sound": audio.backend_info(),
+        "sounds_dir": str(paths.sounds_dir()),
         "tray": {"pystray": tray_available},
         "monitors": _monitors_info(),
     }
@@ -872,11 +879,16 @@ def _print_features(info: dict[str, object]) -> None:
     print(f"input (pynput): {entrada}")
 
     sound = info["sound"]
+    layers: list[str] = []
     if sound["available"]:
-        print(f"sound: {sound['backend']}")
-    else:
-        players = ", ".join(sound.get("players", [])) or "none"
-        print(f"sound: unavailable (external players: {players})")
+        layers.append(str(sound["backend"]))
+    if sound.get("qt"):
+        layers.append("qt")
+    if sound.get("miniaudio"):
+        layers.append("miniaudio")
+    formats = ", ".join(sound.get("formats", [])) or "none"
+    print(f"sound: {', '.join(layers) or 'none'} (formats: {formats})")
+    print(f"sounds dir: {info['sounds_dir']}")
 
     tray = "available" if info["tray"]["pystray"] else "unavailable"
     print(f"tray (pystray): {tray}")

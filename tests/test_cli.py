@@ -411,6 +411,23 @@ def _v2_with(mode="advanced", **top):
     return raw
 
 
+def test_main_silences_httpx_loggers():
+    import logging
+
+    from screen_watch import __main__ as entry
+
+    httpx_logger = logging.getLogger("httpx")
+    httpcore_logger = logging.getLogger("httpcore")
+    previous = (httpx_logger.level, httpcore_logger.level)
+    try:
+        entry.main(["show-paths"])
+        assert httpx_logger.level == logging.WARNING
+        assert httpcore_logger.level == logging.WARNING
+    finally:
+        httpx_logger.setLevel(previous[0])
+        httpcore_logger.setLevel(previous[1])
+
+
 def test_resolve_run_target_carries_schedule(monkeypatch, tmp_path):
     monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
     config_path = tmp_path / "config.yaml"
@@ -527,6 +544,50 @@ def test_test_alert_only_missing_url_reports_failure(monkeypatch, tmp_path, caps
     )
     assert cli._cmd_test_alert(args) == 1
     assert "no url resolved" in capsys.readouterr().out
+
+
+def test_test_alert_only_telegram_missing_token(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    (tmp_path / "selections").mkdir()
+    _write_selection(tmp_path / "selections" / "demo.json")
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+    config_path = _alert_config(
+        tmp_path, [{"type": "telegram", "chat_id": "1", "attach_roi": False}]
+    )
+
+    args = argparse.Namespace(
+        config=str(config_path), selection="demo", profile=None, list=False, only="telegram"
+    )
+    assert cli._cmd_test_alert(args) == 1
+    assert "TELEGRAM_BOT_TOKEN not set" in capsys.readouterr().out
+
+
+def test_test_alert_no_flags_reports_channel_failure(monkeypatch, tmp_path, capsys):
+    from screen_watch.alerts.chain import DispatchOutcome
+
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    (tmp_path / "selections").mkdir()
+    _write_selection(tmp_path / "selections" / "demo.json")
+    config_path = _alert_config(tmp_path, [{"type": "log"}])
+    monkeypatch.setattr(cli, "_capture_target_roi", _fake_capture)
+
+    class _Chain:
+        last_errors = [("telegram", "HTTP 400: chat not found")]
+
+        def dispatch(self, result, frame):
+            return DispatchOutcome.FIRED
+
+    monkeypatch.setattr(
+        "screen_watch.app.build_alert_chain", lambda alerts, name="": _Chain()
+    )
+
+    args = argparse.Namespace(
+        config=str(config_path), selection="demo", profile=None, list=False, only=None
+    )
+    assert cli._cmd_test_alert(args) == 1
+    out = capsys.readouterr().out
+    assert "telegram" in out
+    assert "chat not found" in out
 
 
 def test_validate_selections_rejects_bad_override_action(monkeypatch, tmp_path, capsys):
