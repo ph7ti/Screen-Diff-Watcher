@@ -711,8 +711,12 @@ que faria e grava evidências, sem clicar.
   texto exigem `mode: advanced` (validação recusa nos demais modos).
 - **Passos**: `activate`/`click`/`move`/`type`/`key`/`wait`; `ref` é `roi`
   (relativo a `frame.absolute_rect`), `window` (`frame.window_rect`) ou `screen`.
-  Clique exige `activate` antes (foco explícito + verificação `isActive`; aborta
-  se o foco mudou).
+  Clique exige `activate` antes (foco explícito + verificação `isActive`). Como o
+  `SetForegroundWindow` do Windows é assíncrono/bloqueado (foreground lock), o foco
+  é confirmado com pequenas pausas (~0,5 s no total antes de abortar); o motivo
+  distingue `activate recusado` de `foco não confirmou` (`focus_changed: ...`).
+- **Cooldown**: um gatilho ignorado por `cooldown_s` **não** vai para o JSONL (para
+  não poluir), mas é publicado no log ao vivo como `skipped -> cooldown`.
 - **Execução síncrona na thread do loop**: captura/comparação pausam durante a
   sequência; `settle_s` ao final. Limites `max_per_min`/`max_per_session`.
 - **Re-arm**: `rebaseline: false` por padrão (o baseline permanece após a ação);

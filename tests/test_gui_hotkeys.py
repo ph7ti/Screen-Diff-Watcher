@@ -39,7 +39,8 @@ def test_hotkeys_register_publish_and_stop(monkeypatch):
 
 def test_hotkeys_empty_and_without_pynput(monkeypatch):
     assert start_hotkeys(queue.Queue(), {}) is None
-    assert start_hotkeys(queue.Queue(), {"": "<ctrl>+a"}) is None
+    # Combo vazio e filtrado (independe de `pynput` estar instalado ou nao).
+    assert start_hotkeys(queue.Queue(), {"arm": ""}) is None
 
     monkeypatch.setitem(sys.modules, "pynput", None)
     assert start_hotkeys(queue.Queue(), {"arm": "<ctrl>+a"}) is None

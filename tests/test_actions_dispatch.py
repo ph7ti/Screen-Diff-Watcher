@@ -182,6 +182,24 @@ def test_cooldown_blocks_second_trigger(tmp_path, make_frame, solid):
     assert len(_records(audit)) == 2
 
 
+def test_cooldown_emits_live_event_without_audit(tmp_path, make_frame, solid):
+    events: list[dict] = []
+    action = _key_action(cooldown_s=30.0)
+    clock = FakeClock()
+    dispatcher, arming, backend, audit = _dispatcher(
+        tmp_path, (action,), clock=clock, on_event=events.append
+    )
+    arming.arm()
+    frame = make_frame(solid(10), rect=(0, 0, 10, 10))
+
+    dispatcher.on_result(_result(), frame)
+    clock.advance(10)
+    dispatcher.on_result(_result(), frame)
+
+    assert len(_records(audit)) == 1
+    assert events[-1] == {"mode": "skipped", "reason": "cooldown", "action": "a"}
+
+
 def test_disabled_action_ignored(tmp_path, make_frame, solid):
     action = _key_action(enabled=False)
     dispatcher, arming, backend, audit = _dispatcher(tmp_path, (action,))

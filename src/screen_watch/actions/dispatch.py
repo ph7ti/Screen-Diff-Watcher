@@ -82,6 +82,9 @@ class ActionDispatcher:
             return False
         now = self._clock()
         if action.cooldown_s and now - self._last_fire.get(action.name, float("-inf")) < action.cooldown_s:
+            # Efemero (nao grava na auditoria): explica no log ao vivo por que um
+            # gatilho foi ignorado, sem poluir o JSONL.
+            self._notify({"mode": "skipped", "reason": "cooldown", "action": action.name})
             return False
         self._last_fire[action.name] = now
 
@@ -157,6 +160,10 @@ class ActionDispatcher:
     def _record(self, payload: dict) -> None:
         if self._audit is not None:
             self._audit.record(payload)
+        self._notify(payload)
+
+    def _notify(self, payload: dict) -> None:
+        """So o evento efemero (log ao vivo), sem tocar na auditoria."""
         if self._on_event is not None:
             self._on_event(dict(payload))
 

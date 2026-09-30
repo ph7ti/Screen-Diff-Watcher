@@ -253,8 +253,11 @@ ui:
 ```
 
 `ref` é relativo à ROI (`roi`), à janela (`window`) ou absoluto na tela (`screen`). O passo `click`
-exige um `activate` antes: o app foca a janela e confere `isActive`, abortando se o foco mudou. Como
-a execução é síncrona na thread do loop, captura/comparação pausam durante a sequência.
+exige um `activate` antes: o app foca a janela e confere `isActive`. No Windows o `SetForegroundWindow`
+é assíncrono/bloqueado (foreground lock), então o foco é reconferido por ~0,5 s antes de abortar; o
+motivo no log diferencia `activate recusado` de `foco não confirmou`. Como a execução é síncrona na
+thread do loop, captura/comparação pausam durante a sequência. Um gatilho barrado por `cooldown_s`
+aparece no log ao vivo como `skipped -> cooldown` (sem gravar no JSONL).
 
 Arme/desarme por: itens do tray ("Armar ações"/"Desarmar ações"/"Armar por N min"), botão
 **Re-armar** na janela (re-arma o baseline na hora), botão **Executar ação (3s)** (roda uma vez, com

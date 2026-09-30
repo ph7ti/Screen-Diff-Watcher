@@ -100,7 +100,38 @@ def test_activate_focus_guard_aborts(make_frame, solid):
     result = runner.run(action, frame, arming=_armed())
 
     assert result.executed is False
-    assert result.reason == "focus_changed"
+    assert result.reason.startswith("focus_changed")
+
+
+def test_activate_retries_focus_confirmation(make_frame, solid):
+    state = {"calls": 0}
+
+    def is_active(handle):
+        state["calls"] += 1
+        return state["calls"] >= 3
+
+    runner, backend, sleeps = _runner(activate=lambda handle: True, is_active=is_active)
+    frame = _frame(make_frame, solid)
+    action = ActionSpec(name="a", settle_s=0.0, steps=(ActionStep(kind="activate"),))
+
+    result = runner.run(action, frame, arming=_armed())
+
+    assert result.executed is True
+    assert sleeps.count(0.1) == 2
+
+
+def test_activate_refused_reports_clear_reason(make_frame, solid):
+    runner, backend, _ = _runner(
+        activate=lambda handle: False, is_active=lambda handle: False
+    )
+    frame = _frame(make_frame, solid)
+    action = ActionSpec(name="a", settle_s=0.0, steps=(ActionStep(kind="activate"),))
+
+    result = runner.run(action, frame, arming=_armed())
+
+    assert result.executed is False
+    assert result.reason.startswith("focus_changed")
+    assert "recusado" in result.reason
 
 
 def test_settle_sleeps(make_frame, solid):

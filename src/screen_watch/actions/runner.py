@@ -28,6 +28,11 @@ log = logging.getLogger(__name__)
 
 _DEFAULT_HUMANIZE = HumanizeOptions()
 
+# `SetForegroundWindow` (Windows) pode ser assincrono/bloqueado (foreground lock),
+# entao confirmamos o foco com pequenas pausas antes de abortar por `focus_changed`.
+_FOCUS_ATTEMPTS = 6
+_FOCUS_POLL_S = 0.1
+
 
 class FocusChanged(RuntimeError):
     """O foco saiu da janela-alvo entre o `activate` e o clique."""
@@ -120,8 +125,8 @@ class ActionRunner:
                 break
             try:
                 descriptions.append(self._execute(backend, step, frame))
-            except FocusChanged:
-                reason = "focus_changed"
+            except FocusChanged as exc:
+                reason = f"focus_changed: {exc}" if str(exc) else "focus_changed"
                 break
             except InputUnavailable as exc:
                 reason = str(exc)
@@ -140,11 +145,7 @@ class ActionRunner:
     # -- passos ------------------------------------------------------------
     def _execute(self, backend: InputBackend, step: ActionStep, frame: Frame) -> str:
         if step.kind == "activate":
-            handle = frame.window_handle
-            if not self._activate(handle):
-                raise FocusChanged(f"nao foi possivel ativar a janela {handle}")
-            if not self._is_active(handle):
-                raise FocusChanged(f"foco mudou apos ativar a janela {handle}")
+            self._activate_step(frame.window_handle)
             return describe_step(step)
         if step.kind in ("click", "move"):
             point = self._resolve(step, frame)
@@ -163,6 +164,22 @@ class ActionRunner:
             return describe_step(step)
         self._pause(step.ms / 1000.0)
         return describe_step(step)
+
+    def _activate_step(self, handle: int) -> None:
+        """Ativa e confirma o foco da janela-alvo; aborta com motivo claro se falhar."""
+        activated = False
+        for attempt in range(_FOCUS_ATTEMPTS):
+            activated = self._activate(handle) or activated
+            if self._is_active(handle):
+                return
+            if attempt + 1 < _FOCUS_ATTEMPTS:
+                self._sleep(_FOCUS_POLL_S)
+        if activated:
+            raise FocusChanged(f"foco nao confirmou na janela {handle} apos activate")
+        raise FocusChanged(
+            f"nao foi possivel ativar a janela {handle} (activate recusado; "
+            "foreground lock do Windows?)"
+        )
 
     def _resolve(self, step: ActionStep, frame: Frame) -> tuple[int, int]:
         if step.ref == "roi":
