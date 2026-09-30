@@ -2,6 +2,10 @@
 
 **English** · [Português (Brasil)](README.pt-BR.md)
 
+<p align="center">
+  <img src="src/screen_watch/assets/icons/ScreenDiffWatcher.png" width="60%">
+</p>
+
 Watches a **rectangular region (ROI) of a window** and alerts you when it changes — sound, popup,
 Telegram or log — so you don't have to keep an eye on the screen.
 
