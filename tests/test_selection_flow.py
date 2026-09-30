@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sys
+import types
 from types import SimpleNamespace
 
 import pytest
@@ -19,7 +21,12 @@ def _result():
 
 def _patch_env(monkeypatch, tmp_path, window_rect):
     monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
-    monkeypatch.setattr("screen_watch.gui.overlay.run_selection", lambda: _result())
+    # `gui.overlay` importa PyQt6 no modulo (que exige libs de sistema tipo
+    # libEGL, ausentes no runner); a coleta/teste nao deve depender de Qt (doc
+    # P12), entao injeta um stub no lugar do modulo real.
+    overlay = types.ModuleType("screen_watch.gui.overlay")
+    overlay.run_selection = lambda: _result()
+    monkeypatch.setitem(sys.modules, "screen_watch.gui.overlay", overlay)
     info = SimpleNamespace(
         handle=1, title="t", rect=window_rect, is_minimized=False, exists=True
     )

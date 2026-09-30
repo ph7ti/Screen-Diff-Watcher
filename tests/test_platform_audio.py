@@ -130,6 +130,9 @@ def test_play_file_never_raises_when_popen_fails(monkeypatch, tmp_path):
     monkeypatch.setattr(sys, "platform", "linux")
     _pin_legacy(monkeypatch)
     monkeypatch.setattr(audio.shutil, "which", _which_linux({"paplay", "aplay"}))
+    # Sem campainha: o runner de CI tem /usr/share/sounds e o beep tentaria os
+    # players de novo, mudando a contagem de chamadas.
+    monkeypatch.setattr(audio, "_candidate_bell", lambda: None)
     calls: list[list[str]] = []
 
     def boom(args):
