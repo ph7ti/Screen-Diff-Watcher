@@ -110,7 +110,7 @@ def build_notifier(options: AlertOptions) -> Notifier | None:
             severity_min=options.severity_min,
             cooldown_s=options.cooldown_s,
         )
-    log.warning("tipo de alerta desconhecido ignorado: %s", options.type)
+    log.warning("unknown alert type ignored: %s", options.type)
     return None
 
 
@@ -143,7 +143,7 @@ def profile_from_config(
     name = profile_name or config.profile
     profile = config.profiles.get(name)
     if profile is None:
-        raise ConfigError(f"profile inexistente: {name!r}")
+        raise ConfigError(code="config.profile_unknown", params={"name": name})
     return profile
 
 

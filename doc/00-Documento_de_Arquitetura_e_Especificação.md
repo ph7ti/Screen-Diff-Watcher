@@ -111,6 +111,12 @@ Cada item abaixo é uma decisão fechada. Formato: **Decisão → Motivo → Alt
 - **Alternativas rejeitadas**:
   - `tkinter` — transparência e multi-monitor exigem gambiarras; `overrideredirect` quebra em alguns WMs Linux.
   - Nenhuma GUI (só config manual) — o caso de uso exige seleção visual.
+- **Layout**: a janela segue o mockup `UI.txt` (coluna **Monitoramento** com Iniciar/Parar/Re-armar/
+  Minimizar, Modo/Perfil/Idioma e arming; grupo **Seleções**; linha de Novo Target/Remover/Recarregar/
+  Abrir YAML/Prints + evidências; grupo **Ações da sessão** com checklist e botões; Status/Último e
+  **Log** no rodapé num `QSplitter`). Edição de passos com Subir/Descer/drag&drop/Editar/Duplicar.
+- **Idiomas**: a GUI passa pelo i18n (catálogo JSON no pacote); CLI/log ficam em inglês (§12.6).
+- **Ajuda**: hover de 2 s mostra propósito + exemplo de cada controle.
 
 ### 3.8 Empacotamento
 
@@ -795,6 +801,7 @@ ui:
   hotkeys: { arm: "<ctrl>+<alt>+a", disarm: "<ctrl>+<alt>+d", toggle: "<ctrl>+<alt>+<space>",
              rearm: "<ctrl>+<alt>+r", abort: "<esc>" }
   arm_durations_min: [1, 5, 15, 30]
+  language: auto                  # auto | pt-BR | en-US | tag descoberta em i18n/*.json
 schedule: { enabled: false, days: [mon, tue, wed, thu, fri], windows: ["08:00-12:00"], timezone: local }
 evidence: { enabled: false, dir: null, keep_per_target: 50, max_total_mb: 200,
             on_baseline: true, on_change: true, per_step: false }
@@ -841,7 +848,7 @@ verdade para reconstruir a ROI a cada tick.
 
 `platform/paths.py` centraliza `app_home()`, `config_path()`, `selections_dir()`, `logs_dir()` e
 `state_path()`. `state.json` guarda `{"last_selection": "...", "profile": "...",
-"action_selection": {"<seleção>": ["nome-da-acao", ...]}}` e é atualizado ao iniciar `run`/GUI com
+"language": "...", "action_selection": {"<seleção>": ["nome-da-acao", ...]}}` e é atualizado ao iniciar `run`/GUI com
 sucesso (a chave `action_selection` é opcional e retrocompatível: ausente = todas as ações). O YAML é regravado de forma atômica (temp + `os.replace`) com
 backup `config.yaml.bak`; `state.json` é atômico, sem backup.
 
@@ -874,10 +881,26 @@ na auditoria.
   `actions/summary.py`) + contador "N de M"; persiste por nome de seleção
   (`actions/selection.py::load_action_selection`/`save_action_selection`) e vale no próximo start.
   No CLI, `--actions a,b|all|none` (one-shot, não persiste, precede o salvo) e `list-actions` para
-  conferir; `run` imprime o resumo e as linhas ao vivo `[acao] <mode> <nome> -> ok|falhou|ensaio`.
+  conferir; `run` imprime o resumo e as linhas ao vivo `[action] <mode> <nome> -> ok|failed|rehearsal`.
 - **Testes/validação**: `is_open` com relógio falso, conversão do gravador sem listener real e troca
   de perfil (próximo start).
 
+### 12.6 Idiomas (i18n)
+
+- **Catálogo**: JSON dentro do pacote (`screen_watch/i18n/<tag>.json`), descoberto em runtime por
+  `i18n.available_locales()` (usa `_meta.code`). Iniciais: `pt-BR` (fallback) e `en-US`.
+- **Escopo**: GUI + ajuda (`help.*`) + resumo/labels exibidos + erros traduzidos por código
+  (`errors.py::ERROR_CODES` → `error.<code>`). **CLI e `logging` permanecem em inglês fixo**; o
+  painel de log da GUI também é inglês (é log). `str(exc)` de `AppError`/`ConfigError` é inglês e
+  `render_error(exc)` traduz pelo código (sem código, cai para `str(exc)`).
+- **Escolha**: `--language` > `state.json["language"]` > `ui.language` > `auto` (locale do SO via
+  `QLocale.system()` com fallback para `locale`/`LANG`); casamento exato (`pt-BR`) → mesmo idioma
+  (`pt` → `pt-BR`) → `pt-BR`. A troca vale **no próximo start**; o seletor da janela grava
+  `state.json["language"]`.
+- **Validação**: `python -m screen_watch validate-i18n` (também no CI) confere chaves faltando/sobrando
+  vs. fallback, `error.*`/`help.*` sem tradução e `_meta` inválido.
+- **Ajuda no hover**: `QTimer` de 2 s + tooltip HTML (`titulo`, `proposito`, `exemplo`) em
+  `gui/help.py` (puro) + `gui/hover_help.py` (Qt).
 
 ---
 

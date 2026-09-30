@@ -5,6 +5,7 @@ import sys
 import types
 
 from screen_watch.gui.tray import start_tray, stop_tray
+from screen_watch.i18n import tr
 
 
 def _fake_pystray() -> types.ModuleType:
@@ -50,22 +51,22 @@ def test_tray_menu_publishes_events(monkeypatch):
     assert icon is not None
 
     items = _menu_by_text(icon.menu)
-    items["Mostrar/ocultar"].action(None, None)
+    items[tr("tray.toggle")].action(None, None)
     assert events.get_nowait() == {"kind": "tray", "action": "toggle"}
-    items["Minimizar para o tray"].action(None, None)
+    items[tr("main.btn_minimize")].action(None, None)
     assert events.get_nowait() == {"kind": "tray", "action": "minimize"}
-    items["Armar acoes"].action(None, None)
+    items[tr("main.btn_arm")].action(None, None)
     assert events.get_nowait() == {"kind": "action", "action": "arm"}
-    items["Desarmar acoes"].action(None, None)
+    items[tr("main.btn_disarm")].action(None, None)
     assert events.get_nowait() == {"kind": "action", "action": "disarm"}
-    items["Re-armar baseline"].action(None, None)
+    items[tr("tray.rearm_baseline")].action(None, None)
     assert events.get_nowait() == {"kind": "action", "action": "rearm"}
 
-    arm_items = _menu_by_text(items["Armar por..."].action)
-    arm_items["30 min"].action(None, None)
+    arm_items = _menu_by_text(items[tr("main.btn_arm_for")].action)
+    arm_items[tr("main.arm_minutes", minutes=30)].action(None, None)
     assert events.get_nowait() == {"kind": "action", "action": "arm_for", "minutes": 30}
 
-    profile_items = _menu_by_text(items["Perfil"].action)
+    profile_items = _menu_by_text(items[tr("tray.profile")].action)
     profile_items["trabalho"].action(None, None)
     assert events.get_nowait() == {"kind": "profile", "name": "trabalho"}
 

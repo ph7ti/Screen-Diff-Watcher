@@ -23,6 +23,7 @@ from screen_watch.config.schema import (
     ScheduleOptions,
     TargetConfig,
 )
+from screen_watch.errors import ConfigError
 
 Rect = tuple[int, int, int, int]
 Point = tuple[int, int]
@@ -62,13 +63,17 @@ class Selection:
     def from_dict(cls, raw: dict[str, Any]) -> "Selection":
         for field_name in ("version", "window_handle", "origin_at_selection", "roi_relative"):
             if field_name not in raw:
-                raise ValueError(f"selecao sem campo obrigatorio: {field_name!r}")
+                raise ConfigError(
+                    code="selection.missing_field", params={"field": field_name}
+                )
         vertex = int(raw["version"])
         if vertex not in SUPPORTED_SELECTION_VERSIONS:
-            raise ValueError(f"versao de selecao nao suportada: {vertex!r}")
+            raise ConfigError(
+                code="selection.version_unsupported", params={"value": vertex}
+            )
         overrides = raw.get("overrides")
         if overrides is not None and not isinstance(overrides, dict):
-            raise ValueError("'overrides' deve ser um objeto JSON")
+            raise ConfigError(code="selection.overrides_not_object")
         return cls(
             version=vertex,
             window_handle=int(raw["window_handle"]),
@@ -98,7 +103,7 @@ def dump_selection(path: str | Path, selection: Selection) -> None:
 def load_selection(path: str | Path) -> Selection:
     raw = json.loads(Path(path).read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
-        raise ValueError("JSON de selecao deve ser um objeto")
+        raise ConfigError(code="selection.not_object")
     return Selection.from_dict(raw)
 
 
@@ -147,18 +152,20 @@ def set_override_actions(
 
 
 def _resolve_mode(selection: Selection, overrides: dict[str, Any], mode: str | None) -> str:
-    from screen_watch.config.loader import ConfigError  # noqa: PLC0415
     from screen_watch.config.schema import VALID_MODES  # noqa: PLC0415
 
     resolved = mode or overrides.get("mode") or selection.mode
     if resolved not in VALID_MODES:
-        raise ConfigError(f"mode invalido: {resolved!r}; use um de {VALID_MODES}")
+        raise ConfigError(
+            code="config.invalid_mode",
+            params={"field": "mode", "value": resolved, "valid": VALID_MODES},
+        )
     return resolved
 
 
 def _actions_for_overrides(overrides: dict[str, Any], profile: ProfileOptions, mode: str):
     """Overrides > perfil, mantendo a validacao OCR/mode (doc, secao 12.3)."""
-    from screen_watch.config.loader import ConfigError, parse_actions  # noqa: PLC0415
+    from screen_watch.config.loader import parse_actions  # noqa: PLC0415
 
     actions_raw = overrides.get("actions")
     actions = (
@@ -169,8 +176,8 @@ def _actions_for_overrides(overrides: dict[str, Any], profile: ProfileOptions, m
     for action in actions:
         if action.needs_ocr and mode != "advanced":
             raise ConfigError(
-                f"acao {action.name!r}: filtros text_* exigem mode 'advanced' (OCR); "
-                f"selecao esta em {mode!r}"
+                code="config.action_text_needs_advanced",
+                params={"name": action.name, "mode": mode},
             )
     return actions
 

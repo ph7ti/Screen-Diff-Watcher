@@ -42,6 +42,6 @@ def open_path(path: str | Path) -> bool:
     try:
         opener(value)
     except (OSError, AttributeError) as exc:
-        log.warning("nao foi possivel abrir %s: %s", value, exc)
+        log.warning("could not open %s: %s", value, exc)
         return False
     return True

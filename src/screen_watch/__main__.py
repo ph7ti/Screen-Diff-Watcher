@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 from typing import NamedTuple
 
+from screen_watch.errors import AppError
 from screen_watch.platform.dpi import is_wayland, set_dpi_awareness
 from screen_watch.platform.paths import config_path
 
@@ -36,16 +37,16 @@ def _cmd_init_config(args: argparse.Namespace) -> int:
 
     path = Path(args.path)
     if path.exists() and not args.force:
-        print(f"ja existe: {path} (use --force para sobrescrever)")
+        print(f"already exists: {path} (use --force to overwrite)")
         return 1
     ensure_dirs()
     save_config(path, default_config_dict())
-    print(f"config criada em: {path}")
+    print(f"config created at: {path}")
 
     from screen_watch.platform.paths import package_family_name
 
     if package_family_name():
-        print("(Python da Store/MSIX: caminho real de app-data, visivel fora do pacote)")
+        print("(Store/MSIX Python: real app-data path, visible outside the package)")
     return 0
 
 
@@ -55,13 +56,13 @@ def _cmd_validate_config(args: argparse.Namespace) -> int:
     try:
         config = load_config(args.config)
     except ConfigError as exc:
-        print(f"config invalida: {exc}")
+        print(f"invalid config: {exc}")
         return 1
     if config.legacy:
-        print("aviso: YAML v1 (targets); rode 'migrate-config' para o formato v2")
-        print(f"ok: {len(config.targets)} target(s) legado(s)")
+        print("warning: YAML v1 (targets); run 'migrate-config' for the v2 format")
+        print(f"ok: {len(config.targets)} legacy target(s)")
     else:
-        print(f"ok: {len(config.profiles)} perfil(is); ativo={config.profile!r}")
+        print(f"ok: {len(config.profiles)} profile(s); active={config.profile!r}")
 
     if getattr(args, "selections", False):
         return _validate_selections()
@@ -84,9 +85,9 @@ def _validate_selections() -> int:
                 mode = overrides.get("mode", selection.mode)
                 parse_actions(actions_raw, "overrides.actions", mode=mode)
         except (OSError, ValueError) as exc:
-            print(f"selecao invalida {path.name}: {exc}")
+            print(f"invalid selection {path.name}: {exc}")
             failures += 1
-    print(f"ok: {len(paths) - failures}/{len(paths)} selecao(oes) validas")
+    print(f"ok: {len(paths) - failures}/{len(paths)} valid selection(s)")
     return 1 if failures else 0
 
 
@@ -97,14 +98,14 @@ def _cmd_list_selections(_args: argparse.Namespace) -> int:
     last = str(load_state().get("last_selection") or "")
     paths = sorted(selections_dir().glob("*.json"))
     if not paths:
-        print("nenhuma selecao encontrada (use 'select' ou 'select-manual')")
+        print("no selection found (use 'select' or 'select-manual')")
         return 0
     for path in paths:
-        marker = "  (ultima)" if path.name == last else ""
+        marker = "  (last)" if path.name == last else ""
         try:
             selection = load_selection(path)
         except (OSError, ValueError) as exc:
-            print(f"{path.name}  ilegivel ({exc}){marker}")
+            print(f"{path.name}  unreadable ({exc}){marker}")
             continue
         name = selection.app_name or selection.window_title_hint or path.stem
         x, y, w, h = selection.roi_relative
@@ -126,7 +127,7 @@ def _cmd_migrate_config(args: argparse.Namespace) -> int:
     try:
         new_dict, targets = migrate_config_dict(load_config_dict(path))
     except ConfigError as exc:
-        print(f"migracao abortada: {exc}")
+        print(f"migration aborted: {exc}")
         return 1
 
     ensure_dirs()
@@ -137,23 +138,23 @@ def _cmd_migrate_config(args: argparse.Namespace) -> int:
     ]
     if conflicts:
         print(
-            "migracao abortada: ja existem selecoes com estes nomes: "
+            "migration aborted: selections with these names already exist: "
             + ", ".join(conflicts)
-            + " (remova ou renomeie antes)"
+            + " (remove or rename them first)"
         )
         return 1
 
     if args.dry_run:
-        print(f"[dry-run] {len(targets)} selecao(oes) seriam gravadas em {selections_dir()}:")
+        print(f"[dry-run] {len(targets)} selection(s) would be written to {selections_dir()}:")
         for target in targets:
             print(f"  - {target.name}.json")
-        print(f"[dry-run] config v2 seria gravada em {path} (backup .bak)")
+        print(f"[dry-run] config v2 would be written to {path} (backup .bak)")
         return 0
 
     for target in targets:
         dump_selection(selections_dir() / f"{target.name}.json", from_target_config(target))
     save_config(path, new_dict)
-    print(f"migrado: {len(targets)} selecao(oes) + {path} v2 (backup .bak)")
+    print(f"migrated: {len(targets)} selection(s) + {path} v2 (backup .bak)")
     return 0
 
 
@@ -163,7 +164,7 @@ def _cmd_show_paths(_args: argparse.Namespace) -> int:
     from screen_watch.platform import paths
 
     family = paths.package_family_name()
-    print(f"empacotado (Store/MSIX): {family or 'nao'}")
+    print(f"packaged (Store/MSIX): {family or 'no'}")
     print(f"app_home: {paths.app_home()}")
     print(f"config: {paths.config_path()}")
     print(f"selections: {paths.selections_dir()}")
@@ -176,7 +177,7 @@ def _cmd_show_paths(_args: argparse.Namespace) -> int:
     except ConfigError:
         options = None
     note = " (override evidence.dir)" if getattr(options, "dir", None) else ""
-    print(f"capturas: {captures_dir(options)}{note}")
+    print(f"captures: {captures_dir(options)}{note}")
     return 0
 
 
@@ -189,10 +190,10 @@ def _cmd_list_windows(_args: argparse.Namespace) -> int:
         print(str(exc))
         return 1
     if not windows:
-        print("nenhuma janela encontrada")
+        print("no window found")
         return 0
     for info in windows:
-        state = "minimizada" if info.is_minimized else "ok"
+        state = "minimized" if info.is_minimized else "ok"
         x, y, w, h = info.rect
         print(f"{info.handle!s:>12}  {state:<11}  {x},{y} {w}x{h}  {info.title!r}")
     return 0
@@ -208,11 +209,11 @@ def _resolve_selection_path(value: str | None) -> Path:
         if candidate.exists():
             return candidate
         if candidate.suffix.lower() == ".json":
-            raise ConfigError(f"selecao nao encontrada: {candidate}")
+            raise ConfigError(f"selection not found: {candidate}")
         named = selections_dir() / f"{value}.json"
         if named.exists():
             return named
-        raise ConfigError(f"selecao nao encontrada: {named}")
+        raise ConfigError(f"selection not found: {named}")
 
     last = load_state().get("last_selection")
     if last:
@@ -222,10 +223,10 @@ def _resolve_selection_path(value: str | None) -> Path:
     available = sorted(path.stem for path in selections_dir().glob("*.json"))
     if available:
         raise ConfigError(
-            "nenhuma selecao informada e sem 'last_selection'; disponiveis: "
+            "no selection given and no 'last_selection'; available: "
             + ", ".join(available)
         )
-    raise ConfigError("nenhuma selecao disponivel; crie uma com 'select' ou 'select-manual'")
+    raise ConfigError("no selection available; create one with 'select' or 'select-manual'")
 
 
 def _action_filter_for(args: argparse.Namespace, name: str):
@@ -246,13 +247,13 @@ def _resolve_run_target(args: argparse.Namespace):
 
     deprecated = getattr(args, "target", None)
     if deprecated and not getattr(args, "selection", None):
-        print("aviso: --target esta deprecado; use --selection NOME")
+        print("warning: --target is deprecated; use --selection NAME")
 
     path = _resolve_selection_path(getattr(args, "selection", None) or deprecated)
     try:
         selection = load_selection(path)
     except (OSError, ValueError) as exc:
-        raise ConfigError(f"selecao invalida ({path}): {exc}") from exc
+        raise ConfigError(f"invalid selection ({path}): {exc}") from exc
     config = _load_config_or_none(args.config)
     name = path.stem
     profile = profile_from_config(config, getattr(args, "profile", None), name)
@@ -287,8 +288,8 @@ def _remember_state(selection_name: str, profile_name: str | None = None) -> Non
 def _cmd_run(args: argparse.Namespace) -> int:
     if is_wayland():
         print(
-            "Wayland detectado: a captura via mss nao e suportada. "
-            "Rode em X11 ou Wayland com XWayland e XDG_SESSION_TYPE=x11."
+            "Wayland detected: capture via mss is not supported. "
+            "Run on X11 or Wayland with XWayland and XDG_SESSION_TYPE=x11."
         )
         return 2
 
@@ -299,7 +300,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
     try:
         target = _resolve_run_target(args)
     except ConfigError as exc:
-        print(f"erro: {exc}")
+        print(f"error: {exc}")
         return 1
 
     _remember_state(target.name, getattr(args, "profile", None))
@@ -311,14 +312,14 @@ def _cmd_run(args: argparse.Namespace) -> int:
     recorder = evidence_recorder(_load_config_or_none(args.config))
     session = MonitorSession(target, recorder=recorder, on_action=_print_action_event)
     loop = build_loop(target, session, on_event=_print_event, on_error=_print_error)
-    print(f"monitorando {target.name!r} (handle={target.window_handle}) a cada {target.poll_interval_s}s")
+    print(f"monitoring {target.name!r} (handle={target.window_handle}) every {target.poll_interval_s}s")
     _print_actions_summary(target)
     loop.start()
     try:
         while loop.running:
             loop.join(timeout=1.0)
     except KeyboardInterrupt:
-        print("encerrando...")
+        print("shutting down...")
     finally:
         loop.stop(timeout=5.0)
     return 0
@@ -333,15 +334,14 @@ def _capture_target_roi(target):
 
     info = find_window_by_handle(target.window_handle)
     if info is None or not info.exists:
-        raise RuntimeError(
-            f"janela nao encontrada: handle={target.window_handle}. "
-            "Rode 'list-windows' e refaca a selecao (o handle muda ao reiniciar o app)."
+        raise AppError(
+            code="runtime.window_not_found", params={"handle": target.window_handle}
         )
     if info.is_minimized:
-        raise RuntimeError("janela minimizada: nao ha ROI para capturar")
+        raise AppError(code="runtime.window_minimized")
     abs_rect = resolve(info, target.roi_relative)
     if abs_rect is None:
-        raise RuntimeError("ROI invalida (fora da janela ou degenerada)")
+        raise AppError(code="runtime.roi_invalid")
 
     backend = MssCaptureBackend()
     try:
@@ -364,16 +364,16 @@ def _cmd_test_alert(args: argparse.Namespace) -> int:
     try:
         target = _resolve_run_target(args)
     except ConfigError as exc:
-        print(f"erro: {exc}")
+        print(f"error: {exc}")
         return 1
     if not target.alerts:
-        print(f"selecao {target.name!r} nao tem alertas configurados")
+        print(f"selection {target.name!r} has no alerts configured")
         return 1
 
     try:
         rgb, abs_rect, info = _capture_target_roi(target)
     except Exception as exc:
-        print(f"falha ao capturar ROI: {exc}")
+        print(f"failed to capture ROI: {exc}")
         return 1
 
     frame = Frame(
@@ -400,7 +400,7 @@ def _cmd_test_alert(args: argparse.Namespace) -> int:
         JsonlNotifier(path=log_path).notify(result, frame)
 
     print(f"target={target.name!r} handle={target.window_handle} roi={abs_rect}")
-    print(f"desfecho: {outcome.value}")
+    print(f"outcome: {outcome.value}")
     print(f"jsonl: {log_path}")
     return 0 if outcome is DispatchOutcome.FIRED else 1
 
@@ -416,12 +416,12 @@ def _cmd_test_evidence(args: argparse.Namespace) -> int:
     try:
         target = _resolve_run_target(args)
     except ConfigError as exc:
-        print(f"erro: {exc}")
+        print(f"error: {exc}")
         return 1
     try:
         rgb, abs_rect, info = _capture_target_roi(target)
     except Exception as exc:
-        print(f"falha ao capturar ROI: {exc}")
+        print(f"failed to capture ROI: {exc}")
         return 1
 
     frame = Frame(
@@ -434,11 +434,11 @@ def _cmd_test_evidence(args: argparse.Namespace) -> int:
     )
     recorder = evidence_recorder(_load_config_or_none(args.config), force_enabled=True)
     if recorder is None:
-        print("evidencias indisponiveis")
+        print("evidence unavailable")
         return 1
     baseline = recorder.capture(frame, "baseline", target.name)
     change = recorder.capture(frame, "change", target.name)
-    print(f"alvo={target.name!r} janela={info.rect}")
+    print(f"target={target.name!r} window={info.rect}")
     print(f"baseline: {baseline}")
     print(f"change:   {change}")
     return 0 if baseline is not None and change is not None else 1
@@ -456,15 +456,15 @@ def _cmd_test_action(args: argparse.Namespace) -> int:
     try:
         target = _resolve_run_target(args)
     except ConfigError as exc:
-        print(f"erro: {exc}")
+        print(f"error: {exc}")
         return 1
     if not target.actions:
-        print(f"selecao {target.name!r} nao tem acoes configuradas")
+        print(f"selection {target.name!r} has no actions configured")
         return 1
     try:
         rgb, abs_rect, info = _capture_target_roi(target)
     except Exception as exc:
-        print(f"falha ao capturar ROI: {exc}")
+        print(f"failed to capture ROI: {exc}")
         return 1
 
     frame = Frame(
@@ -512,16 +512,16 @@ def _cmd_record_actions(args: argparse.Namespace) -> int:
         path = _resolve_selection_path(value)
         selection = load_selection(path)
     except (ConfigError, OSError, ValueError) as exc:
-        print(f"erro: {exc}")
+        print(f"error: {exc}")
         return 1
 
     info = find_window_by_handle(selection.window_handle)
     if info is None or not info.exists:
-        print("janela nao encontrada; refaca a selecao (o handle muda ao reiniciar o app)")
+        print("window not found; redo the selection (the handle changes when the app restarts)")
         return 1
     abs_rect = resolve(info, selection.roi_relative)
     if abs_rect is None:
-        print("ROI invalida (fora da janela ou degenerada)")
+        print("invalid ROI (outside the window or degenerate)")
         return 1
 
     no_countdown = bool(getattr(args, "no_countdown", False))
@@ -530,7 +530,7 @@ def _cmd_record_actions(args: argparse.Namespace) -> int:
         from screen_watch.gui.countdown import run_countdown  # noqa: PLC0415
 
         if not run_countdown():
-            raise RecordingCancelled("contagem cancelada")
+            raise RecordingCancelled("countdown cancelled")
 
     try:
         if no_countdown:
@@ -543,7 +543,7 @@ def _cmd_record_actions(args: argparse.Namespace) -> int:
                 auto_start=True,
             )
     except RecordingCancelled:
-        print("contagem cancelada; gravacao abortada")
+        print("countdown cancelled; recording aborted")
         return 1
     except InputUnavailable as exc:
         print(str(exc))
@@ -552,7 +552,7 @@ def _cmd_record_actions(args: argparse.Namespace) -> int:
     snippet = recorder.to_yaml(args.name or path.stem)
     if args.out:
         Path(args.out).write_text(snippet, encoding="utf-8")
-        print(f"snippet gravado em: {args.out}")
+        print(f"snippet written to: {args.out}")
     else:
         print(snippet)
     return 0
@@ -570,19 +570,19 @@ def _cmd_compare_modes(args: argparse.Namespace) -> int:
     try:
         target = _resolve_run_target(args)
     except ConfigError as exc:
-        print(f"erro: {exc}")
+        print(f"error: {exc}")
         return 1
 
     modes = [m.strip() for m in str(args.modes).split(",") if m.strip()]
     invalid = [m for m in modes if m not in MODE_STAGES]
     if not modes or invalid:
-        print(f"modos invalidos: {invalid or modes}; use um de {tuple(MODE_STAGES)}")
+        print(f"invalid modes: {invalid or modes}; use one of {tuple(MODE_STAGES)}")
         return 1
 
     try:
         rgb_baseline, abs_rect, info = _capture_target_roi(target)
     except Exception as exc:
-        print(f"falha ao capturar ROI: {exc}")
+        print(f"failed to capture ROI: {exc}")
         return 1
     baseline = Frame(
         rgb=rgb_baseline,
@@ -594,13 +594,13 @@ def _cmd_compare_modes(args: argparse.Namespace) -> int:
     )
 
     print(f"target={target.name!r} handle={target.window_handle} roi={abs_rect} mode={target.mode}")
-    print(f"baseline capturado; aguardando {args.delay:.1f}s (altere o painel agora)...")
+    print(f"baseline captured; waiting {args.delay:.1f}s (change the panel now)...")
     time.sleep(max(0.0, args.delay))
 
     try:
         rgb_sample, abs_rect2, info2 = _capture_target_roi(target)
     except Exception as exc:
-        print(f"falha ao capturar amostra: {exc}")
+        print(f"failed to capture sample: {exc}")
         return 1
     sample = Frame(
         rgb=rgb_sample,
@@ -612,7 +612,7 @@ def _cmd_compare_modes(args: argparse.Namespace) -> int:
     )
 
     print("")
-    print(f"{'modo':<9} {'changed':<8} {'score':>10} {'threshold':>10} {'sev':>4} {'ms':>8}")
+    print(f"{'mode':<9} {'changed':<8} {'score':>10} {'threshold':>10} {'sev':>4} {'ms':>8}")
     for mode in modes:
         try:
             pipeline = build_pipeline(mode, target.compare_options)
@@ -632,7 +632,7 @@ def _cmd_compare_modes(args: argparse.Namespace) -> int:
                 print(f"  baseline_text={result.detail.get('baseline_text')!r}")
                 print(f"  current_text ={result.detail.get('current_text')!r}")
         except Exception as exc:
-            print(f"{mode:<9} erro: {exc}")
+            print(f"{mode:<9} error: {exc}")
     return 0
 
 
@@ -644,7 +644,7 @@ def _cmd_select_manual(args: argparse.Namespace) -> int:
 
     x, y, w, h = (int(v) for v in args.roi)
     if w < MIN_ROI_SIDE or h < MIN_ROI_SIDE:
-        print(f"ROI invalida: {w}x{h}; minimo {MIN_ROI_SIDE}x{MIN_ROI_SIDE}")
+        print(f"invalid ROI: {w}x{h}; minimum {MIN_ROI_SIDE}x{MIN_ROI_SIDE}")
         return 1
 
     try:
@@ -653,7 +653,7 @@ def _cmd_select_manual(args: argparse.Namespace) -> int:
         print(str(exc))
         return 1
     if info is None:
-        print(f"aviso: janela handle={args.handle} nao encontrada; origem gravada como (0, 0)")
+        print(f"warning: window handle={args.handle} not found; origin recorded as (0, 0)")
     origin = (info.rect[0], info.rect[1]) if info is not None else (0, 0)
     title = args.title or (info.title if info is not None else "")
     app_name = friendly_app_name(info.handle, title) if info is not None else ""
@@ -670,7 +670,7 @@ def _cmd_select_manual(args: argparse.Namespace) -> int:
     name = args.name or _slugify(app_name or title or f"target-{args.handle}")
     path = selections_dir() / f"{name}.json"
     dump_selection(path, selection)
-    print(f"selection gravada em: {path} (origem={origin})")
+    print(f"selection written to: {path} (origin={origin})")
     return 0
 
 
@@ -692,12 +692,14 @@ def capture_selection_for_window(
 
     result = run_selection()
     if result is None:
-        raise RuntimeError("selecao cancelada")
+        raise AppError(code="runtime.selection_cancelled")
 
     # Doc 7.1, passo 5: consultar getRect() imediatamente apos soltar.
     info = find_window_by_handle(int(handle))
     if info is None or not info.exists:
-        raise RuntimeError(f"janela nao encontrada apos a selecao: handle={handle}")
+        raise AppError(
+            code="runtime.window_missing_after_selection", params={"handle": handle}
+        )
 
     app_name = friendly_app_name(info.handle, info.title)
     physical = to_physical(
@@ -726,20 +728,20 @@ def capture_selection_for_window(
 def _cmd_select(args: argparse.Namespace) -> int:
     """Selecao interativa por overlay (arrastar na tela)."""
     if is_wayland():
-        print("Wayland detectado: o overlay Qt nao e suportado neste prototipo.")
+        print("Wayland detected: the Qt overlay is not supported in this prototype.")
         return 2
 
     try:
         captured = capture_selection_for_window(
             int(args.handle), name=args.name, mode=args.mode
         )
-    except RuntimeError as exc:
+    except AppError as exc:
         print(str(exc))
         return 1
 
     if not captured.fits_window:
-        print("aviso: a ROI extrapola a janela (permitido, mas registrado)")
-    print(f"selection gravada em: {captured.path} (roi_relative={captured.roi_relative})")
+        print("warning: the ROI extends beyond the window (allowed, but recorded)")
+    print(f"selection written to: {captured.path} (roi_relative={captured.roi_relative})")
     return 0
 
 
@@ -754,10 +756,10 @@ def _check_monitor_scales(window_rect) -> None:
 
     scales = list_monitor_scales()
     if scales is None:
-        print("aviso: PyQt6 ausente; nao foi possivel medir a escala dos monitores")
+        print("warning: PyQt6 missing; could not measure monitor scale")
         return
 
-    print("escala por monitor (OK = 100%, sem risco de drift da ROI):")
+    print("scale per monitor (OK = 100%, no ROI drift risk):")
     for line in describe_scales(scales):
         print(line)
 
@@ -765,24 +767,24 @@ def _check_monitor_scales(window_rect) -> None:
         return
     current = monitor_for_rect(scales, window_rect)
     if current is not None and not current.is_suitable:
-        options = ", ".join(repr(s.name) for s in suitable_monitors(scales)) or "nenhum"
+        options = ", ".join(repr(s.name) for s in suitable_monitors(scales)) or "none"
         print(
-            f"ATENCAO: a janela esta no monitor {current.name!r} a {current.scale_percent}%; "
-            f"a ROI pode sofrer deslocamento. Monitores adequados (100%): {options}."
+            f"WARNING: the window is on monitor {current.name!r} at {current.scale_percent}%; "
+            f"the ROI may drift. Suitable monitors (100%): {options}."
         )
 
 
 def _cmd_probe_dpi(_args: argparse.Namespace) -> int:
     from screen_watch.capture.mss_backend import open_mss
 
-    print("mss.monitors (espaco fisico):")
+    print("mss.monitors (physical space):")
     with open_mss() as sct:
         for index, monitor in enumerate(sct.monitors):
             print(f"  [{index}] {monitor}")
 
     from screen_watch.platform.window import list_windows
 
-    print("janelas (primeiras 8, retangulo logico via pywinctl):")
+    print("windows (first 8, logical rect via pywinctl):")
     for info in list_windows()[:8]:
         print(
             f"  handle={info.handle} rect={info.rect} "
@@ -799,7 +801,7 @@ def _tesseract_info() -> dict[str, object]:
 
     cmd = resolve_tesseract_cmd()
     if cmd is None:
-        return {"path": None, "languages": [], "error": "nao encontrado"}
+        return {"path": None, "languages": [], "error": "not found"}
     info: dict[str, object] = {"path": cmd, "languages": [], "error": None}
     try:
         proc = subprocess.run(
@@ -870,40 +872,40 @@ def collect_features() -> dict[str, object]:
 def _print_features(info: dict[str, object]) -> None:
     origin = "bundle" if info["frozen"] else "source"
     print(f"screen-watch {info['version']} ({origin})")
-    print(f"executavel: {info['executable']} (Python {info['python']})")
+    print(f"executable: {info['executable']} (Python {info['python']})")
     print(f"app_home: {info['app_home']}")
-    config_state = "existe" if info["config_exists"] else "ausente"
+    config_state = "exists" if info["config_exists"] else "missing"
     print(f"config: {info['config']} ({config_state})")
-    print(f"selecoes: {info['selections']}")
+    print(f"selections: {info['selections']}")
 
     tesseract = info["tesseract"]
     if tesseract["path"]:
-        langs = ", ".join(tesseract["languages"]) or "nenhum"
-        print(f"tesseract: {tesseract['path']} — idiomas: {langs}")
+        langs = ", ".join(tesseract["languages"]) or "none"
+        print(f"tesseract: {tesseract['path']} — languages: {langs}")
     else:
-        print(f"tesseract: indisponivel ({tesseract['error']})")
+        print(f"tesseract: unavailable ({tesseract['error']})")
 
-    entrada = "disponivel" if info["input"]["available"] else "indisponivel (extra 'input')"
-    print(f"entrada (pynput): {entrada}")
+    entrada = "available" if info["input"]["available"] else "unavailable (extra 'input')"
+    print(f"input (pynput): {entrada}")
 
     sound = info["sound"]
     if sound["available"]:
-        print(f"som: {sound['backend']}")
+        print(f"sound: {sound['backend']}")
     else:
-        players = ", ".join(sound.get("players", [])) or "nenhum"
-        print(f"som: indisponivel (players externos: {players})")
+        players = ", ".join(sound.get("players", [])) or "none"
+        print(f"sound: unavailable (external players: {players})")
 
-    tray = "disponivel" if info["tray"]["pystray"] else "indisponivel"
+    tray = "available" if info["tray"]["pystray"] else "unavailable"
     print(f"tray (pystray): {tray}")
 
     monitors = info["monitors"]
     if monitors is None:
-        print("monitores: indisponivel (sem display ou PyQt6)")
+        print("monitors: unavailable (no display or PyQt6)")
     else:
-        print(f"monitores: {len(monitors)}")
+        print(f"monitors: {len(monitors)}")
         for monitor in monitors:
-            primary = " (primario)" if monitor["primary"] else ""
-            print(f"  - {monitor['name']} escala {monitor['scale_percent']}%{primary}")
+            primary = " (primary)" if monitor["primary"] else ""
+            print(f"  - {monitor['name']} scale {monitor['scale_percent']}%{primary}")
 
 
 def _cmd_features(args: argparse.Namespace) -> int:
@@ -917,7 +919,7 @@ def _cmd_features(args: argparse.Namespace) -> int:
 
 def _cmd_gui(args: argparse.Namespace) -> int:
     if is_wayland():
-        print("Wayland detectado: a GUI Qt nao e suportada neste prototipo.")
+        print("Wayland detected: the Qt GUI is not supported in this prototype.")
         return 2
 
     from screen_watch.gui.main_window import run_gui
@@ -935,33 +937,33 @@ def _configure_std_streams() -> None:
 
 
 def _print_event(name: str, payload: dict) -> None:
-    print(f"[evento] {name}: {payload}")
+    print(f"[event] {name}: {payload}")
 
 
 def _print_error(exc: Exception) -> None:
-    print(f"[erro] {exc}", file=sys.stderr)
+    print(f"[error] {exc}", file=sys.stderr)
 
 
 def _print_action_event(payload: dict) -> None:
     action = payload.get("action") or "?"
     mode = payload.get("mode") or "?"
     if mode == "armed":
-        result = "ok" if payload.get("executed") else f"falhou ({payload.get('reason') or '?'})"
+        result = "ok" if payload.get("executed") else f"failed ({payload.get('reason') or '?'})"
     elif mode == "rehearsal":
-        result = "ensaio"
+        result = "rehearsal"
     else:
         result = payload.get("reason") or "?"
-    print(f"[acao] {mode} {action} -> {result}")
+    print(f"[action] {mode} {action} -> {result}")
 
 
 def _print_actions_summary(target) -> None:
     from screen_watch.actions.summary import describe_actions
 
     if not target.actions:
-        print("acoes: nenhuma selecionada (a sessao so monitora)")
+        print("actions: none selected (the session only monitors)")
         return
     lines = describe_actions(target.actions)
-    print(f"acoes ({len(lines)}):")
+    print(f"actions ({len(lines)}):")
     for line in lines:
         print(f"  {line}")
 
@@ -982,11 +984,11 @@ def _cmd_list_actions(args: argparse.Namespace) -> int:
         profile = profile_from_config(config, getattr(args, "profile", None), path.stem)
         actions = resolve_actions(selection, profile)
     except (ConfigError, OSError, ValueError) as exc:
-        print(f"erro: {exc}")
+        print(f"error: {exc}")
         return 1
 
     if not actions:
-        print(f"selecao {path.stem!r} nao tem acoes configuradas")
+        print(f"selection {path.stem!r} has no actions configured")
         return 0
     saved = load_action_selection(path.stem)
     for line in describe_actions(actions, saved):
@@ -994,148 +996,240 @@ def _cmd_list_actions(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_validate_i18n(_args: argparse.Namespace) -> int:
+    """Valida os catalogos: chaves, codigos de erro, ajuda e `_meta` (F7)."""
+    from screen_watch import i18n
+    from screen_watch.errors import ERROR_CODES
+
+    locales = i18n.available_locales()
+    fallback = i18n.FALLBACK_LANGUAGE
+    fallback_keys = set(i18n.catalog_keys(fallback))
+    print(f"locales discovered: {', '.join(locales)}")
+    problems = 0
+
+    for locale in locales:
+        path = i18n._CATALOG_DIR / f"{locale}.json"  # noqa: SLF001 - diagnostico
+        keys = set(i18n.catalog_keys(locale))
+        missing = sorted(fallback_keys - keys)
+        extra = sorted(keys - fallback_keys)
+        if missing:
+            print(f"{locale}: {len(missing)} missing key(s): {', '.join(missing[:5])}...")
+            problems += 1
+        if extra:
+            print(f"{locale}: {len(extra)} extra key(s): {', '.join(extra[:5])}...")
+            problems += 1
+        meta = i18n.locale_meta(locale)
+        if not meta:
+            print(f"{locale}: _meta missing/invalid")
+            problems += 1
+            continue
+        if str(meta.get("code")) != locale:
+            print(f"{locale}: _meta.code != {locale!r}")
+            problems += 1
+        if not meta.get("name"):
+            print(f"{locale}: _meta.name missing")
+            problems += 1
+        if not isinstance(meta.get("version"), int):
+            print(f"{locale}: _meta.version must be an integer")
+            problems += 1
+        if not path.is_file():
+            problems += 1
+
+    for code in ERROR_CODES:
+        key = f"error.{code}"
+        for locale in locales:
+            if key not in i18n.catalog_keys(locale):
+                print(f"{locale}: missing {key}")
+                problems += 1
+
+    try:
+        from screen_watch.gui.help import HELP_KEYS  # noqa: PLC0415
+
+        for key in HELP_KEYS:
+            for suffix in ("titulo", "proposito", "exemplo"):
+                full = f"help.{key}.{suffix}"
+                for locale in locales:
+                    if full not in i18n.catalog_keys(locale):
+                        print(f"{locale}: missing {full}")
+                        problems += 1
+    except Exception as exc:  # pragma: no cover - ambiente sem Qt
+        print(f"warning: could not validate help.*: {exc}")
+
+    if problems:
+        print(f"validate-i18n: {problems} problem(s)")
+        return 1
+    print("validate-i18n: ok")
+    return 0
+
+
+def _resolve_language(args: argparse.Namespace) -> None:
+    """Aplica a precedencia `--language` > state.json > ui.language > auto."""
+    from screen_watch.i18n import resolve_language  # noqa: PLC0415
+    from screen_watch.platform.paths import load_state  # noqa: PLC0415
+
+    cli = getattr(args, "language", None)
+    state = load_state().get("language")
+    state_language = state if isinstance(state, str) and state else None
+    config_language = None
+    if not cli and not state_language:
+        config = _load_config_or_none(getattr(args, "config", config_path()))
+        candidate = getattr(getattr(config, "ui", None), "language", None)
+        config_language = candidate if isinstance(candidate, str) else None
+    resolve_language(cli=cli, state=state_language, config=config_language)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="screen-watch", description="Screen Diff Watcher")
-    parser.add_argument("--verbose", action="store_true", help="log de debug")
+    parser.add_argument("--verbose", action="store_true", help="debug log")
+    parser.add_argument(
+        "--language",
+        default=None,
+        help="GUI language: a discovered tag (e.g. pt-BR, en-US) or 'auto' (default: auto)",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    p_init = sub.add_parser("init-config", help="cria um YAML de config padrao")
+    p_init = sub.add_parser("init-config", help="create a default config YAML")
     p_init.add_argument("--path", default=str(config_path()))
     p_init.add_argument("--force", action="store_true")
     p_init.set_defaults(func=_cmd_init_config)
 
-    p_val = sub.add_parser("validate-config", help="valida o YAML de config e (opcional) selecoes")
+    p_val = sub.add_parser("validate-config", help="validate the config YAML and (optionally) selections")
     p_val.add_argument("--config", default=str(config_path()))
     p_val.add_argument(
-        "--selections", action="store_true", help="valida tambem os overrides das selecoes"
+        "--selections", action="store_true", help="also validate selection overrides"
     )
     p_val.set_defaults(func=_cmd_validate_config)
 
-    p_sel = sub.add_parser("list-selections", help="lista as selecoes em app-data")
+    p_sel = sub.add_parser("list-selections", help="list the selections in app-data")
     p_sel.set_defaults(func=_cmd_list_selections)
 
-    p_mig = sub.add_parser("migrate-config", help="converte YAML v1 (targets) em v2 + selecoes")
+    p_mig = sub.add_parser("migrate-config", help="convert YAML v1 (targets) to v2 + selections")
     p_mig.add_argument("--path", default=str(config_path()))
-    p_mig.add_argument("--dry-run", action="store_true", help="so imprime o plano")
+    p_mig.add_argument("--dry-run", action="store_true", help="only prints the plan")
     p_mig.set_defaults(func=_cmd_migrate_config)
 
-    p_list = sub.add_parser("list-windows", help="lista janelas (handle, titulo, rect)")
+    p_list = sub.add_parser("list-windows", help="list windows (handle, title, rect)")
     p_list.set_defaults(func=_cmd_list_windows)
 
-    p_paths = sub.add_parser("show-paths", help="mostra onde ficam config/selecoes/state/logs")
+    p_paths = sub.add_parser("show-paths", help="show where config/selections/state/logs are")
     p_paths.set_defaults(func=_cmd_show_paths)
 
-    p_gui = sub.add_parser("gui", help="abre a GUI minima com tray")
+    p_gui = sub.add_parser("gui", help="open the minimal GUI with tray")
     p_gui.add_argument("--config", default=str(config_path()))
-    p_gui.add_argument("--profile", default=None, help="perfil ativo (default: o do YAML)")
+    p_gui.add_argument("--profile", default=None, help="active profile (default: the one from YAML)")
     p_gui.set_defaults(func=_cmd_gui)
 
-    p_probe = sub.add_parser("probe-dpi", help="imprime monitores mss/Qt e rect de janela (P1)")
+    p_probe = sub.add_parser("probe-dpi", help="print mss/Qt monitors and window rect (P1)")
     p_probe.set_defaults(func=_cmd_probe_dpi)
 
     p_feat = sub.add_parser(
-        "features", help="diagnostico do ambiente (versao, OCR, entrada, som, tray, monitores)"
+        "features", help="environment diagnostics (version, OCR, input, sound, tray, monitors)"
     )
-    p_feat.add_argument("--json", action="store_true", help="saida JSON (para CI/automacao)")
+    p_feat.add_argument("--json", action="store_true", help="JSON output (for CI/automation)")
     p_feat.set_defaults(func=_cmd_features)
 
-    p_run = sub.add_parser("run", help="inicia o monitoramento da selecao")
+    p_i18n = sub.add_parser(
+        "validate-i18n", help="validate language catalogs (keys, errors, help, _meta)"
+    )
+    p_i18n.set_defaults(func=_cmd_validate_i18n)
+
+    p_run = sub.add_parser("run", help="start monitoring the selection")
     p_run.add_argument("--config", default=str(config_path()))
-    p_run.add_argument("--profile", default=None, help="perfil ativo (default: o do YAML)")
-    p_run.add_argument("--selection", default=None, help="selecao JSON (nome ou caminho)")
-    p_run.add_argument("--target", default=None, help="deprecado; alias de --selection")
+    p_run.add_argument("--profile", default=None, help="active profile (default: the one from YAML)")
+    p_run.add_argument("--selection", default=None, help="selection JSON (name or path)")
+    p_run.add_argument("--target", default=None, help="deprecated; alias of --selection")
     p_run.add_argument(
         "--actions",
         default=None,
-        help="subconjunto de acoes (a,b; 'all'/'none'); one-shot, nao persiste",
+        help="action subset (a,b; 'all'/'none'); one-shot, not persisted",
     )
     p_run.set_defaults(func=_cmd_run)
 
-    p_test = sub.add_parser("test-alert", help="dispara um alerta sintetico com o ROI atual")
+    p_test = sub.add_parser("test-alert", help="fire a synthetic alert with the current ROI")
     p_test.add_argument("--config", default=str(config_path()))
-    p_test.add_argument("--profile", default=None, help="perfil ativo (default: o do YAML)")
-    p_test.add_argument("--selection", default=None, help="selecao JSON (nome ou caminho)")
-    p_test.add_argument("--target", default=None, help="deprecado; alias de --selection")
+    p_test.add_argument("--profile", default=None, help="active profile (default: the one from YAML)")
+    p_test.add_argument("--selection", default=None, help="selection JSON (name or path)")
+    p_test.add_argument("--target", default=None, help="deprecated; alias of --selection")
     p_test.set_defaults(func=_cmd_test_alert)
 
     p_ev = sub.add_parser(
-        "test-evidence", help="grava baseline+change de exemplo no ROI atual (evidencias)"
+        "test-evidence", help="write a sample baseline+change on the current ROI (evidence)"
     )
     p_ev.add_argument("--config", default=str(config_path()))
-    p_ev.add_argument("--profile", default=None, help="perfil ativo (default: o do YAML)")
-    p_ev.add_argument("--selection", default=None, help="selecao JSON (nome ou caminho)")
-    p_ev.add_argument("--target", default=None, help="deprecado; alias de --selection")
+    p_ev.add_argument("--profile", default=None, help="active profile (default: the one from YAML)")
+    p_ev.add_argument("--selection", default=None, help="selection JSON (name or path)")
+    p_ev.add_argument("--target", default=None, help="deprecated; alias of --selection")
     p_ev.set_defaults(func=_cmd_test_evidence)
 
     p_act = sub.add_parser(
-        "test-action", help="ensaias/executa as acoes da selecao no ROI atual (Fase 2)"
+        "test-action", help="rehearse/execute the selection actions on the current ROI (Phase 2)"
     )
     p_act.add_argument("--config", default=str(config_path()))
-    p_act.add_argument("--profile", default=None, help="perfil ativo (default: o do YAML)")
-    p_act.add_argument("--selection", default=None, help="selecao JSON (nome ou caminho)")
-    p_act.add_argument("--target", default=None, help="deprecado; alias de --selection")
-    p_act.add_argument("--armed", action="store_true", help="executa de verdade (default: ensaio)")
-    p_act.add_argument("--dry-run", action="store_true", help="apenas ensaia (default)")
+    p_act.add_argument("--profile", default=None, help="active profile (default: the one from YAML)")
+    p_act.add_argument("--selection", default=None, help="selection JSON (name or path)")
+    p_act.add_argument("--target", default=None, help="deprecated; alias of --selection")
+    p_act.add_argument("--armed", action="store_true", help="actually execute (default: rehearsal)")
+    p_act.add_argument("--dry-run", action="store_true", help="only rehearse (default)")
     p_act.add_argument(
         "--actions",
         default=None,
-        help="subconjunto de acoes (a,b; 'all'/'none'); one-shot, nao persiste",
+        help="action subset (a,b; 'all'/'none'); one-shot, not persisted",
     )
     p_act.add_argument(
-        "--no-countdown", action="store_true", help="pula a contagem de 3s antes de executar"
+        "--no-countdown", action="store_true", help="skip the 3s countdown before executing"
     )
     p_act.set_defaults(func=_cmd_test_action)
 
     p_listact = sub.add_parser(
-        "list-actions", help="lista as acoes resolvidas da selecao e o subconjunto salvo"
+        "list-actions", help="list the resolved selection actions and the saved subset"
     )
     p_listact.add_argument("--config", default=str(config_path()))
-    p_listact.add_argument("--profile", default=None, help="perfil ativo (default: o do YAML)")
-    p_listact.add_argument("--selection", default=None, help="selecao JSON (nome ou caminho)")
-    p_listact.add_argument("--target", default=None, help="deprecado; alias de --selection")
+    p_listact.add_argument("--profile", default=None, help="active profile (default: the one from YAML)")
+    p_listact.add_argument("--selection", default=None, help="selection JSON (name or path)")
+    p_listact.add_argument("--target", default=None, help="deprecated; alias of --selection")
     p_listact.set_defaults(func=_cmd_list_actions)
 
     p_rec = sub.add_parser(
-        "record-actions", help="grava cliques/teclas e gera um snippet de actions: (Fase 3)"
+        "record-actions", help="record clicks/keys and generate an actions: snippet (Phase 3)"
     )
-    p_rec.add_argument("--selection", default=None, help="selecao JSON (nome ou caminho)")
-    p_rec.add_argument("--target", default=None, help="deprecado; alias de --selection")
-    p_rec.add_argument("--name", default=None, help="nome da acao no snippet (default: stem)")
-    p_rec.add_argument("--out", default=None, help="arquivo de saida (default: stdout)")
+    p_rec.add_argument("--selection", default=None, help="selection JSON (name or path)")
+    p_rec.add_argument("--target", default=None, help="deprecated; alias of --selection")
+    p_rec.add_argument("--name", default=None, help="action name in the snippet (default: stem)")
+    p_rec.add_argument("--out", default=None, help="output file (default: stdout)")
     p_rec.add_argument(
         "--no-countdown",
         action="store_true",
-        help="nao conta 3s antes de gravar (exige F9 para iniciar)",
+        help="do not count 3s before recording (requires F9 to start)",
     )
     p_rec.set_defaults(func=_cmd_record_actions)
 
     p_cmp = sub.add_parser(
-        "compare-modes", help="mede score/severidade/tempo por modo no ROI atual (calibracao)"
+        "compare-modes", help="measure score/severity/time per mode on the current ROI (calibration)"
     )
     p_cmp.add_argument("--config", default=str(config_path()))
-    p_cmp.add_argument("--profile", default=None, help="perfil ativo (default: o do YAML)")
-    p_cmp.add_argument("--selection", default=None, help="selecao JSON (nome ou caminho)")
-    p_cmp.add_argument("--target", default=None, help="deprecado; alias de --selection")
+    p_cmp.add_argument("--profile", default=None, help="active profile (default: the one from YAML)")
+    p_cmp.add_argument("--selection", default=None, help="selection JSON (name or path)")
+    p_cmp.add_argument("--target", default=None, help="deprecated; alias of --selection")
     p_cmp.add_argument(
-        "--delay", type=float, default=5.0, help="segundos entre baseline e amostra"
+        "--delay", type=float, default=5.0, help="seconds between baseline and sample"
     )
-    p_cmp.add_argument("--repeat", type=int, default=1, help="repeticoes do compare por modo")
+    p_cmp.add_argument("--repeat", type=int, default=1, help="compare repetitions per mode")
     p_cmp.add_argument("--modes", default="light,default,advanced")
     p_cmp.set_defaults(func=_cmd_compare_modes)
 
     p_select = sub.add_parser(
-        "select-manual", help="grava um selection JSON a partir de coordenadas (sem overlay)"
+        "select-manual", help="write a selection JSON from coordinates (no overlay)"
     )
-    p_select.add_argument("--handle", type=int, required=True, help="handle da janela")
+    p_select.add_argument("--handle", type=int, required=True, help="window handle")
     p_select.add_argument("--roi", type=int, nargs=4, required=True, metavar=("X", "Y", "W", "H"))
-    p_select.add_argument("--name", default=None, help="nome do arquivo (default: target-<handle>)")
-    p_select.add_argument("--title", default="", help="hint do titulo da janela")
+    p_select.add_argument("--name", default=None, help="file name (default: target-<handle>)")
+    p_select.add_argument("--title", default="", help="window title hint")
     p_select.add_argument("--mode", default="advanced", choices=("light", "default", "advanced"))
     p_select.set_defaults(func=_cmd_select_manual)
 
-    p_overlay = sub.add_parser("select", help="selecao interativa por overlay (arrastar na tela)")
-    p_overlay.add_argument("--handle", type=int, required=True, help="handle da janela-alvo")
-    p_overlay.add_argument("--name", default=None, help="nome do arquivo (default: target-<handle>)")
+    p_overlay = sub.add_parser("select", help="interactive overlay selection (drag on screen)")
+    p_overlay.add_argument("--handle", type=int, required=True, help="target window handle")
+    p_overlay.add_argument("--name", default=None, help="file name (default: target-<handle>)")
     p_overlay.add_argument(
         "--mode", default="advanced", choices=("light", "default", "advanced")
     )
@@ -1153,6 +1247,7 @@ def main(argv: list[str] | None = None) -> int:
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+    _resolve_language(args)
     return int(args.func(args))
 
 

@@ -18,7 +18,7 @@ def test_starts_disarmed_in_rehearsal():
     arming = ArmingController()
     assert arming.state == DISARMED
     assert arming.is_armed() is False
-    assert arming.label() == "desarmado (ensaio)"
+    assert arming.label() == "disarmed (rehearsal)"
     assert arming.remaining_s() is None
 
 
@@ -26,7 +26,7 @@ def test_arm_disarm_toggle():
     arming = ArmingController()
     arming.arm()
     assert arming.state == ARMED and arming.is_armed() is True
-    assert arming.label() == "armado"
+    assert arming.label() == "armed"
 
     assert arming.toggle() == DISARMED
     assert arming.toggle() == ARMED
@@ -38,7 +38,7 @@ def test_arm_for_expires_and_labels_remaining():
     arming.arm_for(2)
     assert arming.state == TIMED and arming.is_armed() is True
     assert arming.remaining_s() == 120.0
-    assert "armado por" in arming.label()
+    assert "armed for" in arming.label()
 
     clock.advance(119)
     assert arming.is_armed() is True

@@ -6,6 +6,17 @@ import pytest
 from screen_watch.capture.frame import Frame
 
 
+@pytest.fixture(autouse=True)
+def _fixed_language():
+    """Fixa o idioma dos testes em pt-BR (determinismo dos rotulos)."""
+    from screen_watch import i18n
+
+    i18n.reload()
+    i18n.set_language("pt-BR")
+    yield
+    i18n.set_language("pt-BR")
+
+
 @pytest.fixture
 def make_frame():
     def _make(

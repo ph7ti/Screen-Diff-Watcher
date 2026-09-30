@@ -123,14 +123,14 @@ class EvidenceRecorder:
             rect = self._clip(backend, frame.window_rect)
             if rect is None:
                 log.warning(
-                    "janela fora da tela; evidencia %r de %r ignorada", kind, target_name
+                    "window off-screen; evidence %r for %r ignored", kind, target_name
                 )
                 return None
             rgb = backend.capture(rect)
             path = self._new_path(target_name, kind)
             self._write_png(rgb, path)
         except Exception as exc:
-            log.warning("falha ao gravar evidencia %r de %r: %s", kind, target_name, exc)
+            log.warning("failed to write evidence %r for %r: %s", kind, target_name, exc)
             return None
         finally:
             _close_backend(backend)
@@ -173,7 +173,7 @@ class EvidenceRecorder:
         try:
             directories = [path for path in self.base_dir.iterdir() if path.is_dir()]
         except OSError as exc:
-            log.warning("nao foi possivel listar evidencias em %s: %s", self.base_dir, exc)
+            log.warning("could not list evidence in %s: %s", self.base_dir, exc)
             return
 
         remaining: list[Path] = []
@@ -227,7 +227,7 @@ def _unlink(path: Path) -> bool:
         path.unlink(missing_ok=True)
         return True
     except OSError as exc:  # pragma: no cover - depende de permissao/disco
-        log.warning("nao foi possivel remover evidencia %s: %s", path, exc)
+        log.warning("could not remove evidence %s: %s", path, exc)
         return False
 
 

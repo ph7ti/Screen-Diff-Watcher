@@ -3,6 +3,8 @@
 Reusa `runner.describe_step` para nao reimplementar a formatacao dos passos. A GUI
 usa `format_action` (sem marcador) no checklist; o resumo impresso no start/troca
 de contexto usa `describe_action`/`describe_actions` com `[x]`/`[ ]`.
+
+O texto exibido (GUI) passa pelo i18n; o CLI imprime o resumo no idioma ativo.
 """
 
 from __future__ import annotations
@@ -11,6 +13,7 @@ from collections.abc import Collection
 
 from screen_watch.actions.protocol import STEP_KINDS, ActionSpec
 from screen_watch.actions.runner import describe_step
+from screen_watch.i18n import tr
 
 
 def _number(value: float) -> str:
@@ -37,35 +40,36 @@ def format_action(action: ActionSpec) -> str:
     if action.rebaseline:
         detail.append("rebaseline")
     if not action.enabled:
-        detail.append("desabilitada")
+        detail.append(tr("summary.disabled"))
     trigger = _trigger(action)
     if trigger:
-        detail.append(f"quando: {trigger}")
-    steps = ", ".join(describe_step(step) for step in action.steps) or "(sem passos)"
-    return f"{action.name} — {', '.join(detail)} — passos: {steps}"
+        detail.append(tr("summary.when", trigger=trigger))
+    steps = ", ".join(describe_step(step) for step in action.steps) or tr("summary.no_steps")
+    return f"{action.name} — {', '.join(detail)} — {tr('summary.steps_prefix')} {steps}"
 
 
 def describe_raw_step(step: dict) -> str:
     """Linha curta de um passo **cru** (dict), usada pelo editor de acoes da GUI."""
     if "activate" in step:
-        return "activate"
+        return tr("step.activate")
     kind = next((name for name in STEP_KINDS if name in step), "?")
     params = step.get(kind) or {}
     if kind in ("click", "move"):
-        suffix = (
-            f" {params.get('button', 'left')}x{params.get('clicks', 1)}"
-            if kind == "click"
-            else ""
-        )
-        return (
-            f"{kind}: ({params.get('x')},{params.get('y')}) "
-            f"ref={params.get('ref', 'roi')}{suffix}"
-        )
+        if kind == "click":
+            return tr(
+                "step.click",
+                x=params.get("x"),
+                y=params.get("y"),
+                ref=params.get("ref", "roi"),
+                button=params.get("button", "left"),
+                clicks=params.get("clicks", 1),
+            )
+        return tr("step.move", x=params.get("x"), y=params.get("y"), ref=params.get("ref", "roi"))
     if kind == "key":
-        return f"key: {params.get('keys', '')}"
+        return tr("step.key", keys=params.get("keys", ""))
     if kind == "type":
-        return f"type: {len(str(params.get('text', '')))} char(s)"
-    return f"wait: {params.get('ms', 0)}ms"
+        return tr("step.type", n=len(str(params.get("text", ""))))
+    return tr("step.wait", ms=params.get("ms", 0))
 
 
 def describe_action(action: ActionSpec, selected: bool = True) -> str:

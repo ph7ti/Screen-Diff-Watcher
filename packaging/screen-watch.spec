@@ -44,7 +44,10 @@ if sys.platform == "win32":
 else:
     hiddenimports += ["plyer.platforms.linux.notification", "Xlib.ext.randr"]
 
-datas = [(str(PACKAGE / "assets" / "icons"), "screen_watch/assets/icons")]
+datas = [
+    (str(PACKAGE / "assets" / "icons"), "screen_watch/assets/icons"),
+    (str(PACKAGE / "i18n"), "screen_watch/i18n"),
+]
 
 # `simpleaudio` foi deliberadamente excluido do bundle (sem wheel confiavel no
 # 3.13); o extra segue instalavel a mao. `build/` e `dev` nao entram.

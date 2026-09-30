@@ -347,7 +347,7 @@ def test_build_dispatcher_wires_schedule_gate(monkeypatch, tmp_path):
     dispatcher = build_dispatcher(target, audit=ActionAudit(tmp_path / "a.jsonl"))
     assert dispatcher is not None
     assert dispatcher.is_schedule_open() is False
-    assert "desarmado" in dispatcher.arming.label()
+    assert "disarmed" in dispatcher.arming.label()
 
 
 def test_dispatcher_ignores_unchanged_result(tmp_path, make_frame, solid):

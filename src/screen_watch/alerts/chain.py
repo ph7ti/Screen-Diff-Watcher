@@ -53,7 +53,7 @@ class AlertChain:
                 self._last_attempt[notifier.name] = now
                 fired = True
             except Exception as exc:
-                log.error("notifier %s falhou: %s", notifier.name, exc)
+                log.error("notifier %s failed: %s", notifier.name, exc)
                 # Backoff: registra a tentativa para nao martelar a cada tick
                 # enquanto a falha persistir (ex.: token/rede fora).
                 self._last_attempt[notifier.name] = now

@@ -38,12 +38,18 @@ Implementado:
 - CLI (`__main__.py`): `init-config`, `validate-config` (`--selections`), `list-selections`,
   `migrate-config` (`--dry-run`), `list-windows`, `show-paths`, `probe-dpi`, `select-manual`
   (coordenadas), `select` (overlay), `test-alert`, `test-evidence`, `test-action`, `record-actions`,
-  `compare-modes` (calibração), `run`, `gui`, `features` (diagnóstico do ambiente).
+  `compare-modes` (calibração), `run`, `gui`, `features` (diagnóstico do ambiente),
+  `validate-i18n` (catálogos) e `--language` global. CLI e `logging` são **em inglês fixo**.
+- **Multi-idioma (i18n)**: catálogos JSON no pacote (`screen_watch/i18n/*.json`, `pt-BR`/`en-US`),
+  descoberta dinâmica, `ui.language`/`--language`/seletor na GUI e erros traduzidos por código
+  (`errors.py`). Detalhes na seção "Idiomas (i18n)".
 - Overlay de seleção (`gui/`): `overlay_geometry.py` (conversões lógico↔físico, sem Qt) e
   `overlay.py` (PyQt6, uma janela por monitor).
-- GUI mínima + tray (`gui/`): `main_window.py` (lista de seleções, iniciar/parar, status/último
-  resultado, novo target via overlay, abrir YAML) e `tray.py` (mostrar/ocultar, iniciar/parar,
-  sair); eventos via fila + `QTimer` (`gui/controller.py`).
+- GUI + tray (`gui/`): `main_window.py` no layout do `UI.txt` (Monitoramento/Seleções/Ações da
+  sessão/Log, modo/perfil/idioma, armar/desarmar ações, ajuda no hover de 2 s) e `tray.py`
+  (mostrar/ocultar, iniciar/parar, armar/desarmar, sair); eventos via fila + `QTimer`
+  (`gui/controller.py`). Editor de ações com reordenar/editar/duplicar passos (`gui/action_editor.py`
+  + `actions/steps.py`).
 - Escada: `scripts/step1_absolute_roi.py`, `scripts/step2_anchored_roi.py`,
   `scripts/step3_selection_overlay.py`, `scripts/probe_dpi.py`.
 - Empacotamento (PyInstaller onedir) com dois executáveis (`screen-watch` console e
@@ -248,7 +254,9 @@ python -m screen_watch run --profile trabalho --selection painel
 python -m screen_watch compare-modes --selection painel --delay 5   # calibracao (Etapa D)
 python -m screen_watch show-paths
 python -m screen_watch gui --profile default                # GUI minima + tray
+python -m screen_watch gui --language en-US                 # GUI em ingles (proximo start)
 python -m screen_watch features                             # diagnostico do ambiente
+python -m screen_watch validate-i18n                        # valida os catalogos de idioma
 ```
 
 O `select` abre o overlay (uma janela por monitor): arraste com o botão esquerdo; botão direito
@@ -376,12 +384,17 @@ resultado, duração, motivo e os caminhos das evidências.
 
 ### Criar ações pela janela
 
-A janela tem os botões **Nova ação...**, **Editar...** e **Remover ação**, logo abaixo do checklist.
-**Nova ação...** abre um formulário com nome, `enabled`, `severity_min` (gatilho), `cooldown_s`,
-`settle_s`, `rebaseline` e uma lista de passos (`activate`, `click`, `move`, `key`, `type`, `wait`);
-cada passo é adicionado com os campos do seu tipo (`x`/`y`/`ref`/`botão`/`cliques`, teclas, texto,
-`ms`). Ao confirmar, o app valida com o **mesmo parser do YAML** (`parse_actions`): cliques exigem um
-passo `activate` antes e filtros de texto exigem `mode: advanced`; erros aparecem num diálogo.
+A janela tem os botões **Nova ação…**, **Editar…** e **Remover Ação** na coluna de botões ao lado do
+checklist. **Nova ação…** abre um formulário com nome, `enabled`, `severity_min` (gatilho),
+`cooldown_s`, `settle_s`, `rebaseline` e uma lista de passos (`activate`, `click`, `move`, `key`,
+`type`, `wait`); cada passo é adicionado com os campos do seu tipo (`x`/`y`/`ref`/`botão`/`cliques`,
+teclas, texto, `ms`). Ao confirmar, o app valida com o **mesmo parser do YAML** (`parse_actions`):
+cliques exigem um passo `activate` antes e filtros de texto exigem `mode: advanced`; erros aparecem
+num diálogo traduzido.
+
+A ordem dos passos importa e é editável: use **Subir**/**Descer**, arraste e solte um passo na lista,
+**Editar passo** (carrega o passo no formulário; o botão vira **Salvar alteração** com **Cancelar**)
+ou **Duplicar passo** para criar uma cópia logo abaixo. Excluir um passo é **Remover passo**.
 
 Para não adivinhar o `x`/`y`, há o botão **Localizar posição do mouse...** (nos passos `click`/`move`):
 aparece uma caixa seguindo o cursor com os valores já no `ref` escolhido (mais o absoluto); mova o
@@ -396,7 +409,7 @@ perfil (v2) quando não há override. Ações que vêm do perfil/YAML aparecem n
 de editar/remover avisam que devem ser alteradas no YAML (os botões operam só sobre as ações da
 própria seleção).
 
-Depois de criar, use **Executar ação (3s)** para ensaiar a ação marcada, ou
+Depois de criar, use **Executar ação** para ensaiar a ação marcada, ou
 `python -m screen_watch list-actions --selection <nome>` para conferir sem iniciar a sessão.
 
 ### Seleção de ações por sessão e log ao vivo
@@ -419,9 +432,12 @@ python -m screen_watch list-actions --selection painel                          
 ```
 
 `run` imprime o resumo das ações escolhidas e, durante a execução, uma linha por gatilho no
-console (`[acao] ensaio|armed <nome> -> ok|falhou (motivo)|ensaio`). Na GUI, o mesmo evento aparece
-no log. A auditoria em `logs/actions.jsonl` continua sendo a fonte de verdade; a linha ao vivo é
-efêmera e respeita o `cooldown_s`.
+console (`[action] rehearsal|armed <nome> -> ok|failed (motivo)|rehearsal`). Na GUI, o mesmo evento
+aparece no log. A auditoria em `logs/actions.jsonl` continua sendo a fonte de verdade; a linha ao
+vivo é efêmera e respeita o `cooldown_s`.
+
+> O CLI, o painel de log da GUI e o `logging` de diagnóstico são **em inglês fixo**; apenas a GUI
+> (rótulos, diálogos e resumo exibido) passa pelo catálogo de idiomas.
 
 ## Perfis e agendador
 
@@ -481,13 +497,59 @@ Se um alerta falhar (ex.: Telegram fora do ar), ele é re-tentado respeitando o 
   totalmente CLI (sem overlay) ainda não está definido — avaliar viabilidade quando houver
   demanda.
 
+## Idiomas (i18n)
+
+A GUI é traduzível por catálogos **JSON dentro do pacote** (`screen_watch/i18n/*.json`); o CLI e o
+log de diagnóstico permanecem **em inglês fixo**. Idioma inicial: **`pt-BR`** e **`en-US`**.
+Parâmetros de configuração (`ui`) ficam em §12 do doc.
+
+**Descoberta dinâmica.** Qualquer arquivo `screen_watch/i18n/xx-YY.json` válido passa a aparecer no
+seletor da janela e em `--language`, sem mudar código. O `_meta` precisa trazer `code` igual ao nome
+do arquivo, um `name` nativo (exibido no combo) e `fallback: "pt-BR"`. As chaves do novo idioma devem
+cobrir o mesmo conjunto do `pt-BR` (o `en-US` serve de referência).
+
+**Escolha do idioma** (precedência): `--language TAG` > `state.json["language"]` (preferência salva
+pelo seletor da GUI) > `ui.language` do YAML > `auto` (locale do SO). `auto` usa `QLocale.system()`
+com fallback para `locale`/`LANG`; casamento exato (ex.: `pt-BR`) → mesmo idioma (`pt` → `pt-BR`) →
+`pt-BR`. A troca vale **no próximo start** (sem retradução ao vivo).
+
+```powershell
+python -m screen_watch --language en-US gui        # abre a GUI em inglês
+python -m screen_watch validate-i18n               # valida chaves, error.* , help.* e _meta
+```
+
+No YAML v2:
+
+```yaml
+ui:
+  language: auto        # auto | pt-BR | en-US | qualquer tag descoberta
+```
+
+Erros da aplicação têm **códigos estáveis** (`errors.py::ERROR_CODES`): a GUI exibe a mensagem
+traduzida (`error.<código>`) pelo catálogo e o CLI/log mostram o texto em inglês. O CI roda
+`validate-i18n` além de `ruff`/`pytest`.
+
 ## GUI e tray
 
-`python -m screen_watch gui` abre a janela mínima: lista **apenas as seleções**
-(`app-data/selections/*.json`), `Iniciar`/`Parar` (uma seleção por vez), status e último resultado,
-`Novo target (overlay)` (escolhe a janela e abre o overlay), `Remover`, `Minimizar para o tray`
-(esconde a janela sem encerrar o app) e `Abrir YAML` (config global). Duplo clique na lista
-inicia/para. O tray oferece mostrar/ocultar, minimizar, iniciar/parar e sair.
+`python -m screen_watch gui` abre a janela (layout do mockup `UI.txt`): à esquerda a coluna
+**Monitoramento** (`Iniciar`/`Parar`/`Re-armar`/`Minimizar para o tray`, seletores de **Modo**,
+**Perfil** e **Idioma**, e os controles de arming **Armar ações**/**Desarmar**/**Armar por…** com o
+estado visível); à direita o grupo **Seleções** (lista de `app-data/selections/*.json` e legenda da
+ROI). Abaixo, a linha **Novo Target**/**Remover**/**Recarregar**/**Abrir YAML**/**Prints** + checkbox
+**Gravar prints (evidências)** e o grupo **Ações da sessão (aplicam no próximo start)** com o
+checklist e a coluna de botões (`Nova ação…`, `Editar…`, `Remover Ação`, `Armar Ação`, `Executar
+ação`). Status/último resultado e o **Log** ficam no rodapé, num `QSplitter`. Duplo clique na lista
+inicia/para.
+
+**Armar/desarmar pela janela**: as ações rodam em **ensaio** por padrão (só registram). Armar
+executa de verdade; **Armar por…** limita por tempo e desarma sozinho. Os botões só ficam ativos com
+uma sessão em execução (o arming é por sessão).
+
+**Ajuda no hover**: passar o mouse por ~2 s sobre qualquer controle mostra um tooltip com **propósito
+e exemplo** (texto do catálogo, `help.<chave>.*`).
+
+**Prints**: o botão `Executar ação` sempre grava um print; o checkbox controla os prints do
+monitoramento. O tray oferece mostrar/ocultar, minimizar, iniciar/parar, armar/desarmar e sair.
 
 Cada item da lista mostra o **nome do aplicativo**, a **região monitorada** e o **modo** — por
 exemplo `Seleção WhatsApp — Região 120,340 400x80 — advanced`. Há um **seletor de modo**
@@ -543,7 +605,8 @@ sintética e falha se o HTTP não for 2xx (aceite do §1.3).
 
 ## CI (GitHub Actions)
 
-`.github/workflows/ci.yml` roda `ruff check .` e `pytest -m "not integration"` em
+`.github/workflows/ci.yml` roda `ruff check .`, `python -m screen_watch validate-i18n` e
+`pytest -m "not integration"` em
 **`ubuntu-latest` e `windows-latest`** × **Python 3.11 e 3.13**; em pull requests, o job `package`
 (se recomendado) monta os instaladores sem publicar. O CI não instala `simpleaudio`, não usa
 Tesseract (OCR é mockado) e não importa Qt na coleta de testes.

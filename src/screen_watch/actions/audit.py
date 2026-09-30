@@ -30,4 +30,4 @@ class ActionAudit:
             with self.path.open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
         except OSError as exc:  # pragma: no cover - depende do disco
-            log.error("nao foi possivel escrever a auditoria de acoes em %s: %s", self.path, exc)
+            log.error("could not write the action audit to %s: %s", self.path, exc)

@@ -89,10 +89,12 @@ def test_start_then_reject_second_start(monkeypatch):
     assert controller.running is True
     assert events.get_nowait()["kind"] == "started"
 
+    from screen_watch.errors import AppError
+
     try:
         controller.start(_target())
-    except RuntimeError:
-        pass
+    except AppError as exc:
+        assert exc.code == "runtime.already_running"
     else:
         raise AssertionError("segundo start deveria falhar")
 

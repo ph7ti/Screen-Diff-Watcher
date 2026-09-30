@@ -52,5 +52,5 @@ class SoundNotifier:
             self._playback = simpleaudio.WaveObject.from_wave_file(self.file).play()
             return True
         except Exception as exc:  # pragma: no cover - depende do ambiente
-            log.warning("simpleaudio nao conseguiu tocar %s: %s", self.file, exc)
+            log.warning("simpleaudio could not play %s: %s", self.file, exc)
             return False

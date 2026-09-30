@@ -46,7 +46,7 @@ def test_run_actions_rehearsal_does_not_press(monkeypatch, tmp_path):
 
     assert code == 0
     assert backend.keys == []
-    assert any("ensaio" in line for line in lines)
+    assert any("rehearsal" in line for line in lines)
 
 
 def test_run_actions_armed_executes(monkeypatch, tmp_path):
@@ -64,7 +64,7 @@ def test_run_actions_armed_executes(monkeypatch, tmp_path):
 
     assert code == 0
     assert backend.keys == ["a"]
-    assert any("armado" in line for line in lines)
+    assert any("armed" in line for line in lines)
 
 
 def test_run_actions_countdown_cancel_aborts(monkeypatch, tmp_path):
@@ -82,7 +82,7 @@ def test_run_actions_countdown_cancel_aborts(monkeypatch, tmp_path):
 
     assert code == 1
     assert backend.keys == []
-    assert any("cancelada" in line for line in lines)
+    assert any("cancelled" in line for line in lines)
     assert not audit.path.exists()
 
 
@@ -102,13 +102,13 @@ def test_run_actions_disabled_action_is_skipped(monkeypatch, tmp_path):
 
     assert code == 0
     assert backend.keys == []
-    assert any("desabilitada" in line for line in lines)
+    assert any("disabled" in line for line in lines)
 
 
 def test_run_actions_without_actions():
     code, lines = run_actions(_target(()), _frame(), armed=False)
     assert code == 1
-    assert any("nao tem acoes" in line for line in lines)
+    assert any("has no actions" in line for line in lines)
 
 
 def test_run_actions_armed_records_evidence(monkeypatch, tmp_path):
@@ -191,4 +191,4 @@ def test_run_actions_reports_failure(monkeypatch, tmp_path):
     )
 
     assert code == 1
-    assert any("falhou" in line for line in lines)
+    assert any("failed" in line for line in lines)

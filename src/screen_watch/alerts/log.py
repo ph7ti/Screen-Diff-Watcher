@@ -57,4 +57,4 @@ class JsonlNotifier:
             with self.path.open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps(record, ensure_ascii=False) + "\n")
         except OSError as exc:  # pragma: no cover - depende do disco
-            log.error("nao foi possivel escrever o log jsonl em %s: %s", self.path, exc)
+            log.error("could not write the jsonl log to %s: %s", self.path, exc)

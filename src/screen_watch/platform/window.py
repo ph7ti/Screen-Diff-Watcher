@@ -257,7 +257,7 @@ def _configure() -> None:
         dwmapi.DwmGetWindowAttribute.restype = ctypes.c_long
         _configured = True
     except (AttributeError, OSError):  # pragma: no cover - depende do Windows
-        log.warning("nao foi possivel configurar as APIs Win32 de janela")
+        log.warning("could not configure the Win32 window APIs")
 
 
 def _as_hwnd(handle: object) -> int | None:

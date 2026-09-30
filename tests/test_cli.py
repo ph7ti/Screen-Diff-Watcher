@@ -54,7 +54,7 @@ def test_select_manual_warns_when_window_missing(monkeypatch, tmp_path, capsys):
     args = argparse.Namespace(roi=[1, 2, 30, 40], handle=7, title="x", mode="advanced", name="demo")
 
     assert cli._cmd_select_manual(args) == 0
-    assert "nao encontrada" in capsys.readouterr().out
+    assert "not found" in capsys.readouterr().out
 
 
 def test_check_monitor_scales_handles_missing_qt(monkeypatch, capsys):
@@ -75,7 +75,7 @@ def test_check_monitor_scales_warns_on_unsuitable_monitor(monkeypatch, capsys):
     cli._check_monitor_scales((10, 10, 20, 20))
 
     out = capsys.readouterr().out
-    assert "ATENCAO" in out
+    assert "WARNING" in out
     assert "'B'" in out
 
 
@@ -220,7 +220,7 @@ def test_show_paths_includes_captures(monkeypatch, tmp_path, capsys):
     monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
     assert cli._cmd_show_paths(argparse.Namespace()) == 0
     out = capsys.readouterr().out
-    assert "capturas:" in out
+    assert "captures:" in out
 
 
 def test_parser_accepts_list_selections_and_migrate():
@@ -246,7 +246,7 @@ def test_list_selections_marks_last(monkeypatch, tmp_path, capsys):
     assert cli._cmd_list_selections(argparse.Namespace()) == 0
     out = capsys.readouterr().out
     assert "demo.json" in out
-    assert "(ultima)" in out
+    assert "(last)" in out
 
 
 def test_migrate_config_command(monkeypatch, tmp_path, capsys):
@@ -303,7 +303,7 @@ def test_migrate_config_aborts_on_existing_selection(monkeypatch, tmp_path, caps
     )
 
     assert cli._cmd_migrate_config(argparse.Namespace(path=str(config_path), dry_run=False)) == 1
-    assert "ja existem" in capsys.readouterr().out
+    assert "already exist" in capsys.readouterr().out
 
 
 def test_validate_config_v2_reports_profiles(monkeypatch, tmp_path, capsys):
@@ -312,7 +312,7 @@ def test_validate_config_v2_reports_profiles(monkeypatch, tmp_path, capsys):
     save_config(config_path, _v2())
     args = argparse.Namespace(config=str(config_path), selections=False)
     assert cli._cmd_validate_config(args) == 0
-    assert "perfil" in capsys.readouterr().out
+    assert "profile" in capsys.readouterr().out
 
 
 def _v2():
@@ -349,7 +349,7 @@ def test_compare_modes_rejects_invalid_mode(monkeypatch, tmp_path, capsys):
     )
 
     assert cli._cmd_compare_modes(args) == 1
-    assert "modos invalidos" in capsys.readouterr().out
+    assert "invalid modes" in capsys.readouterr().out
 
 
 def _fake_capture(target):
@@ -443,7 +443,7 @@ def test_resolve_run_target_invalid_profile_is_config_error(monkeypatch, tmp_pat
     )
     with pytest.raises(ConfigError) as excinfo:
         cli._resolve_run_target(args)
-    assert "profile inexistente" in str(excinfo.value)
+    assert "unknown profile" in str(excinfo.value)
 
 
 def test_test_alert_invalid_profile_reports_error(monkeypatch, tmp_path, capsys):
@@ -456,7 +456,7 @@ def test_test_alert_invalid_profile_reports_error(monkeypatch, tmp_path, capsys)
         config=str(config_path), selection=str(selection_path), target=None, profile="nao_existe"
     )
     assert cli._cmd_test_alert(args) == 1
-    assert "profile inexistente" in capsys.readouterr().out
+    assert "unknown profile" in capsys.readouterr().out
 
 
 def test_validate_selections_rejects_bad_override_action(monkeypatch, tmp_path, capsys):
@@ -560,7 +560,7 @@ def test_test_action_dry_run(monkeypatch, tmp_path, capsys):
         no_countdown=True,
     )
     assert cli._cmd_test_action(args) == 0
-    assert "ensaio" in capsys.readouterr().out
+    assert "rehearsal" in capsys.readouterr().out
 
 
 def test_test_action_armed_executes(monkeypatch, tmp_path, capsys):
@@ -597,7 +597,7 @@ def test_test_action_armed_executes(monkeypatch, tmp_path, capsys):
     )
     assert cli._cmd_test_action(args) == 0
     assert fake.pressed == ["ctrl+s"]
-    assert "armado" in capsys.readouterr().out
+    assert "armed" in capsys.readouterr().out
 
 
 def test_test_evidence_writes(monkeypatch, tmp_path, capsys):
@@ -762,7 +762,7 @@ def test_list_actions_without_actions(monkeypatch, tmp_path, capsys):
         config=str(tmp_path / "absent.yaml"), selection="demo", target=None, profile=None
     )
     assert cli._cmd_list_actions(args) == 0
-    assert "nao tem acoes" in capsys.readouterr().out
+    assert "has no actions" in capsys.readouterr().out
 
 
 def test_parser_accepts_no_countdown():
@@ -805,7 +805,7 @@ def test_test_action_armed_cancelled_countdown(monkeypatch, tmp_path, capsys):
 
     assert cli._cmd_test_action(args) == 1
     assert fake.pressed == []
-    assert "cancelada" in capsys.readouterr().out
+    assert "cancelled" in capsys.readouterr().out
 
 
 def test_record_actions_auto_start_passes_before_start(monkeypatch, tmp_path):

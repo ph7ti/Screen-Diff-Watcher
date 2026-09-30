@@ -41,11 +41,12 @@ class ArmingController:
             return max(0.0, self._until - self._clock())
 
     def label(self) -> str:
+        """Rotulo em ingles (CLI/log); a GUI traduz `state`/`remaining_s` via i18n."""
         state = self.state
         if state == TIMED:
             remaining = self.remaining_s() or 0.0
-            return f"armado por {remaining:.0f}s"
-        return "armado" if state == ARMED else "desarmado (ensaio)"
+            return f"armed for {remaining:.0f}s"
+        return "armed" if state == ARMED else "disarmed (rehearsal)"
 
     def arm(self) -> None:
         with self._lock:

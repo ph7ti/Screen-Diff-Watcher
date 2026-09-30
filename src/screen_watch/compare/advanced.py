@@ -16,13 +16,12 @@ from PIL import Image
 
 from screen_watch.capture.frame import Frame
 from screen_watch.compare.protocol import ComparisonResult
+from screen_watch.errors import AppError
 from screen_watch.platform.tesseract import resolve_tesseract_cmd
 
-_MISSING_TESSERACT_MSG = (
-    "Tesseract nao encontrado. Instale o Tesseract (Windows: "
-    "https://github.com/UB-Mannheim/tesseract/wiki) com os traineddata 'por' e 'eng' "
-    "e informe 'compare_options.advanced.tesseract_cmd' no YAML, ou adicione o executavel ao PATH."
-)
+
+def _missing_tesseract() -> AppError:
+    return AppError(code="runtime.tesseract_missing")
 
 
 class OCRTextDiffStrategy:
@@ -45,7 +44,7 @@ class OCRTextDiffStrategy:
 
     def _extract(self, rgb: np.ndarray) -> str:
         if self._tesseract_cmd is None:
-            raise RuntimeError(_MISSING_TESSERACT_MSG)
+            raise _missing_tesseract()
         if self.upscale > 1:
             rgb = np.repeat(np.repeat(rgb, self.upscale, axis=0), self.upscale, axis=1)
         img = Image.fromarray(rgb)
@@ -57,7 +56,7 @@ class OCRTextDiffStrategy:
         try:
             text = pytesseract.image_to_string(img, lang=self.lang, config=f"--psm {self.psm}")
         except pytesseract.TesseractNotFoundError as exc:
-            raise RuntimeError(_MISSING_TESSERACT_MSG) from exc
+            raise _missing_tesseract() from exc
         finally:
             pytesseract.pytesseract.tesseract_cmd = previous
         return " ".join(text.split())

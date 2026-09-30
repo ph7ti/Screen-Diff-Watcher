@@ -44,7 +44,8 @@ def test_profile_from_config_missing_raises_config_error():
     try:
         profile_from_config(config, "inexistente")
     except ConfigError as exc:
-        assert "profile inexistente" in str(exc)
+        assert "unknown profile" in str(exc)
+        assert exc.code == "config.profile_unknown"
     else:  # pragma: no cover - so falha se o comportamento regredir
         raise AssertionError("profile invalido deveria levantar ConfigError")
 

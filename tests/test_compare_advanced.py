@@ -11,6 +11,7 @@ pytest.importorskip("pytesseract")
 import pytesseract  # noqa: E402
 
 from screen_watch.compare.advanced import OCRTextDiffStrategy  # noqa: E402
+from screen_watch.errors import AppError  # noqa: E402
 
 
 def _patch_texts(monkeypatch, strategy, baseline_text, current_text):
@@ -59,8 +60,9 @@ def test_tesseract_cmd_used_during_extract_and_restored(monkeypatch):
 def test_missing_tesseract_raises_clear_error():
     strategy = OCRTextDiffStrategy()
     strategy._tesseract_cmd = None
-    with pytest.raises(RuntimeError, match="Tesseract nao encontrado"):
+    with pytest.raises(AppError, match="Tesseract not found") as excinfo:
         strategy._extract(np.zeros((8, 8, 3), dtype=np.uint8))
+    assert excinfo.value.code == "runtime.tesseract_missing"
 
 
 def test_tesseract_not_found_error_is_wrapped(monkeypatch):
@@ -71,6 +73,6 @@ def test_tesseract_not_found_error_is_wrapped(monkeypatch):
         raise pytesseract.TesseractNotFoundError()
 
     monkeypatch.setattr(pytesseract, "image_to_string", boom)
-    with pytest.raises(RuntimeError, match="Tesseract nao encontrado"):
+    with pytest.raises(AppError, match="Tesseract not found"):
         strategy._extract(np.zeros((8, 8, 3), dtype=np.uint8))
 

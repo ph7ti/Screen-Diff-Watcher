@@ -34,7 +34,7 @@ class PopupNotifier:
         try:
             from plyer import notification  # noqa: PLC0415
         except Exception as exc:  # pragma: no cover - depende do ambiente
-            log.warning("plyer indisponivel, popup desabilitado: %s", exc)
+            log.warning("plyer unavailable, popup disabled: %s", exc)
             return
         message = f"{result.strategy}: mudanca (score={result.score:.2f})"
         notification.notify(title=self.title, message=message, timeout=5)

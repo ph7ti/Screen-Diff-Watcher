@@ -27,22 +27,22 @@ def run_actions(
     from screen_watch.actions.runner import ActionRunner, describe_step  # noqa: PLC0415
 
     if not target.actions:
-        return 1, [f"selecao {target.name!r} nao tem acoes configuradas"]
+        return 1, [f"selection {target.name!r} has no actions configured"]
 
     lines: list[str] = []
     audit = audit if audit is not None else ActionAudit()
     arming = ArmingController()
     if armed:
         if countdown is not None and not countdown():
-            return 1, ["contagem cancelada; nada foi executado"]
+            return 1, ["countdown cancelled; nothing was executed"]
         arming.arm()
     runner = ActionRunner(humanize=target.humanize)
 
     failures = 0
-    lines.append(f"alvo={target.name!r} modo={'armado' if armed else 'ensaio (dry-run)'}")
+    lines.append(f"target={target.name!r} mode={'armed' if armed else 'rehearsal (dry-run)'}")
     for action in target.actions:
         if not action.enabled:
-            lines.append(f"[desabilitada] {action.name}")
+            lines.append(f"[disabled] {action.name}")
             continue
         descriptions = [describe_step(step) for step in action.steps]
         if not arming.is_armed():
@@ -59,7 +59,7 @@ def run_actions(
                     "evidence": evidence,
                 }
             )
-            lines.append(f"[ensaio] {action.name}: {', '.join(descriptions) or '(sem passos)'}")
+            lines.append(f"[rehearsal] {action.name}: {', '.join(descriptions) or '(no steps)'}")
             continue
         evidence: list[str] = []
         hook = None
@@ -82,9 +82,9 @@ def run_actions(
             "reason": run.reason,
         }
         audit.record(payload)
-        status = "ok" if run.executed else f"falhou ({run.reason})"
-        lines.append(f"[armado] {action.name}: {status}")
+        status = "ok" if run.executed else f"failed ({run.reason})"
+        lines.append(f"[armed] {action.name}: {status}")
         if not run.executed:
             failures += 1
-    lines.append(f"auditoria: {audit.path}")
+    lines.append(f"audit: {audit.path}")
     return (0 if not failures else 1), lines

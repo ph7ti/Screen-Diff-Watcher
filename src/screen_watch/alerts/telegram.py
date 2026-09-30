@@ -55,7 +55,7 @@ class TelegramNotifier:
     def notify(self, result: ComparisonResult, frame: Frame) -> None:
         token = self._token
         if not token:
-            log.warning("variavel %s ausente, Telegram desabilitado", self.bot_token_env)
+            log.warning("variable %s missing, Telegram disabled", self.bot_token_env)
             return
 
         import httpx  # noqa: PLC0415

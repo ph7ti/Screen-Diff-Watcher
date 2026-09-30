@@ -34,7 +34,9 @@ class MonitorController:
 
     def start(self, target: TargetConfig, recorder: object | None = None) -> None:
         if self.running:
-            raise RuntimeError("ja existe um target em execucao")
+            from screen_watch.errors import AppError  # noqa: PLC0415
+
+            raise AppError(code="runtime.already_running")
         from screen_watch.app import MonitorSession, build_loop  # noqa: PLC0415
 
         self._session = MonitorSession(

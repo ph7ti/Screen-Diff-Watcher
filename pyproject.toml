@@ -43,7 +43,7 @@ package-dir = { "" = "src" }
 where = ["src"]
 
 [tool.setuptools.package-data]
-screen_watch = ["py.typed", "assets/icons/*.png"]
+screen_watch = ["py.typed", "assets/icons/*.png", "i18n/*.json"]
 
 [tool.setuptools.dynamic]
 # Fonte unica da versao: screen_watch/__init__.py::__version__.

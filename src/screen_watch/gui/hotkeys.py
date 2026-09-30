@@ -19,7 +19,7 @@ def start_hotkeys(events, hotkeys: dict[str, str]) -> object | None:
     try:
         from pynput import keyboard  # noqa: PLC0415
     except Exception as exc:  # pragma: no cover - depende do ambiente
-        log.warning("pynput indisponivel, hotkeys globais desabilitadas: %s", exc)
+        log.warning("pynput unavailable, global hotkeys disabled: %s", exc)
         return None
 
     def callback(name: str):
@@ -39,7 +39,7 @@ def start_hotkeys(events, hotkeys: dict[str, str]) -> object | None:
             try:
                 hot_key.parse(combo)
             except Exception as exc:  # noqa: BLE001 - pynput levanta tipos variados
-                log.warning("hotkey invalida ignorada (%s=%r): %s", name, combo, exc)
+                log.warning("invalid hotkey ignored (%s=%r): %s", name, combo, exc)
                 continue
         mapping[combo] = callback(name)
     if not mapping:
@@ -50,7 +50,7 @@ def start_hotkeys(events, hotkeys: dict[str, str]) -> object | None:
         listener.start()
         return listener
     except Exception as exc:  # pragma: no cover - depende do ambiente
-        log.warning("nao foi possivel registrar hotkeys globais: %s", exc)
+        log.warning("could not register global hotkeys: %s", exc)
         return None
 
 

@@ -40,6 +40,7 @@ from screen_watch.config.schema import (
     TargetConfig,
     UiOptions,
 )
+from screen_watch.errors import ConfigError
 
 log = logging.getLogger(__name__)
 
@@ -50,27 +51,29 @@ _WINDOW_RE = re.compile(r"^(\d{2}):(\d{2})-(\d{2}):(\d{2})$")
 
 Rect = tuple[int, int, int, int]
 
-
-class ConfigError(ValueError):
-    pass
+__all__ = ["ConfigError", "load_config"]
 
 
 def _as_int(value: Any, field_name: str) -> int:
     if isinstance(value, bool):
-        raise ConfigError(f"{field_name} deve ser um inteiro (recebido {value!r})")
+        _raise_not("config.not_integer", field_name, value)
     try:
         return int(value)
     except (TypeError, ValueError) as exc:
-        raise ConfigError(f"{field_name} deve ser um inteiro (recebido {value!r})") from exc
+        raise ConfigError(
+            code="config.not_integer", params={"field": field_name, "value": value}
+        ) from exc
 
 
 def _as_float(value: Any, field_name: str) -> float:
     if isinstance(value, bool):
-        raise ConfigError(f"{field_name} deve ser um numero (recebido {value!r})")
+        _raise_not("config.not_number", field_name, value)
     try:
         return float(value)
     except (TypeError, ValueError) as exc:
-        raise ConfigError(f"{field_name} deve ser um numero (recebido {value!r})") from exc
+        raise ConfigError(
+            code="config.not_number", params={"field": field_name, "value": value}
+        ) from exc
 
 
 def _as_bool(value: Any, field_name: str) -> bool:
@@ -78,7 +81,7 @@ def _as_bool(value: Any, field_name: str) -> bool:
         return value
     if isinstance(value, int) and value in (0, 1):
         return bool(value)
-    raise ConfigError(f"{field_name} deve ser true/false (recebido {value!r})")
+    _raise_not("config.not_bool", field_name, value)
 
 
 def _as_str(value: Any, field_name: str) -> str:
@@ -86,12 +89,12 @@ def _as_str(value: Any, field_name: str) -> str:
         return ""
     if isinstance(value, (str, int, float)):
         return str(value)
-    raise ConfigError(f"{field_name} deve ser texto (recebido {value!r})")
+    _raise_not("config.not_text", field_name, value)
 
 
 def _as_rect(value: Any, field_name: str) -> Rect:
     if not isinstance(value, (list, tuple)) or len(value) != 4:
-        raise ConfigError(f"{field_name} deve ser [x, y, w, h]")
+        raise ConfigError(code="config.not_rect", params={"field": field_name})
     return tuple(_as_int(v, f"{field_name}[{i}]") for i, v in enumerate(value))  # type: ignore[return-value]
 
 
@@ -99,21 +102,31 @@ def _as_point(value: Any, field_name: str) -> tuple[int, int] | None:
     if value is None:
         return None
     if not isinstance(value, (list, tuple)) or len(value) != 2:
-        raise ConfigError(f"{field_name} deve ser [x, y]")
+        raise ConfigError(code="config.not_point", params={"field": field_name})
     return _as_int(value[0], f"{field_name}[0]"), _as_int(value[1], f"{field_name}[1]")
+
+
+def _raise_not(code: str, field_name: str, value: Any) -> None:
+    raise ConfigError(code=code, params={"field": field_name, "value": value})
 
 
 def _as_mode(value: Any, field_name: str = "mode") -> str:
     mode = _as_str(value, field_name) or "advanced"
     if mode not in VALID_MODES:
-        raise ConfigError(f"{field_name} invalido: {mode!r}; use um de {VALID_MODES}")
+        raise ConfigError(
+            code="config.invalid_mode",
+            params={"field": field_name, "value": mode, "valid": VALID_MODES},
+        )
     return mode
 
 
 def _as_interval(value: Any, field_name: str = "poll_interval_s") -> float:
     interval = _as_float(value, field_name)
     if interval < MIN_POLL_INTERVAL_S:
-        raise ConfigError(f"{field_name} deve ser >= {MIN_POLL_INTERVAL_S} (doc, secao 1.1)")
+        raise ConfigError(
+            code="config.interval_too_small",
+            params={"field": field_name, "minimum": MIN_POLL_INTERVAL_S},
+        )
     return interval
 
 
@@ -121,7 +134,7 @@ def parse_rects(raw: Any, field_name: str = "masks") -> tuple[Rect, ...]:
     if raw is None:
         return ()
     if not isinstance(raw, (list, tuple)):
-        raise ConfigError(f"{field_name} deve ser uma lista de [x, y, w, h]")
+        raise ConfigError(code="config.rects_not_list", params={"field": field_name})
     return tuple(_as_rect(item, f"{field_name}[]") for item in raw)
 
 
@@ -129,16 +142,23 @@ def parse_alerts(raw: Any, field_name: str = "alerts") -> tuple[AlertOptions, ..
     if raw is None:
         return ()
     if not isinstance(raw, (list, tuple)):
-        raise ConfigError(f"{field_name} deve ser uma lista")
+        raise ConfigError(code="config.alerts_not_list", params={"field": field_name})
     return tuple(_parse_alert(item, i, field_name) for i, item in enumerate(raw))
 
 
 def parse_actions(raw: Any, prefix: str = "actions", mode: str | None = None):
-    """Parse de acoes convertendo `ActionError` em `ConfigError`."""
+    """Parse de acoes convertendo `ActionError` em `ConfigError` (preserva o codigo)."""
     try:
         return _parse_actions_raw(raw, prefix=prefix, mode=mode)
     except ActionError as exc:
-        raise ConfigError(str(exc)) from exc
+        code = getattr(exc, "code", "")
+        if not code:
+            raise ConfigError(str(exc)) from exc
+        raise ConfigError(
+            code=code,
+            params=getattr(exc, "params", {}),
+            detail=getattr(exc, "detail", ""),
+        ) from exc
 
 
 def parse_overrides(raw: Any) -> dict[str, Any]:
@@ -151,7 +171,7 @@ def parse_overrides(raw: Any) -> dict[str, Any]:
     if raw is None:
         return {}
     if not isinstance(raw, dict):
-        raise ConfigError("overrides deve ser um mapeamento")
+        raise ConfigError(code="config.overrides_not_mapping")
     out: dict[str, Any] = {}
     if raw.get("mode") is not None:
         out["mode"] = _as_mode(raw["mode"], "overrides.mode")
@@ -166,7 +186,7 @@ def parse_overrides(raw: Any) -> dict[str, Any]:
     if raw.get("actions") is not None:
         actions_raw = raw["actions"]
         if not isinstance(actions_raw, (list, tuple)):
-            raise ConfigError("overrides.actions deve ser uma lista")
+            raise ConfigError(code="config.overrides_actions_not_list")
         out["actions"] = tuple(actions_raw)
     return out
 
@@ -174,13 +194,13 @@ def parse_overrides(raw: Any) -> dict[str, Any]:
 def _parse_compare_options(raw: Any) -> CompareOptions:
     raw = raw or {}
     if not isinstance(raw, dict):
-        raise ConfigError("compare_options deve ser um mapeamento")
+        raise ConfigError(code="config.compare_options_not_mapping")
     light = raw.get("light") or {}
     default = raw.get("default") or {}
     advanced = raw.get("advanced") or {}
     for name, section in (("light", light), ("default", default), ("advanced", advanced)):
         if not isinstance(section, dict):
-            raise ConfigError(f"compare_options.{name} deve ser um mapeamento")
+            raise ConfigError(code="config.compare_section_not_mapping", params={"name": name})
 
     tesseract_cmd = advanced.get("tesseract_cmd")
     return CompareOptions(
@@ -211,9 +231,9 @@ def _parse_compare_options(raw: Any) -> CompareOptions:
 def _parse_alert(raw: Any, index: int, prefix: str = "alerts") -> AlertOptions:
     field = f"{prefix}[{index}]"
     if not isinstance(raw, dict):
-        raise ConfigError(f"{field} deve ser um mapeamento")
+        raise ConfigError(code="config.alert_not_mapping", params={"field": field})
     if "type" not in raw:
-        raise ConfigError(f"{field} precisa de 'type'")
+        raise ConfigError(code="config.alert_missing_type", params={"field": field})
     return AlertOptions(
         type=_as_str(raw["type"], f"{field}.type"),
         enabled=_as_bool(raw.get("enabled", True), f"{field}.enabled"),
@@ -231,10 +251,12 @@ def _parse_alert(raw: Any, index: int, prefix: str = "alerts") -> AlertOptions:
 
 def _parse_target(raw: Any) -> TargetConfig:
     if not isinstance(raw, dict):
-        raise ConfigError("cada target deve ser um mapeamento")
+        raise ConfigError(code="config.target_not_mapping")
     for field_name in REQUIRED_TARGET_FIELDS:
         if field_name not in raw:
-            raise ConfigError(f"target sem campo obrigatorio: {field_name!r}")
+            raise ConfigError(
+                code="config.target_missing_field", params={"field": field_name}
+            )
 
     return TargetConfig(
         name=_as_str(raw["name"], "name"),
@@ -254,7 +276,7 @@ def _parse_target(raw: Any) -> TargetConfig:
 def _parse_humanize(raw: Any) -> HumanizeOptions:
     raw = raw or {}
     if not isinstance(raw, dict):
-        raise ConfigError("defaults.humanize deve ser um mapeamento")
+        raise ConfigError(code="config.humanize_not_mapping")
     seed = raw.get("seed")
     options = HumanizeOptions(
         mouse_steps=_as_int(raw.get("mouse_steps", 24), "defaults.humanize.mouse_steps"),
@@ -264,16 +286,16 @@ def _parse_humanize(raw: Any) -> HumanizeOptions:
         seed=None if seed is None else _as_int(seed, "defaults.humanize.seed"),
     )
     if options.mouse_steps < 1:
-        raise ConfigError("defaults.humanize.mouse_steps deve ser >= 1")
+        raise ConfigError(code="config.humanize_mouse_steps_min")
     if options.key_interval_ms < 0 or options.jitter_px < 0 or options.wait_jitter_ms < 0:
-        raise ConfigError("defaults.humanize: key_interval_ms/jitter_px/wait_jitter_ms devem ser >= 0")
+        raise ConfigError(code="config.humanize_non_negative")
     return options
 
 
 def _parse_defaults(raw: Any) -> GlobalDefaults:
     raw = raw or {}
     if not isinstance(raw, dict):
-        raise ConfigError("defaults deve ser um mapeamento")
+        raise ConfigError(code="config.defaults_not_mapping")
     return GlobalDefaults(
         mode=_as_mode(raw.get("mode", "advanced"), "defaults.mode"),
         poll_interval_s=_as_interval(raw.get("poll_interval_s", 2.0), "defaults.poll_interval_s"),
@@ -286,7 +308,7 @@ def _parse_defaults(raw: Any) -> GlobalDefaults:
 def _parse_profile(raw: Any, name: str) -> ProfileOptions:
     raw = raw or {}
     if not isinstance(raw, dict):
-        raise ConfigError(f"profiles.{name} deve ser um mapeamento")
+        raise ConfigError(code="config.profile_not_mapping", params={"name": name})
     defaults = _parse_defaults(raw.get("defaults"))
     return ProfileOptions(
         defaults=defaults,
@@ -298,7 +320,7 @@ def _parse_profile(raw: Any, name: str) -> ProfileOptions:
 def _parse_evidence(raw: Any) -> EvidenceOptions:
     raw = raw or {}
     if not isinstance(raw, dict):
-        raise ConfigError("evidence deve ser um mapeamento")
+        raise ConfigError(code="config.evidence_not_mapping")
     directory = raw.get("dir")
     return EvidenceOptions(
         enabled=_as_bool(raw.get("enabled", False), "evidence.enabled"),
@@ -316,55 +338,75 @@ def _parse_evidence(raw: Any) -> EvidenceOptions:
 def _parse_ui(raw: Any) -> UiOptions:
     raw = raw or {}
     if not isinstance(raw, dict):
-        raise ConfigError("ui deve ser um mapeamento")
+        raise ConfigError(code="config.ui_not_mapping")
     hotkeys_raw = raw.get("hotkeys") or {}
     if not isinstance(hotkeys_raw, dict):
-        raise ConfigError("ui.hotkeys deve ser um mapeamento")
+        raise ConfigError(code="config.hotkeys_not_mapping")
     hotkeys = tuple(
         (_as_str(key, "ui.hotkeys"), _as_str(value, f"ui.hotkeys.{key}"))
         for key, value in hotkeys_raw.items()
     )
     durations_raw = raw.get("arm_durations_min", (1, 5, 15, 30))
     if not isinstance(durations_raw, (list, tuple)):
-        raise ConfigError("ui.arm_durations_min deve ser uma lista de minutos")
+        raise ConfigError(code="config.arm_durations_not_list")
     durations = tuple(_as_int(item, "ui.arm_durations_min[]") for item in durations_raw)
     if any(item <= 0 for item in durations):
-        raise ConfigError("ui.arm_durations_min deve conter apenas minutos positivos")
-    return UiOptions(hotkeys=hotkeys, arm_durations_min=durations)
+        raise ConfigError(code="config.arm_durations_positive")
+    language = _as_str(raw.get("language", "auto"), "ui.language") or "auto"
+    if language != "auto":
+        from screen_watch.i18n import (
+            available_locales,  # noqa: PLC0415
+            normalize_locale,  # noqa: PLC0415
+        )
+
+        known = {tag.lower() for tag in available_locales()}
+        if normalize_locale(language).lower() not in known:
+            log.warning(
+                "unknown ui.language %r; falling back to 'auto' (available: %s)",
+                language,
+                ", ".join(available_locales()),
+            )
+            language = "auto"
+    return UiOptions(hotkeys=hotkeys, arm_durations_min=durations, language=language)
 
 
 def _parse_window(raw: Any, field_name: str) -> str:
     text = _as_str(raw, field_name)
     match = _WINDOW_RE.match(text)
     if match is None:
-        raise ConfigError(f"{field_name} deve ser 'HH:MM-HH:MM' (recebido {text!r})")
+        raise ConfigError(
+            code="config.window_format", params={"field": field_name, "value": text}
+        )
     hours = (int(match.group(1)), int(match.group(3)))
     minutes = (int(match.group(2)), int(match.group(4)))
     if any(h > 23 for h in hours) or any(m > 59 for m in minutes):
-        raise ConfigError(f"{field_name} tem hora/minuto invalido: {text!r}")
+        raise ConfigError(
+            code="config.window_invalid_time", params={"field": field_name, "value": text}
+        )
     return text
 
 
 def _parse_schedule(raw: Any) -> ScheduleOptions:
     raw = raw or {}
     if not isinstance(raw, dict):
-        raise ConfigError("schedule deve ser um mapeamento")
+        raise ConfigError(code="config.schedule_not_mapping")
     days_raw = raw.get("days") or ()
     windows_raw = raw.get("windows") or ()
     if not isinstance(days_raw, (list, tuple)):
-        raise ConfigError("schedule.days deve ser uma lista")
+        raise ConfigError(code="config.schedule_days_not_list")
     if not isinstance(windows_raw, (list, tuple)):
-        raise ConfigError("schedule.windows deve ser uma lista")
+        raise ConfigError(code="config.schedule_windows_not_list")
     days = tuple(_as_str(day, "schedule.days[]").lower() for day in days_raw)
     invalid_days = [day for day in days if day not in VALID_DAYS]
     if invalid_days:
         raise ConfigError(
-            f"schedule.days invalido(s): {invalid_days}; use um de {VALID_DAYS}"
+            code="config.schedule_invalid_days",
+            params={"days": invalid_days, "valid": VALID_DAYS},
         )
     windows = tuple(_parse_window(window, "schedule.windows[]") for window in windows_raw)
     timezone = _as_str(raw.get("timezone", "local"), "schedule.timezone") or "local"
     if timezone not in VALID_TIMEZONES:
-        raise ConfigError(f"schedule.timezone nao suportado: {timezone!r}")
+        raise ConfigError(code="config.schedule_timezone", params={"value": timezone})
     return ScheduleOptions(
         enabled=_as_bool(raw.get("enabled", False), "schedule.enabled"),
         days=days,
@@ -376,16 +418,16 @@ def _parse_schedule(raw: Any) -> ScheduleOptions:
 def _config_v2_from_dict(raw: dict[str, Any]) -> AppConfig:
     profiles_raw = raw.get("profiles")
     if profiles_raw is None:
-        raise ConfigError("config v2 precisa de 'profiles'")
+        raise ConfigError(code="config.v2_missing_profiles")
     if not isinstance(profiles_raw, dict):
-        raise ConfigError("'profiles' deve ser um mapeamento")
+        raise ConfigError(code="config.profiles_not_mapping")
     profiles = {
         _as_str(name, "profiles"): _parse_profile(value, _as_str(name, "profiles"))
         for name, value in profiles_raw.items()
     }
     profile = _as_str(raw.get("profile", "default"), "profile") or "default"
     if profile not in profiles:
-        raise ConfigError(f"profile inexistente no YAML: {profile!r}")
+        raise ConfigError(code="config.profile_unknown", params={"name": profile})
     return AppConfig(
         version=2,
         profile=profile,
@@ -398,15 +440,13 @@ def _config_v2_from_dict(raw: dict[str, Any]) -> AppConfig:
 
 def config_from_dict(raw: dict[str, Any]) -> AppConfig:
     if not isinstance(raw, dict):
-        raise ConfigError("raiz do YAML deve ser um mapeamento")
+        raise ConfigError(code="config.root_not_mapping")
     version_raw = raw.get("version")
     version: int | None = None
     if version_raw is not None:
         version = _as_int(version_raw, "version")
     if version is not None and version not in SUPPORTED_CONFIG_VERSIONS:
-        raise ConfigError(
-            f"versao de configuracao nao suportada: {version}; use 1 ou 2 (doc, secao 12)"
-        )
+        raise ConfigError(code="config.version_unsupported", params={"value": version})
     if version == 2:
         return _config_v2_from_dict(raw)
 
@@ -415,9 +455,9 @@ def config_from_dict(raw: dict[str, Any]) -> AppConfig:
     if targets_raw is None:
         targets_raw = []
     if not isinstance(targets_raw, (list, tuple)):
-        raise ConfigError("'targets' deve ser uma lista")
+        raise ConfigError(code="config.targets_not_list")
     if targets_raw:
-        log.warning("YAML v1 (targets) detectado; rode 'migrate-config' (doc, secao 12)")
+        log.warning("legacy v1 YAML (targets) detected; run 'migrate-config' (doc, section 12)")
     return AppConfig(
         version=1,
         profile="default",
@@ -430,13 +470,13 @@ def load_config_dict(path: str | Path) -> dict[str, Any]:
     """Le o YAML cru (sem validar targets), preservando as demais chaves."""
     path = Path(path)
     if not path.exists():
-        raise ConfigError(f"arquivo de configuracao nao encontrado: {path}")
+        raise ConfigError(code="config.file_not_found", params={"path": path})
     try:
         raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     except yaml.YAMLError as exc:
-        raise ConfigError(f"YAML invalido: {exc}") from exc
+        raise ConfigError(code="config.yaml_invalid", params={"error": exc}) from exc
     if not isinstance(raw, dict):
-        raise ConfigError("raiz do YAML deve ser um mapeamento")
+        raise ConfigError(code="config.root_not_mapping")
     return raw
 
 
@@ -452,7 +492,7 @@ def remove_target_from_config(path: str | Path, name: str) -> bool:
     raw = load_config_dict(path)
     targets = raw.get("targets") or []
     if not isinstance(targets, (list, tuple)):
-        raise ConfigError("'targets' deve ser uma lista")
+        raise ConfigError(code="config.targets_not_list")
     remaining = [
         target
         for target in targets
@@ -527,6 +567,7 @@ def _default_ui_dict() -> dict[str, Any]:
             "abort": "<esc>",
         },
         "arm_durations_min": [1, 5, 15, 30],
+        "language": "auto",
     }
 
 
@@ -592,19 +633,21 @@ def migrate_config_dict(raw: dict[str, Any]) -> tuple[dict[str, Any], list[Targe
     nome do target, entao duplicaria o outro).
     """
     if not isinstance(raw, dict):
-        raise ConfigError("raiz do YAML deve ser um mapeamento")
+        raise ConfigError(code="config.root_not_mapping")
     targets_raw = raw.get("targets")
     if targets_raw is None:
-        raise ConfigError("nada a migrar: YAML sem 'targets'")
+        raise ConfigError(code="config.migrate_no_targets")
     if not isinstance(targets_raw, (list, tuple)):
-        raise ConfigError("'targets' deve ser uma lista")
+        raise ConfigError(code="config.targets_not_list")
     targets = [_parse_target(target) for target in targets_raw]
     names = [target.name for target in targets]
     duplicates = sorted({name for name in names if names.count(name) > 1})
     if duplicates:
-        raise ConfigError(f"nomes de target duplicados: {', '.join(duplicates)}")
+        raise ConfigError(
+            code="config.migrate_duplicate_names", params={"names": ", ".join(duplicates)}
+        )
     if not targets:
-        raise ConfigError("nada a migrar: 'targets' esta vazio")
+        raise ConfigError(code="config.migrate_empty")
 
     first = targets[0]
     new_dict = {

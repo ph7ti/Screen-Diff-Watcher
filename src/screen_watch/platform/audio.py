@@ -63,7 +63,7 @@ def _play_external(path: str) -> bool:
         try:
             subprocess.Popen([*command, path])
         except OSError as exc:  # pragma: no cover - depende do ambiente
-            log.warning("falha ao tocar %s com %s: %s", path, command[0], exc)
+            log.warning("failed to play %s with %s: %s", path, command[0], exc)
             continue
         return True
     return False
@@ -73,12 +73,12 @@ def _play_windows(path: str) -> bool:
     try:
         import winsound  # noqa: PLC0415
     except Exception as exc:  # pragma: no cover - depende do ambiente
-        log.warning("winsound indisponivel: %s", exc)
+        log.warning("winsound unavailable: %s", exc)
         return False
     try:
         winsound.PlaySound(path, winsound.SND_FILENAME | winsound.SND_ASYNC)
     except (OSError, RuntimeError) as exc:
-        log.warning("winsound nao conseguiu tocar %s: %s", path, exc)
+        log.warning("winsound could not play %s: %s", path, exc)
         return False
     return True
 
@@ -92,7 +92,7 @@ def play_file(path: str | Path) -> bool:
         return _play_windows(value)
     ok = _play_external(value)
     if not ok:
-        log.warning("som indisponivel: nenhum player externo encontrado para %s", value)
+        log.warning("sound unavailable: no external player found for %s", value)
     return ok
 
 
@@ -102,18 +102,18 @@ def beep() -> bool:
         try:
             import winsound  # noqa: PLC0415
         except Exception as exc:  # pragma: no cover - depende do ambiente
-            log.warning("winsound indisponivel: %s", exc)
+            log.warning("winsound unavailable: %s", exc)
             return False
         try:
             winsound.MessageBeep()
         except (OSError, RuntimeError) as exc:  # pragma: no cover - depende do ambiente
-            log.warning("MessageBeep falhou: %s", exc)
+            log.warning("MessageBeep failed: %s", exc)
             return False
         return True
 
     bell = _candidate_bell()
     if bell is None:
-        log.warning("som indisponivel: sem arquivo de campainha no tema")
+        log.warning("sound unavailable: no bell file in the theme")
         return False
     return _play_external(bell)
 

@@ -197,4 +197,4 @@ class MonitorLoop:
         if self.on_error is not None:
             self.on_error(exc)
         else:
-            log.error("falha no loop de monitoramento: %s", exc)
+            log.error("monitoring loop failure: %s", exc)

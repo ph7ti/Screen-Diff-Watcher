@@ -1,4 +1,4 @@
-"""Janela principal da GUI mínima (doc 13.9, P3/P6/P10).
+"""Janela principal da GUI minima (doc 13.9, P3/P6/P10; layout do UI.txt).
 
 Nao faz I/O de rede nem toca no loop: apenas reflete a config/selecoes, dispara
 iniciar/parar no `MonitorController` e consome eventos da fila via `QTimer`.
@@ -15,21 +15,28 @@ from PyQt6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
     QComboBox,
+    QGroupBox,
     QHBoxLayout,
     QInputDialog,
     QLabel,
     QListWidget,
     QListWidgetItem,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QSplitter,
     QVBoxLayout,
     QWidget,
 )
 
+from screen_watch.actions.arming import ARMED, TIMED
+from screen_watch.errors import render_error
 from screen_watch.gui.controller import MonitorController, new_event_queue
+from screen_watch.gui.hover_help import attach_help
 from screen_watch.gui.labels import selection_label
+from screen_watch.i18n import available_locales, current_language, locale_meta, tr
 
 POLL_MS = 200
 TARGET_ROLE = 1
@@ -55,8 +62,8 @@ class MainWindow(QMainWindow):
         self, controller: MonitorController, config_path, profile: str | None = None, on_quit=None
     ) -> None:
         super().__init__()
-        self.setWindowTitle("Screen Diff Watcher")
-        self.resize(820, 540)
+        self.setWindowTitle(tr("main.title"))
+        self.resize(960, 640)
         icon = _window_icon()
         if icon is not None:
             self.setWindowIcon(icon)
@@ -69,6 +76,7 @@ class MainWindow(QMainWindow):
         self._active_name = ""
         self._actions_stem: str | None = None
         self._hotkeys: object | None = None
+        self._help_filters: list[object] = []
 
         self._timer = QTimer(self)
         self._timer.setInterval(POLL_MS)
@@ -80,114 +88,208 @@ class MainWindow(QMainWindow):
         self._timer.start()
 
     # -- construcao --------------------------------------------------------
+    def _help(self, widget, key: str) -> None:
+        self._help_filters.append(attach_help(widget, key))
+
     def _build_ui(self) -> None:
         central = QWidget()
         self.setCentralWidget(central)
-        layout = QVBoxLayout(central)
+        root = QVBoxLayout(central)
 
-        layout.addWidget(QLabel("Selecoes — nome do app, ROI monitorada e modo"))
-        self.list = QListWidget()
-        self.list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        self.list.currentItemChanged.connect(self._item_changed)
-        self.list.itemDoubleClicked.connect(lambda _item: self._toggle_clicked())
-        layout.addWidget(self.list)
+        splitter = QSplitter(Qt.Orientation.Vertical)
+        upper = QWidget()
+        upper_layout = QVBoxLayout(upper)
+        upper_layout.setContentsMargins(0, 0, 0, 0)
+
+        columns = QHBoxLayout()
+
+        monitoring = QGroupBox(tr("main.monitoring"))
+        mon = QVBoxLayout(monitoring)
+        self.btn_start = QPushButton(tr("main.btn_start"))
+        self.btn_stop = QPushButton(tr("main.btn_stop"))
+        self.btn_stop.setEnabled(False)
+        self.btn_rearm = QPushButton(tr("main.btn_rearm"))
+        self.btn_rearm.setEnabled(False)
+        self.btn_minimize = QPushButton(tr("main.btn_minimize"))
+        for button in (self.btn_start, self.btn_stop, self.btn_rearm, self.btn_minimize):
+            mon.addWidget(button)
 
         mode_row = QHBoxLayout()
-        mode_row.addWidget(QLabel("Modo:"))
+        mode_row.addWidget(QLabel(tr("main.mode_label")))
         self.mode_combo = QComboBox()
         self.mode_combo.addItems(MODES)
-        self.mode_combo.currentTextChanged.connect(self._mode_changed)
         mode_row.addWidget(self.mode_combo)
         mode_row.addStretch(1)
-        layout.addLayout(mode_row)
+        mon.addLayout(mode_row)
 
         profile_row = QHBoxLayout()
-        profile_row.addWidget(QLabel("Perfil:"))
+        profile_row.addWidget(QLabel(tr("main.profile_label")))
         self.profile_combo = QComboBox()
-        self.profile_combo.currentTextChanged.connect(self._profile_changed)
         profile_row.addWidget(self.profile_combo)
         self.profile_note = QLabel("")
         profile_row.addWidget(self.profile_note)
         profile_row.addStretch(1)
-        layout.addLayout(profile_row)
+        mon.addLayout(profile_row)
 
-        layout.addWidget(QLabel("Acoes da sessao (aplicam no proximo start)"))
-        self.action_list = QListWidget()
-        self.action_list.setMaximumHeight(140)
-        self.action_list.itemChanged.connect(self._actions_changed)
-        layout.addWidget(self.action_list)
-        self.action_count = QLabel("")
-        layout.addWidget(self.action_count)
+        language_row = QHBoxLayout()
+        language_row.addWidget(QLabel(tr("main.language_label")))
+        self.language_combo = QComboBox()
+        language_row.addWidget(self.language_combo)
+        language_row.addStretch(1)
+        mon.addLayout(language_row)
 
-        action_buttons = QHBoxLayout()
-        self.btn_action_new = QPushButton("Nova acao...")
-        self.btn_action_edit = QPushButton("Editar...")
-        self.btn_action_remove = QPushButton("Remover acao")
-        self.btn_action_new.clicked.connect(self._action_new)
-        self.btn_action_edit.clicked.connect(self._action_edit)
-        self.btn_action_remove.clicked.connect(self._action_remove)
-        for button in (self.btn_action_new, self.btn_action_edit, self.btn_action_remove):
-            action_buttons.addWidget(button)
-        action_buttons.addStretch(1)
-        layout.addLayout(action_buttons)
+        arm_row = QHBoxLayout()
+        self.btn_arm = QPushButton(tr("main.btn_arm"))
+        self.btn_disarm = QPushButton(tr("main.btn_disarm"))
+        self.btn_arm_for = QPushButton(tr("main.btn_arm_for"))
+        self._arm_menu = QMenu(self.btn_arm_for)
+        self.btn_arm_for.setMenu(self._arm_menu)
+        for button in (self.btn_arm, self.btn_disarm, self.btn_arm_for):
+            arm_row.addWidget(button)
+        arm_row.addStretch(1)
+        mon.addLayout(arm_row)
+
+        self.arming_label = QLabel("")
+        self.arming_label.setWordWrap(True)
+        mon.addWidget(self.arming_label)
+        mon.addStretch(1)
+
+        columns.addWidget(monitoring, 1)
+
+        selections = QGroupBox(tr("main.selections"))
+        sel = QVBoxLayout(selections)
+        sel.addWidget(QLabel(tr("main.selections_legend")))
+        self.list = QListWidget()
+        self.list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        sel.addWidget(self.list)
+        columns.addWidget(selections, 2)
+
+        upper_layout.addLayout(columns)
 
         buttons = QHBoxLayout()
-        self.btn_start = QPushButton("Iniciar")
-        self.btn_stop = QPushButton("Parar")
-        self.btn_stop.setEnabled(False)
-        self.btn_rearm = QPushButton("Re-armar")
-        self.btn_rearm.setEnabled(False)
-        self.btn_run_action = QPushButton("Executar acao (3s)")
-        self.btn_new = QPushButton("Novo target (overlay)")
-        self.btn_remove = QPushButton("Remover")
-        self.btn_reload = QPushButton("Recarregar")
-        self.btn_minimize = QPushButton("Minimizar para o tray")
-        self.btn_open = QPushButton("Abrir YAML")
-        self.btn_open_captures = QPushButton("Abrir pasta de prints")
-        self.btn_start.clicked.connect(self._start)
-        self.btn_stop.clicked.connect(self._stop)
-        self.btn_rearm.clicked.connect(self._rearm)
-        self.btn_run_action.clicked.connect(self._run_action_once)
-        self.btn_new.clicked.connect(self._new_target)
-        self.btn_remove.clicked.connect(self._remove)
-        self.btn_reload.clicked.connect(self._reload)
-        self.btn_minimize.clicked.connect(self.hide)
-        self.btn_open.clicked.connect(self._open_yaml)
-        self.btn_open_captures.clicked.connect(self._open_captures)
-        for button in (
-            self.btn_start,
-            self.btn_stop,
-            self.btn_rearm,
-            self.btn_run_action,
+        self.btn_new = QPushButton(tr("main.btn_new"))
+        self.btn_remove = QPushButton(tr("main.btn_remove"))
+        self.btn_reload = QPushButton(tr("main.btn_reload"))
+        self.btn_open = QPushButton(tr("main.btn_open_yaml"))
+        self.btn_open_captures = QPushButton(tr("main.btn_captures"))
+        self.chk_evidence = QCheckBox(tr("main.chk_evidence"))
+        for widget in (
             self.btn_new,
             self.btn_remove,
             self.btn_reload,
-            self.btn_minimize,
             self.btn_open,
             self.btn_open_captures,
+            self.chk_evidence,
         ):
-            buttons.addWidget(button)
-        layout.addLayout(buttons)
+            buttons.addWidget(widget)
+        buttons.addStretch(1)
+        upper_layout.addLayout(buttons)
 
-        evidence_row = QHBoxLayout()
-        self.chk_evidence = QCheckBox("Gravar prints (evidencias)")
-        self.chk_evidence.setToolTip(
-            "Grava prints da janela no baseline e a cada mudanca (pasta em 'Abrir pasta de prints')."
-        )
-        self.chk_evidence.toggled.connect(self._toggle_evidence)
-        evidence_row.addWidget(self.chk_evidence)
-        evidence_row.addStretch(1)
-        layout.addLayout(evidence_row)
+        actions_group = QGroupBox(tr("main.actions_session"))
+        actions_layout = QHBoxLayout(actions_group)
+        actions_left = QVBoxLayout()
+        self.action_list = QListWidget()
+        self.action_list.setMaximumHeight(160)
+        actions_left.addWidget(self.action_list)
+        self.action_count = QLabel("")
+        actions_left.addWidget(self.action_count)
+        actions_layout.addLayout(actions_left, 3)
 
-        self.status = QLabel("parado")
-        self.last = QLabel("ultimo resultado: -")
-        layout.addWidget(self.status)
-        layout.addWidget(self.last)
+        actions_right = QVBoxLayout()
+        self.btn_action_new = QPushButton(tr("main.btn_action_new"))
+        self.btn_action_edit = QPushButton(tr("main.btn_action_edit"))
+        self.btn_action_remove = QPushButton(tr("main.btn_action_remove"))
+        self.btn_action_arm = QPushButton(tr("main.btn_action_arm"))
+        self.btn_run_action = QPushButton(tr("main.btn_action_run"))
+        for button in (
+            self.btn_action_new,
+            self.btn_action_edit,
+            self.btn_action_remove,
+            self.btn_action_arm,
+            self.btn_run_action,
+        ):
+            actions_right.addWidget(button)
+        actions_right.addStretch(1)
+        actions_layout.addLayout(actions_right, 2)
+        upper_layout.addWidget(actions_group)
+        upper_layout.addStretch(1)
 
-        layout.addWidget(QLabel("Log"))
+        lower = QWidget()
+        lower_layout = QVBoxLayout(lower)
+        lower_layout.setContentsMargins(0, 0, 0, 0)
+        status_row = QHBoxLayout()
+        status_row.addWidget(QLabel(tr("main.status_label")))
+        self.status = QLabel(tr("status.stopped"))
+        status_row.addWidget(self.status, 1)
+        lower_layout.addLayout(status_row)
+
+        last_row = QHBoxLayout()
+        last_row.addWidget(QLabel(tr("main.last_label")))
+        self.last = QLabel(tr("status.last_none"))
+        last_row.addWidget(self.last, 1)
+        lower_layout.addLayout(last_row)
+
+        lower_layout.addWidget(QLabel(tr("main.log_label")))
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
-        layout.addWidget(self.log)
+        lower_layout.addWidget(self.log)
+
+        splitter.addWidget(upper)
+        splitter.addWidget(lower)
+        splitter.setStretchFactor(0, 3)
+        splitter.setStretchFactor(1, 2)
+        root.addWidget(splitter)
+
+        # ligacoes
+        self.list.currentItemChanged.connect(self._item_changed)
+        self.list.itemDoubleClicked.connect(lambda _item: self._toggle_clicked())
+        self.mode_combo.currentTextChanged.connect(self._mode_changed)
+        self.profile_combo.currentTextChanged.connect(self._profile_changed)
+        self.language_combo.currentIndexChanged.connect(self._language_changed)
+        self.action_list.itemChanged.connect(self._actions_changed)
+        self.btn_start.clicked.connect(self._start)
+        self.btn_stop.clicked.connect(self._stop)
+        self.btn_rearm.clicked.connect(self._rearm)
+        self.btn_minimize.clicked.connect(self.hide)
+        self.btn_arm.clicked.connect(lambda: self._handle_action({"action": "arm"}))
+        self.btn_disarm.clicked.connect(lambda: self._handle_action({"action": "disarm"}))
+        self.btn_run_action.clicked.connect(self._run_action_once)
+        self.btn_action_arm.clicked.connect(lambda: self._handle_action({"action": "arm"}))
+        self.btn_action_new.clicked.connect(self._action_new)
+        self.btn_action_edit.clicked.connect(self._action_edit)
+        self.btn_action_remove.clicked.connect(self._action_remove)
+        self.btn_new.clicked.connect(self._new_target)
+        self.btn_remove.clicked.connect(self._remove)
+        self.btn_reload.clicked.connect(self._reload)
+        self.btn_open.clicked.connect(self._open_yaml)
+        self.btn_open_captures.clicked.connect(self._open_captures)
+        self.chk_evidence.toggled.connect(self._toggle_evidence)
+
+        # ajuda no hover (>2 s)
+        self._help(self.btn_start, "window.start")
+        self._help(self.btn_stop, "window.stop")
+        self._help(self.btn_rearm, "window.rearm")
+        self._help(self.btn_minimize, "window.minimize")
+        self._help(self.mode_combo, "window.mode")
+        self._help(self.profile_combo, "window.profile")
+        self._help(self.language_combo, "window.language")
+        self._help(self.btn_arm, "window.arm")
+        self._help(self.btn_disarm, "window.disarm")
+        self._help(self.btn_arm_for, "window.arm_for")
+        self._help(self.btn_run_action, "window.run_action")
+        self._help(self.btn_action_arm, "window.arm")
+        self._help(self.btn_new, "window.new_target")
+        self._help(self.btn_remove, "window.remove")
+        self._help(self.btn_reload, "window.reload")
+        self._help(self.btn_open, "window.open_yaml")
+        self._help(self.btn_open_captures, "window.captures")
+        self._help(self.chk_evidence, "window.evidence")
+        self._help(self.action_list, "window.actions_list")
+        self._help(self.btn_action_new, "window.action_new")
+        self._help(self.btn_action_edit, "window.action_edit")
+        self._help(self.btn_action_remove, "window.action_remove")
+
+        self._update_action_status()
 
     # -- dados -------------------------------------------------------------
     def _reload(self) -> None:
@@ -208,17 +310,19 @@ class MainWindow(QMainWindow):
             # roda init-config para nao gravar no perfil do admin).
             try:
                 save_config(self._config_path, default_config_dict())
-                self._append(f"config default criada em: {self._config_path}")
+                self._append(f"default config created at: {self._config_path}")
             except OSError as exc:
-                self._append(f"nao foi possivel criar a config: {exc}")
+                self._append(f"could not create config: {exc}")
 
         try:
             self._config = load_config(self._config_path)
         except ConfigError as exc:
-            self._append(f"config indisponivel: {exc}")
+            self._append(f"config unavailable: {exc}")
         if self._config is not None and self._config.legacy:
-            self._append("aviso: YAML v1 (targets); rode 'migrate-config' para v2")
+            self._append("warning: legacy v1 YAML (targets); run 'migrate-config' for v2")
         self._sync_evidence_toggle()
+        self._populate_arm_menu()
+        self._populate_languages()
 
         for path in sorted(selections_dir().glob("*.json")):
             self._entries.append(("selection", path))
@@ -230,11 +334,46 @@ class MainWindow(QMainWindow):
 
         self._populate_profiles()
         self._append(
-            f"carregado: {len(self._entries)} selecao(oes) — perfil {self._profile_label()}"
+            f"loaded: {len(self._entries)} selection(s) — profile {self._profile_label()}"
         )
         if self.list.count():
             self.list.setCurrentRow(0)
         self._populate_actions()
+
+    def _populate_arm_menu(self) -> None:
+        self._arm_menu.clear()
+        for minutes in self.arm_durations():
+            action = self._arm_menu.addAction(tr("main.arm_minutes", minutes=minutes))
+            action.triggered.connect(
+                lambda _checked=False, value=minutes: self._handle_action(
+                    {"action": "arm_for", "minutes": value}
+                )
+            )
+
+    def _populate_languages(self) -> None:
+        self.language_combo.blockSignals(True)
+        self.language_combo.clear()
+        active = current_language()
+        for tag in available_locales():
+            label = locale_meta(tag).get("name") or tag
+            self.language_combo.addItem(str(label), tag)
+        index = self.language_combo.findData(active)
+        if index >= 0:
+            self.language_combo.setCurrentIndex(index)
+        self.language_combo.blockSignals(False)
+
+    def _language_changed(self, _index: int) -> None:
+        tag = self.language_combo.currentData()
+        if not tag or tag == current_language():
+            return
+        from screen_watch.platform.paths import update_state
+
+        try:
+            update_state(language=str(tag))
+        except OSError as exc:
+            self._append(f"could not save the language preference: {exc}")
+            return
+        self._append(f"language -> {tag} (applies on next start)")
 
     def _populate_profiles(self) -> None:
         if self._config is not None and not self._config.legacy and self._config.profiles:
@@ -266,9 +405,9 @@ class MainWindow(QMainWindow):
         from screen_watch.platform.paths import update_state
 
         update_state(profile=name)
-        pending = "(aplicará no próximo start)" if self._controller.running else ""
+        pending = tr("main.pending_start") if self._controller.running else ""
         self.profile_note.setText(pending)
-        self._append(f"perfil -> {name} {pending}".strip())
+        self._append(f"profile -> {name} {pending}".strip())
         self._update_action_status()
         self._populate_actions()
         self._print_action_summary()
@@ -283,7 +422,7 @@ class MainWindow(QMainWindow):
 
     def _profile_label(self) -> str:
         if self._config is None or self._config.legacy or not self._config.profiles:
-            return f"{self._profile or 'default'} (legado/sem config)"
+            return f"{self._profile or 'default'} (legacy/no config)"
         return self._profile or self._config.profile
 
     def arm_durations(self) -> tuple[int, ...]:
@@ -297,7 +436,7 @@ class MainWindow(QMainWindow):
         try:
             selection = load_selection(value)
         except (OSError, ValueError) as exc:
-            return f"[SEL] {Path(value).stem} — ilegivel ({exc})"
+            return tr("label.unreadable", stem=Path(value).stem, error=exc)
         return selection_label(selection, Path(value).stem)
 
     def _selected(self):
@@ -325,7 +464,9 @@ class MainWindow(QMainWindow):
 
         selection = load_selection(value)
         profile = profile_from_config(self._config, self._profile, Path(value).stem)
-        schedule = self._config.schedule if self._config is not None and not self._config.legacy else None
+        schedule = (
+            self._config.schedule if self._config is not None and not self._config.legacy else None
+        )
         return build_target(
             selection,
             profile,
@@ -381,7 +522,7 @@ class MainWindow(QMainWindow):
         if selected is None:
             self._actions_stem = None
             self.action_list.setEnabled(False)
-            self.action_count.setText("nenhuma selecao")
+            self.action_count.setText(tr("main.no_selection"))
             self.action_list.blockSignals(False)
             return
         _kind, value = selected
@@ -394,7 +535,7 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             self._actions_stem = stem
             self.action_list.setEnabled(False)
-            self.action_count.setText(f"acoes indisponiveis: {exc}")
+            self.action_count.setText(tr("main.actions_unavailable", error=render_error(exc)))
             self.action_list.blockSignals(False)
             return
         saved = None if same else load_action_selection(stem)
@@ -415,16 +556,16 @@ class MainWindow(QMainWindow):
     def _update_action_count(self) -> None:
         total = self.action_list.count()
         if total == 0:
-            self.action_count.setText("nenhuma acao configurada")
+            self.action_count.setText(tr("main.no_actions"))
             return
         checked = sum(
             1
             for index in range(total)
             if self.action_list.item(index).checkState() == Qt.CheckState.Checked
         )
-        text = f"{checked} de {total} selecionadas"
+        text = tr("main.actions_count", checked=checked, total=total)
         if checked == 0:
-            text += " — nenhuma acao selecionada (a sessao so monitora)"
+            text += tr("main.actions_none_selected")
         self.action_count.setText(text)
 
     def _actions_changed(self, _item) -> None:
@@ -437,7 +578,7 @@ class MainWindow(QMainWindow):
         try:
             save_action_selection(Path(value).stem, self._checked_action_names() or ())
         except OSError as exc:
-            self._append(f"nao foi possivel salvar a selecao de acoes: {exc}")
+            self._append(f"could not save the action selection: {exc}")
         self._update_action_count()
 
     # -- editor de acoes ---------------------------------------------------
@@ -451,7 +592,7 @@ class MainWindow(QMainWindow):
         try:
             return value, load_selection(value)
         except (OSError, ValueError) as exc:
-            self._append(f"selecao ilegivel: {exc}")
+            self._append(f"unreadable selection: {exc}")
             return value, None
 
     def _selected_action_name(self) -> str | None:
@@ -503,7 +644,7 @@ class MainWindow(QMainWindow):
     def _action_new(self) -> None:
         value, selection = self._current_selection()
         if selection is None:
-            QMessageBox.information(self, "Screen Diff Watcher", "selecione uma selecao")
+            QMessageBox.information(self, tr("main.title"), tr("dialog.select_selection"))
             return
         from screen_watch.gui.action_editor import ActionEditorDialog
         from screen_watch.persistence.selection import override_actions
@@ -511,20 +652,26 @@ class MainWindow(QMainWindow):
         mode = self.mode_combo.currentText() or selection.mode
         roi_rect, window_rect = self._locator_bases(mode)
         raw = ActionEditorDialog(
-            self, mode=mode, title="Nova acao", roi_rect=roi_rect, window_rect=window_rect
+            self,
+            mode=mode,
+            title=tr("dialog.new_action_title"),
+            roi_rect=roi_rect,
+            window_rect=window_rect,
         ).run()
         if raw is None:
             return
         actions = override_actions(selection)
         if any(item.get("name") == raw["name"] for item in actions):
             QMessageBox.warning(
-                self, "Screen Diff Watcher", f"ja existe uma acao {raw['name']!r} nesta selecao"
+                self,
+                tr("main.title"),
+                tr("dialog.action_duplicate", name=repr(raw["name"])),
             )
             return
         actions.append(raw)
         self._save_override_actions(value, selection, actions)
         self._sync_saved_action(Path(value).stem, add=raw["name"])
-        self._append(f"acao adicionada: {raw['name']} (aplica no proximo start)")
+        self._append(f"action added: {raw['name']} (applies on next start)")
         self._populate_actions()
         self._print_action_summary()
 
@@ -534,7 +681,7 @@ class MainWindow(QMainWindow):
             return
         name = self._selected_action_name()
         if name is None:
-            QMessageBox.information(self, "Screen Diff Watcher", "selecione uma acao na lista")
+            QMessageBox.information(self, tr("main.title"), tr("dialog.select_action"))
             return
         from screen_watch.gui.action_editor import ActionEditorDialog
         from screen_watch.persistence.selection import override_actions
@@ -543,9 +690,7 @@ class MainWindow(QMainWindow):
         index = next((i for i, item in enumerate(actions) if item.get("name") == name), None)
         if index is None:
             QMessageBox.information(
-                self,
-                "Screen Diff Watcher",
-                "esta acao vem do perfil/YAML (nao editavel aqui); crie uma nova ou edite o YAML",
+                self, tr("main.title"), tr("dialog.action_from_profile_edit")
             )
             return
         mode = self.mode_combo.currentText() or selection.mode
@@ -554,7 +699,7 @@ class MainWindow(QMainWindow):
             self,
             mode=mode,
             action=actions[index],
-            title="Editar acao",
+            title=tr("dialog.edit_action_title"),
             roi_rect=roi_rect,
             window_rect=window_rect,
         ).run()
@@ -564,7 +709,7 @@ class MainWindow(QMainWindow):
         self._save_override_actions(value, selection, actions)
         if raw["name"] != name:
             self._sync_saved_action(Path(value).stem, add=raw["name"], remove=name)
-        self._append(f"acao atualizada: {name} -> {raw['name']}")
+        self._append(f"action updated: {name} -> {raw['name']}")
         self._populate_actions()
         self._print_action_summary()
 
@@ -574,7 +719,7 @@ class MainWindow(QMainWindow):
             return
         name = self._selected_action_name()
         if name is None:
-            QMessageBox.information(self, "Screen Diff Watcher", "selecione uma acao na lista")
+            QMessageBox.information(self, tr("main.title"), tr("dialog.select_action"))
             return
         from screen_watch.persistence.selection import override_actions
 
@@ -582,22 +727,20 @@ class MainWindow(QMainWindow):
         remaining = [item for item in actions if item.get("name") != name]
         if len(remaining) == len(actions):
             QMessageBox.information(
-                self,
-                "Screen Diff Watcher",
-                "esta acao vem do perfil/YAML; edite o YAML para remove-la",
+                self, tr("main.title"), tr("dialog.action_from_profile_remove")
             )
             return
         confirm = QMessageBox.question(
             self,
-            "Remover acao",
-            f"Remover a acao {name!r} desta selecao?",
+            tr("dialog.remove_action_title"),
+            tr("dialog.remove_action_confirm", name=repr(name)),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
         self._save_override_actions(value, selection, remaining)
         self._sync_saved_action(Path(value).stem, remove=name)
-        self._append(f"acao removida: {name}")
+        self._append(f"action removed: {name}")
         self._populate_actions()
         self._print_action_summary()
 
@@ -616,9 +759,9 @@ class MainWindow(QMainWindow):
             profile = profile_from_config(self._config, self._profile, stem)
             actions = resolve_actions(selection, profile, self.mode_combo.currentText() or None)
         except Exception as exc:
-            self._append(f"acoes indisponiveis: {exc}")
+            self._append(f"actions unavailable: {render_error(exc)}")
             return
-        self._append(f"acoes de {stem}: {len(actions)}")
+        self._append(f"actions of {stem}: {len(actions)}")
         for line in describe_actions(actions, self._checked_action_names()):
             self._append(line)
 
@@ -632,12 +775,12 @@ class MainWindow(QMainWindow):
 
             dump_selection(value, replace(load_selection(value), mode=mode))
         except (OSError, ValueError) as exc:
-            self._append(f"nao foi possivel gravar o modo: {exc}")
+            self._append(f"could not save the mode: {exc}")
             return
         item = self.list.currentItem()
         if item is not None:
             item.setText(self._label_for("selection", value))
-        self._append(f"modo de {Path(value).stem} -> {mode}")
+        self._append(f"mode of {Path(value).stem} -> {mode}")
 
     def _toggle_clicked(self) -> None:
         if self._controller.running:
@@ -647,22 +790,20 @@ class MainWindow(QMainWindow):
 
     def _run_action_once(self) -> None:
         if self._controller.running:
-            QMessageBox.information(
-                self, "Screen Diff Watcher", "pare a sessao antes de executar uma acao"
-            )
+            QMessageBox.information(self, tr("main.title"), tr("dialog.stop_before_run"))
             return
         try:
             target = self._resolve_target(self.mode_combo.currentText())
         except Exception as exc:
-            QMessageBox.warning(self, "Screen Diff Watcher", f"falha ao carregar: {exc}")
+            QMessageBox.warning(
+                self, tr("main.title"), tr("dialog.load_failed", error=render_error(exc))
+            )
             return
         if target is None:
-            QMessageBox.information(self, "Screen Diff Watcher", "selecione uma selecao")
+            QMessageBox.information(self, tr("main.title"), tr("dialog.select_selection"))
             return
         if not target.actions:
-            QMessageBox.information(
-                self, "Screen Diff Watcher", "nenhuma acao selecionada para esta sessao"
-            )
+            QMessageBox.information(self, tr("main.title"), tr("main.no_action_selected"))
             return
 
         import time
@@ -676,7 +817,9 @@ class MainWindow(QMainWindow):
         try:
             rgb, abs_rect, info = _capture_target_roi(target)
         except Exception as exc:
-            QMessageBox.warning(self, "Screen Diff Watcher", f"falha ao capturar ROI: {exc}")
+            QMessageBox.warning(
+                self, tr("main.title"), tr("dialog.capture_failed", error=render_error(exc))
+            )
             return
         frame = Frame(
             rgb=rgb,
@@ -686,7 +829,7 @@ class MainWindow(QMainWindow):
             window_handle=info.handle,
             sequence=1,
         )
-        self._append("executando acao (3s); foque a janela-alvo...")
+        self._append("running action (3s); focus the target window...")
         recorder = evidence_recorder(self._config, force_enabled=True)
         code, lines = run_actions(
             target, frame, armed=True, recorder=recorder, countdown=run_countdown
@@ -694,7 +837,7 @@ class MainWindow(QMainWindow):
         for line in lines:
             self._append(line)
         if code != 0:
-            self._append("execucao nao concluida")
+            self._append("run not completed")
 
     def _start(self) -> None:
         if self._controller.running:
@@ -702,10 +845,12 @@ class MainWindow(QMainWindow):
         try:
             target = self._resolve_target(self.mode_combo.currentText())
         except Exception as exc:
-            QMessageBox.warning(self, "Screen Diff Watcher", f"falha ao carregar: {exc}")
+            QMessageBox.warning(
+                self, tr("main.title"), tr("dialog.load_failed", error=render_error(exc))
+            )
             return
         if target is None:
-            QMessageBox.information(self, "Screen Diff Watcher", "selecione uma selecao")
+            QMessageBox.information(self, tr("main.title"), tr("dialog.select_selection"))
             return
         try:
             from screen_watch.app import evidence_recorder
@@ -713,7 +858,9 @@ class MainWindow(QMainWindow):
             recorder = evidence_recorder(self._config)
             self._controller.start(target, recorder=recorder)
         except Exception as exc:
-            QMessageBox.critical(self, "Screen Diff Watcher", f"falha ao iniciar: {exc}")
+            QMessageBox.critical(
+                self, tr("main.title"), tr("dialog.start_failed", error=render_error(exc))
+            )
             return
         self._active_name = target.name
         from screen_watch.platform.paths import update_state
@@ -722,21 +869,21 @@ class MainWindow(QMainWindow):
         if self._profile:
             fields["profile"] = self._profile
         update_state(**fields)
-        self.status.setText(f"monitorando {target.name!r} ({target.mode})")
+        self.status.setText(tr("status.monitoring", name=target.name, mode=target.mode))
         self._set_running(True)
         self._print_action_summary()
 
     def _stop(self) -> None:
         self._controller.stop()
         self._active_name = ""
-        self.status.setText("parado")
+        self.status.setText(tr("status.stopped"))
         self._set_running(False)
 
     def _rearm(self) -> None:
         if not self._controller.running:
             return
         self._controller.rebaseline()
-        self._append("baseline re-armado (proximo frame)")
+        self._append("baseline re-armed (next frame)")
 
     def _start_hotkeys(self) -> None:
         if self._config is None or self._config.legacy:
@@ -748,12 +895,12 @@ class MainWindow(QMainWindow):
 
         self._hotkeys = start_hotkeys(self._controller.events, mapping)
         if self._hotkeys is None:
-            self._append("hotkeys globais indisponiveis (instale o extra 'input')")
+            self._append("global hotkeys unavailable (install the 'input' extra)")
 
     def _remove(self) -> None:
         items = self.list.selectedItems()
         if not items:
-            QMessageBox.information(self, "Screen Diff Watcher", "selecione um ou mais itens")
+            QMessageBox.information(self, tr("main.title"), tr("dialog.select_items"))
             return
 
         entries = [item.data(TARGET_ROLE) for item in items]
@@ -762,8 +909,8 @@ class MainWindow(QMainWindow):
             preview += ", ..."
         confirm = QMessageBox.question(
             self,
-            "Remover",
-            f"Remover {len(items)} selecao(oes)?\n{preview}",
+            tr("dialog.remove_title"),
+            tr("dialog.remove_confirm", count=len(items), preview=preview),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if confirm != QMessageBox.StandardButton.Yes:
@@ -782,9 +929,9 @@ class MainWindow(QMainWindow):
             except Exception as exc:
                 errors.append(f"{value}: {exc}")
 
-        self._append(f"removido(s): {removed}")
+        self._append(f"removed: {removed}")
         if errors:
-            QMessageBox.warning(self, "Screen Diff Watcher", "falhas:\n" + "\n".join(errors))
+            QMessageBox.warning(self, tr("main.title"), "failures:\n" + "\n".join(errors))
         self._reload()
 
     def _new_target(self) -> None:
@@ -792,9 +939,7 @@ class MainWindow(QMainWindow):
 
         windows = list_app_windows()
         if not windows:
-            QMessageBox.warning(
-                self, "Screen Diff Watcher", "nenhuma aplicacao com janela ativa"
-            )
+            QMessageBox.warning(self, tr("main.title"), tr("dialog.no_app_windows"))
             return
 
         labels: list[str] = []
@@ -809,7 +954,7 @@ class MainWindow(QMainWindow):
             labels.append(label)
 
         choice, ok = QInputDialog.getItem(
-            self, "Escolha a janela", "Aplicacao:", labels, 0, False
+            self, tr("dialog.choose_window_title"), tr("dialog.choose_window_label"), labels, 0, False
         )
         if not ok:
             return
@@ -822,20 +967,24 @@ class MainWindow(QMainWindow):
                 info.handle, mode=self.mode_combo.currentText()
             )
         except Exception as exc:
-            QMessageBox.critical(self, "Screen Diff Watcher", f"falha na selecao: {exc}")
+            QMessageBox.critical(
+                self, tr("main.title"), tr("dialog.selection_failed", error=render_error(exc))
+            )
             return
-        self._append(f"selecao gravada: {captured.path}")
+        self._append(f"selection saved: {captured.path}")
         self._reload()
 
     def _open_yaml(self) -> None:
         path = self._config_path
         if not path.exists():
-            QMessageBox.warning(self, "Screen Diff Watcher", f"config nao encontrado: {path}")
+            QMessageBox.warning(
+                self, tr("main.title"), tr("dialog.config_missing", path=path)
+            )
             return
         from screen_watch.platform.shell import open_path
 
         if not open_path(path):
-            self._append(f"abra manualmente: {path}")
+            self._append(f"open manually: {path}")
 
     def _sync_evidence_toggle(self) -> None:
         from screen_watch.app import effective_evidence_options
@@ -851,9 +1000,9 @@ class MainWindow(QMainWindow):
         try:
             update_state(evidence_enabled=bool(checked))
         except OSError as exc:
-            self._append(f"nao foi possivel salvar a preferencia de prints: {exc}")
+            self._append(f"could not save the captures preference: {exc}")
             return
-        self._append(f"prints (evidencias) -> {'ligados' if checked else 'desligados'}")
+        self._append(f"captures (evidence) -> {'on' if checked else 'off'}")
 
     def _open_captures(self) -> None:
         from screen_watch.app import effective_evidence_options
@@ -864,25 +1013,44 @@ class MainWindow(QMainWindow):
         try:
             directory = ensure_captures_dir(options)
         except OSError as exc:
-            self._append(f"nao foi possivel criar a pasta de prints: {exc}")
+            self._append(f"could not create the captures folder: {exc}")
             return
         if not options.enabled:
             self._append(
-                "aviso: os prints do monitoramento estao DESLIGADOS — marque "
-                "'Gravar prints (evidencias)' e reinicie a sessao (o botao "
-                "'Executar acao (3s)' sempre grava um print)"
+                "warning: monitoring captures are OFF — check 'Record captures (evidence)' "
+                "and restart the session (the 'Run action' button always saves one capture)"
             )
         if not open_path(directory):
-            self._append(f"abra manualmente: {directory}")
+            self._append(f"open manually: {directory}")
 
     # -- eventos -----------------------------------------------------------
+    def _arming_text(self) -> str:
+        dispatcher = self._controller.actions
+        if dispatcher is None:
+            return tr("arming.none")
+        arming = dispatcher.arming
+        state = arming.state
+        if state == TIMED:
+            remaining = arming.remaining_s() or 0.0
+            return tr("arming.timed", remaining=f"{remaining:.0f}")
+        return tr("arming.armed") if state == ARMED else tr("arming.disarmed")
+
+    def _update_arming_buttons(self) -> None:
+        active = self._controller.running and self._controller.actions is not None
+        for button in (self.btn_arm, self.btn_disarm, self.btn_arm_for, self.btn_action_arm):
+            button.setEnabled(active)
+
     def _set_running(self, running: bool) -> None:
         self.btn_start.setEnabled(not running)
         self.btn_stop.setEnabled(running)
         self.btn_rearm.setEnabled(running)
         self.btn_run_action.setEnabled(not running)
         self.btn_new.setEnabled(not running)
+        self.btn_remove.setEnabled(not running)
+        self.btn_reload.setEnabled(not running)
         self.mode_combo.setEnabled(not running)
+        self.language_combo.setEnabled(not running)
+        self._update_arming_buttons()
 
     def _drain(self) -> None:
         self._update_action_status()
@@ -896,22 +1064,29 @@ class MainWindow(QMainWindow):
     def _handle(self, event: dict) -> None:
         kind = event.get("kind")
         if kind == "started":
-            self.status.setText(f"monitorando {event.get('target')!r}")
+            self.status.setText(tr("status.monitoring_short", name=event.get("target")))
             self._set_running(True)
         elif kind == "stopped":
-            self.status.setText("parado")
+            self.status.setText(tr("status.stopped"))
             self._set_running(False)
         elif kind == "result":
             self.last.setText(
-                f"ultimo: {event['strategy']} score={event['score']:.3f} "
-                f"sev={event['severity']} -> {event['outcome']}"
+                tr(
+                    "status.last",
+                    strategy=event["strategy"],
+                    score=f"{event['score']:.3f}",
+                    severity=event["severity"],
+                    outcome=event["outcome"],
+                )
             )
         elif kind == "error":
-            self._append(f"erro: {event.get('message')}")
+            self._append(f"error: {event.get('message')}")
         elif kind == "event":
             name = event.get("name")
-            self.status.setText(f"estado: {name} {event.get('payload') or ''}".strip())
-            self._append(f"evento: {name} {event.get('payload') or ''}")
+            self.status.setText(
+                tr("status.state", name=name, payload=event.get("payload") or "").strip()
+            )
+            self._append(f"event: {name} {event.get('payload') or ''}")
         elif kind == "tray":
             self._handle_tray(event.get("action"))
         elif kind == "action":
@@ -925,17 +1100,17 @@ class MainWindow(QMainWindow):
         action = payload.get("action") or "?"
         mode = payload.get("mode") or "?"
         if mode == "armed":
-            status = "ok" if payload.get("executed") else f"falhou ({payload.get('reason') or '?'})"
+            status = "ok" if payload.get("executed") else f"failed ({payload.get('reason') or '?'})"
         elif mode == "rehearsal":
-            status = "ensaio"
+            status = "rehearsal"
         else:
             status = payload.get("reason") or "?"
-        self._append(f"acoes: {mode} {action} -> {status}")
+        self._append(f"actions: {mode} {action} -> {status}")
 
     def _handle_action(self, event: dict) -> None:
         dispatcher = self._controller.actions
         if dispatcher is None:
-            self._append("sem acoes configuradas para esta selecao")
+            self._append("no actions configured for this selection")
             return
         arming = dispatcher.arming
         action = event.get("action")
@@ -955,17 +1130,20 @@ class MainWindow(QMainWindow):
             return
         else:
             return
-        self._append(f"acoes: {arming.label()}")
+        self._append(f"actions: {arming.label()}")
         self._update_action_status()
 
     def _update_action_status(self) -> None:
         dispatcher = self._controller.actions
+        text = self._arming_text()
+        self.arming_label.setText(text)
+        self._update_arming_buttons()
         if dispatcher is None:
-            self.status.setToolTip("acoes: nenhuma configurada")
+            self.status.setToolTip(tr("arming.none"))
             return
-        parts = [f"acoes: {dispatcher.arming.label()}"]
+        parts = [tr("arming.status", state=text)]
         if not dispatcher.is_schedule_open():
-            parts.append("fora do horario (acoes suspensas)")
+            parts.append(tr("arming.outside_schedule"))
         self.status.setToolTip(" — ".join(parts))
 
     def _handle_tray(self, action) -> None:

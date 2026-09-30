@@ -107,6 +107,8 @@ class EvidenceOptions:
 class UiOptions:
     hotkeys: tuple[tuple[str, str], ...] = ()
     arm_durations_min: tuple[int, ...] = (1, 5, 15, 30)
+    # Idioma da GUI: "auto" (locale do SO) ou uma tag descoberta em i18n/*.json.
+    language: str = "auto"
 
     def hotkey(self, name: str, default: str = "") -> str:
         for key, value in self.hotkeys:

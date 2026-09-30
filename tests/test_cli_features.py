@@ -47,7 +47,7 @@ def test_features_text_prints_sections(monkeypatch, tmp_path, capsys):
     out = capsys.readouterr().out
     assert "screen-watch" in out
     assert "eng, por" in out
-    assert "monitores: 1" in out
+    assert "monitors: 1" in out
 
 
 def test_tesseract_info_without_binary(monkeypatch):

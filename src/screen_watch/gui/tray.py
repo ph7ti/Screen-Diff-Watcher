@@ -23,7 +23,7 @@ def _icon_image():
             with Image.open(path) as image:
                 return image.copy()
         except Exception as exc:  # pragma: no cover - depende do ambiente
-            log.warning("nao foi possivel carregar o icone %s: %s", path, exc)
+            log.warning("could not load the icon %s: %s", path, exc)
 
     image = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
@@ -36,8 +36,10 @@ def start_tray(events, arm_durations=(1, 5, 15, 30), profiles=("default",)) -> o
     try:
         import pystray  # noqa: PLC0415
     except Exception as exc:  # pragma: no cover - depende do ambiente
-        log.warning("pystray indisponivel, tray desabilitado: %s", exc)
+        log.warning("pystray unavailable, tray disabled: %s", exc)
         return None
+
+    from screen_watch.i18n import tr  # noqa: PLC0415
 
     def push_tray(action: str):
         def _callback(_icon, _item):
@@ -53,7 +55,10 @@ def start_tray(events, arm_durations=(1, 5, 15, 30), profiles=("default",)) -> o
 
     arm_menu = pystray.Menu(
         *[
-            pystray.MenuItem(f"{minutes} min", push_action("arm_for", minutes=minutes))
+            pystray.MenuItem(
+                tr("main.arm_minutes", minutes=minutes),
+                push_action("arm_for", minutes=minutes),
+            )
             for minutes in arm_durations
         ]
     )
@@ -68,18 +73,18 @@ def start_tray(events, arm_durations=(1, 5, 15, 30), profiles=("default",)) -> o
         *[pystray.MenuItem(name, push_profile(name)) for name in profiles]
     )
     menu = pystray.Menu(
-        pystray.MenuItem("Mostrar/ocultar", push_tray("toggle")),
-        pystray.MenuItem("Minimizar para o tray", push_tray("minimize")),
-        pystray.MenuItem("Iniciar", push_tray("start")),
-        pystray.MenuItem("Parar", push_tray("stop")),
+        pystray.MenuItem(tr("tray.toggle"), push_tray("toggle")),
+        pystray.MenuItem(tr("main.btn_minimize"), push_tray("minimize")),
+        pystray.MenuItem(tr("main.btn_start"), push_tray("start")),
+        pystray.MenuItem(tr("main.btn_stop"), push_tray("stop")),
         pystray.Menu.SEPARATOR,
-        pystray.MenuItem("Armar acoes", push_action("arm")),
-        pystray.MenuItem("Desarmar acoes", push_action("disarm")),
-        pystray.MenuItem("Armar por...", arm_menu),
-        pystray.MenuItem("Re-armar baseline", push_action("rearm")),
-        pystray.MenuItem("Perfil", profile_menu),
+        pystray.MenuItem(tr("main.btn_arm"), push_action("arm")),
+        pystray.MenuItem(tr("main.btn_disarm"), push_action("disarm")),
+        pystray.MenuItem(tr("main.btn_arm_for"), arm_menu),
+        pystray.MenuItem(tr("tray.rearm_baseline"), push_action("rearm")),
+        pystray.MenuItem(tr("tray.profile"), profile_menu),
         pystray.Menu.SEPARATOR,
-        pystray.MenuItem("Sair", push_tray("quit")),
+        pystray.MenuItem(tr("tray.quit"), push_tray("quit")),
     )
     icon = pystray.Icon("screen_watch", _icon_image(), "Screen Diff Watcher", menu)
     thread = threading.Thread(target=icon.run, name="screen-watch-tray", daemon=True)
