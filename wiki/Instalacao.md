@@ -1,4 +1,5 @@
 # Instalação
+[English](Installation.md) · **Português (Brasil)**
 
 O Screen Diff Watcher roda em **Windows (x64)** e **Linux Debian/Ubuntu (amd64, X11)**. Há duas
 formas de instalar: pelos **binários** (instaladores) ou pelo **código-fonte**.

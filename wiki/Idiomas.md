@@ -1,4 +1,5 @@
 # Idiomas (i18n)
+[English](Languages.md) · **Português (Brasil)**
 
 A **GUI é traduzível** por catálogos **JSON dentro do pacote** (`screen_watch/i18n/*.json`); o
 **CLI e o `logging` de diagnóstico permanecem em inglês fixo** (o painel de log da GUI também, porque

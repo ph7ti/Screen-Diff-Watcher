@@ -1,4 +1,5 @@
 # Configuração
+[English](Configuration.md) · **Português (Brasil)**
 
 ## Onde tudo vive (app-data)
 

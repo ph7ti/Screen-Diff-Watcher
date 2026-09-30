@@ -1,0 +1,1417 @@
+# Screen Diff Watcher — Architecture and Specification Document
+
+**English** · [Português (Brasil)](00-Documento_de_Arquitetura_e_Especificação.md)
+
+> **Purpose of this document**: to serve as the **single source of truth for the design** so that
+> another AI (or developer) can continue the project without having to reconstruct decisions, and to
+> record **what is implemented** (reference: v0.3.0). Every decision recorded here was made
+> deliberately; where there are alternatives, they are listed as "rejected" with the reason.
+>
+> **Maintenance rule**: do not replace a recorded decision with a "more modern" alternative
+> without explicit justification. If the code diverges from the document, **update the document by
+> recording the reason for the change and the history** — never change the document silently to
+> hide the divergence.
+
+Related guides:
+
+- Usage and features (wiki): [`../wiki/Home.md`](../wiki/Home.md)
+- Build and release: [`01-Build_and_Release.md`](01-Build_and_Release.md)
+- Overview in the README: [`../README.md`](../README.md)
+
+---
+
+## 1. Overview
+
+### 1.1 What the project is
+
+A **cross-platform Python desktop application** that:
+
+1. Lets the user **select a window** and, inside it, a **rectangular region (ROI)**.
+2. **Monitors that ROI periodically** (configurable interval, minimum 1 s).
+3. Detects **visual changes** according to a comparison mode (Light / Default / Advanced).
+4. **Emits alerts** when the change is confirmed: local sound, local popup, JSONL log and/or remote
+   webhook (Telegram initially).
+5. Optionally, **executes pseudo-human actions** (click/keys/text) when **armed** — by default in
+   rehearsal (dry-run), with auditing in `logs/actions.jsonl` (§11.4).
+6. Offers a **GUI with tray** (PyQt6 + pystray) and a **full CLI**, with profiles, scheduler and i18n
+   (pt-BR/en-US in the GUI; CLI and log in fixed English).
+
+**Build target platforms**: Windows (x64) and Linux Debian/Ubuntu (amd64, X11). macOS has code
+paths (audio/paths), but is **not a build or validation target** (§15).
+
+### 1.2 What the project is NOT
+
+- It is not a screen recorder.
+- It is not document OCR (OCR only serves to detect text change).
+- It does not capture occluded windows (fundamental limitation of the capture API — see §7.5).
+- It does not bypass DRM, anti-cheat or protected windows.
+- It does not depend on any proprietary cloud service (the only optional remote channel is Telegram).
+- It does not support **Wayland** (§3.2) or **ARM**; it does not digitally sign the installers.
+- It is not a generic RPA: the actions are an opt-in and deliberate subsystem (§11.4).
+
+### 1.3 Canonical use case
+
+Monitor a panel/indicator inside a desktop application (e.g., the inventory panel of an ERP) and
+alert the user when that panel undergoes a visual change, without requiring the user to keep
+looking at the screen. Natural extension: react to the change with a simple action (e.g., click
+"Refresh") when that is explicitly armed.
+
+### 1.4 Implementation status (v0.3.0)
+
+Implemented and covered by tests: platform boundary, capture/anchoring (Model B), the three
+comparison modes, pipeline with short-circuit, alerts (sound/popup/Telegram/log) with cooldown and
+re-arm, evidence, pseudo-human actions (arming, rehearsal, limits, auditing, GUI editor,
+recorder), scheduler (suspends actions only), profiles + v1→v2 migration, selection JSON v2 with
+overrides, CLI (`init-config` … `validate-i18n`), GUI + tray with i18n and hover help, packaging
+(PyInstaller; Inno Setup on Windows; `.deb` on Linux) and tag-based release pipeline.
+
+Pending **manual validation** items (not automatable in CI):
+
+- GUI/tray/overlay at 100/125/150% scales (§5.1, §9).
+- Bundle on a clean machine: window/tray icon, `StartupWMClass` of the `.desktop`, package size,
+  SmartScreen warning (signing out of scope). Checklist in [`doc/01`](01-Build_and_Release.md) §9.
+
+---
+
+## 2. Non-negotiable architectural principles
+
+These principles guide all the decisions below. If an implementation detail conflicts
+with any of them, the principle wins.
+
+1. **Capture and comparison are decoupled by a data contract (`Frame`).** Comparison never
+   accesses the screen, never knows about windows, never sleeps.
+2. **Every OS dependency stays behind an explicit boundary.** No `if sys.platform == ...`
+   scattered through business code.
+3. **DPI awareness is fixed at process start, before any backend.** See §5.1.
+4. **The capture loop is immediately cancellable** and its cadence is stable under load.
+5. **The first frame is baseline, not change.** The initial state of the comparison is explicit, never
+   implicit.
+6. **Capture failures do not break the loop.** They emit an event and the next tick tries again.
+7. **Configuration is declarative and persisted.** No hardcoded session state.
+8. **Actions are opt-in, disarmed by default and audited.** The arming state lives only in
+   memory (§11.4); never in the YAML.
+9. **Errors have a stable code (`AppError.code`)** and an English message; the GUI translates by code
+   (`render_error`), the CLI/log show English (§12.7).
+10. **The GUI is translatable (JSON catalogs in the package); CLI and logging are in fixed English** (§12.6).
+
+---
+
+## 3. Architecture decisions (condensed ADR)
+
+Each item below is a closed decision. Format: **Decision → Reason → Rejected alternatives**.
+
+### 3.1 Language and runtime
+
+- **Decision**: Python 3.11+.
+- **Reason**: `Protocol`, `dataclass(frozen=True)`, modern `tomllib`/`typing`, mature `asyncio`;
+  wide availability of bindings for capture, GUI and OCR. PyInstaller only gained
+  Python 3.13 support starting with 6.11.1 (pin in the `build` extra).
+- **Rejected**: Python 3.9/3.10 (missing typing features used in the design); Rust/Go (integration
+  cost with `mss`, `pywinctl`, Tesseract does not pay off for the scope).
+
+### 3.2 Screen capture
+
+- **Decision**: **`mss`** as the only backend in the prototype. `pyautogui` is not used.
+- **Reason**: `mss` is faster, returns `numpy`-compatible data directly, has a stable API across
+  platforms, and keeps a reusable instance.
+- **Implementation details**:
+  - The backend lives behind the `capture/backend.py` contract; `MssCaptureBackend` creates the
+    instance **once** and reuses it (never per tick). `mss` **is not thread-safe**: `MonitorLoop`
+    creates the backend **inside its own thread** and closes it in the worker's `finally`.
+  - `MssCaptureBackend.bounds()` returns the virtual desktop rectangle (including negative
+    coordinates), used by the ROI clipping (§7.6).
+  - The BGRA→RGB conversion is done in the backend (`np.asarray(...)[:, :, [2, 1, 0]]`).
+- **Rejected alternatives**:
+  - `pyautogui` — slower, limited screenshot API; it would only be worth it as a fallback we have
+    no need to use.
+  - `dxcam` / `d3dshot` — Windows-specific with GPU; they break the cross-platform promise.
+  - `Pillow.ImageGrab` — covers fewer cases than `mss` and brings no advantage.
+- **Known and accepted limitation**: `mss` **does not work on Wayland**. The project detects it
+  (`XDG_SESSION_TYPE=wayland`) and shuts down the `run` command with a clear warning (`is_wayland()`
+  in `platform/dpi.py`). **Do not implement a Wayland backend in the prototype** — it is out of scope.
+
+### 3.3 Window location and anchoring
+
+- **Decision**: **`pywinctl`**, anchoring by **Model B (relative to the window origin)**.
+- **Reason**: `pywinctl` is maintained and cross-platform. Model B follows the window when it moves,
+  without requiring access to the client area (which is per-OS plumbing).
+- **Implementation details**: the `platform/window.py` wrapper exposes `WindowInfo`
+  (`handle`, `title`, `rect`, `is_minimized`, `exists`), `find_window_by_handle`, `list_windows`,
+  `activate_window` and `is_window_active`. The `resolver` uses the identity converter by default
+  (`identity_converter`) — see §5.1.
+- **Rejected alternatives**:
+  - `pygetwindow` — abandoned, Windows/macOS only with gaps.
+  - Model A (frozen absolute coordinates) — breaks when the window moves.
+  - Model C (relative to the client area, excluding chrome) — semantically more robust, but requires
+    per-OS plumbing that is unnecessary for the scope.
+
+### 3.4 Comparison
+
+- **Decision**: three pluggable strategies:
+  1. **Light** — `MeanColorStrategy` (mean RGB color + Euclidean distance).
+  2. **Default** — `PerceptualHashStrategy` (`imagehash.phash`, `hash_size=8`).
+  3. **Advanced** — `OCRTextDiffStrategy` (`pytesseract` + `difflib.SequenceMatcher`).
+- **Reason**: each mode covers a cost/sensitivity trade-off; the cheap strategy vetoes the expensive
+  ones when composed in the pipeline (§10.5).
+- **Implementation details**: each mode maps to **one stage** (`MODE_STAGES`), with the
+  pipeline keeping the short-circuit for future compositions. `advanced` runs OCR **as the
+  detector**, with no phash/mean gate (decision recorded in §10.5).
+- **Rejected alternatives**:
+  - phash only — does not distinguish semantic change from structural noise in some cases.
+  - OCR only — too expensive per tick, unfeasible at 1 Hz.
+  - SSIM — more expensive than phash with no clear gain for the use case.
+
+### 3.5 Scheduling
+
+- **Decision**: `threading.Thread` + `threading.Event.wait(timeout)` as the main loop.
+- **Reason**: immediate cancellation, no extra dependency, simple to reason about. `wait` subtracts
+  the work time from the interval, guaranteeing a stable cadence.
+- **Rejected alternatives**:
+  - `asyncio` — unnecessary overhead; `mss`/`pywinctl` are synchronous and blocking.
+  - `APScheduler` — over-engineering for a single loop.
+
+### 3.6 Alerts
+
+- **Decision**: chain of notifiers (**Chain of Responsibility**), each with `enabled`,
+  `severity_min` and `cooldown_s`. Implemented in the prototype:
+  - **Local sound** — behind the `platform/audio.py` boundary (`winsound` on Windows;
+    `paplay`/`aplay`/`ffplay` on Linux; `afplay` on macOS). The `simpleaudio` extra remains optional.
+  - **Local popup** (`plyer.notification`).
+  - **Telegram Bot webhook** (`httpx`, `sendPhoto`/`sendMessage`, 5 s timeout; token via
+    environment variable).
+  - **JSONL log** (`app-data/logs/alerts.jsonl`).
+- **Reason**: Telegram is free, reliable, allows attaching an image of the ROI in the alert (essential
+  to validate false positives), and requires no server setup. The JSONL log gives local auditing;
+  the popup/sound cover offline use.
+- **Rejected alternatives**:
+  - `ntfy.sh` — equally valid, but Telegram allows image + text in a single message with less
+    friction.
+  - Pushover — paid.
+  - FCM — disproportionate setup complexity.
+  - `simpleaudio` as the only sound route — no reliable wheel for Python 3.13; it became an optional
+    extra (`pip install -e ".[sound]"`), with fallback to an external player.
+
+### 3.7 GUI and selection overlay
+
+- **Decision**: **PyQt6** for the GUI and overlay.
+- **Reason**: native multi-monitor (`QGuiApplication.screens()`), real transparency, high DPI
+  correctly resolved, `CompositionMode_Clear` available for the selection "hole".
+- **Implementation details**:
+  - **Layout**: the window follows the `UI.txt` mockup (**Monitoring** column with
+    Start/Stop/Re-arm/Minimize, Mode/Profile/Language and arming; **Selections** group; row of
+    New Target/Remove/Reload/Open YAML/Prints + evidence; **Session actions** group with
+    checklist and buttons; Status/Last and **Log** in the footer in a `QSplitter`). Step editing with
+    Move Up/Move Down/drag&drop/Edit/Duplicate.
+  - **Tray**: `pystray` (`gui/tray.py`) with show/hide, start/stop, arm/disarm, profile
+    and quit. The GUI receives events through a **queue** consumed by `QTimer` (`gui/controller.py`);
+    tray/hotkey callbacks never call Qt from inside the listener thread.
+  - **Languages**: the GUI goes through i18n (JSON catalog in the package); CLI/log stay in English (§12.6).
+  - **Help**: 2 s hover shows the purpose + example of each control (`gui/help.py` +
+    `gui/hover_help.py`).
+  - **Arming from the window**: `Arm actions`/`Disarm`/`Arm for…` buttons wired to the same path as
+    the tray/hotkey (§11.4).
+- **Rejected alternatives**:
+  - `tkinter` — transparency and multi-monitor require hacks; `overrideredirect` breaks on
+    some Linux WMs.
+  - No GUI (manual config only) — the use case requires visual selection.
+
+### 3.8 Packaging
+
+- **Decision**: **PyInstaller**, per-platform build, with native installers:
+  **Inno Setup** (Windows) and **`.deb`** (Linux).
+- **Reason**: more mature, extensive documentation, works on the target OSes; native installers give
+  shortcuts, uninstallation and declared dependencies.
+- **Implementation details**: **onedir** bundle with two executables (`screen-watch` console and
+  `screen-watch-gui` windowless) that share `PYZ`/`COLLECT`; the script
+  `scripts/build_release.py` runs **on the target OS** (no cross-build), reads the version from
+  `screen_watch.__version__` and writes `dist/installers/`. Full guide: [`doc/01`](01-Build_and_Release.md).
+- **Rejected alternatives**:
+  - Nuitka — faster, but more fragile builds and longer compilation time.
+  - Briefcase — promising, but a smaller ecosystem for the chosen stack.
+
+### 3.9 Configuration
+
+- **Decision**: **YAML** (`PyYAML`) for user config; **JSON** for the ROI selection dump.
+- **Reason**: YAML is readable for manual editing; JSON is generated by the GUI and does not need comments.
+- **Implementation details**: the YAML is **global and versioned** (`version` 1 or 2). v2 brings
+  `profiles` (defaults/alerts/actions), `ui`, `schedule` and `evidence`; targets become JSON
+  selection files in app-data (§12). Secrets never in the YAML (§12.1).
+- **Rejected alternatives**: TOML (good, but `tomllib` is read-only in older versions); INI
+  (limited for nested structures).
+
+---
+
+## 4. Directory structure (implemented)
+
+```
+ScreenDiffWatcher/
+├── pyproject.toml
+├── README.md
+├── CHANGELOG.md
+├── LICENSE
+├── doc/
+│   ├── 00-Documento_de_Arquitetura_e_Especificação.md   # this document
+│   └── 01-Build_e_Release.md
+├── wiki/                          # GitHub Wiki pages (usage and features)
+├── src/
+│   └── screen_watch/
+│       ├── __init__.py            # __version__ (single source)
+│       ├── __main__.py            # entry point: python -m screen_watch (CLI + parsers)
+│       ├── app.py                 # orchestration: pipeline + chain + session + evidence
+│       ├── errors.py              # AppError/ConfigError + ERROR_CODES + render_error
+│       ├── gui_main.py            # entry point of the windowless executable (GUI)
+│       ├── resources.py           # package resources (icons etc.)
+│       │
+│       ├── platform/              # OS boundary (no sys.platform outside of here)
+│       │   ├── dpi.py             # set_dpi_awareness, is_wayland
+│       │   ├── window.py          # pywinctl wrapper; activate_window/is_window_active
+│       │   ├── paths.py           # app-data, state.json (atomic), MSIX
+│       │   ├── display.py         # per-monitor scale (mss × Qt matrix)
+│       │   ├── tesseract.py       # binary location (PATH + common directories)
+│       │   ├── audio.py           # winsound / paplay / aplay / ffplay / afplay
+│       │   ├── input.py           # pynput (lazy), interpolation/jitter (humanization)
+│       │   └── shell.py           # open_path (os.startfile / open / xdg-open)
+│       │
+│       ├── capture/
+│       │   ├── frame.py           # Frame dataclass
+│       │   ├── backend.py         # Protocol ScreenCaptureBackend (bounds/capture/close)
+│       │   ├── mss_backend.py     # mss implementation (BGRA->RGB, per-thread instance)
+│       │   ├── resolver.py        # window + roi_relative -> absolute ROI (Model B)
+│       │   ├── geometry.py        # intersect_rect (clip against the virtual desktop)
+│       │   └── mask.py            # apply_mask
+│       │
+│       ├── compare/
+│       │   ├── protocol.py        # CompareStrategy, ComparisonResult, compute_severity
+│       │   ├── light.py           # MeanColorStrategy
+│       │   ├── default.py         # PerceptualHashStrategy
+│       │   ├── advanced.py        # OCRTextDiffStrategy
+│       │   └── pipeline.py        # MODE_STAGES + ComparePipeline (short-circuit)
+│       │
+│       ├── alerts/
+│       │   ├── protocol.py        # Notifier
+│       │   ├── sound.py           # SoundNotifier (platform/audio.py boundary)
+│       │   ├── popup.py           # PopupNotifier (plyer)
+│       │   ├── telegram.py        # TelegramNotifier (httpx; token via env)
+│       │   ├── log.py             # JsonlNotifier (logs/alerts.jsonl)
+│       │   └── chain.py           # AlertChain + DispatchOutcome
+│       │
+│       ├── actions/               # pseudo-human actions (opt-in)
+│       │   ├── protocol.py        # ActionSpec/ActionStep (pure)
+│       │   ├── plan.py            # parse/validation (click requires activate; text_* requires advanced)
+│       │   ├── dispatch.py        # ActionDispatcher (rehearsal/armed/scheduler/limits)
+│       │   ├── runner.py          # synchronous execution + focus + humanization + limits
+│       │   ├── arming.py          # ArmingController (disarmed/armed/timed; memory only)
+│       │   ├── audit.py           # ActionAudit (logs/actions.jsonl)
+│       │   ├── selection.py       # per-session subset (state.json)
+│       │   ├── summary.py         # human-readable action description
+│       │   ├── once.py            # one-off execution (test-action / GUI button)
+│       │   └── recorder.py        # click/key recorder -> YAML snippet
+│       │
+│       ├── evidence/
+│       │   └── recorder.py        # EvidenceRecorder (prints; retention; effective folder)
+│       │
+│       ├── scheduler/
+│       │   ├── loop.py            # MonitorLoop (threading + Event; deduplicated events)
+│       │   └── schedule.py        # is_open/gate (pure function with injectable clock)
+│       │
+│       ├── config/
+│       │   ├── schema.py          # dataclasses (AppConfig/ProfileOptions/TargetConfig/…)
+│       │   └── loader.py          # YAML <-> dataclasses; defaults; v1->v2 migration
+│       │
+│       ├── persistence/
+│       │   └── selection.py       # selection JSON v1/v2 + build_target (overrides)
+│       │
+│       ├── i18n/
+│       │   ├── __init__.py        # JSON catalog, language resolution, tr()
+│       │   ├── pt-BR.json         # fallback
+│       │   └── en-US.json
+│       │
+│       ├── gui/
+│       │   ├── main_window.py     # window (UI.txt layout)
+│       │   ├── controller.py      # event queue + QTimer
+│       │   ├── tray.py            # pystray
+│       │   ├── overlay.py         # SelectionOverlay (one window per monitor)
+│       │   ├── overlay_geometry.py# logical<->physical conversions (pure, no Qt)
+│       │   ├── countdown.py       # 3 s countdown (focusless overlay)
+│       │   ├── locator.py         # mouse position locator
+│       │   ├── action_editor.py   # selection action editor
+│       │   ├── hotkeys.py         # global hotkeys (pynput, lazy)
+│       │   ├── help.py            # help texts (pure)
+│       │   ├── hover_help.py      # 2 s tooltip
+│       │   ├── labels.py          # catalog labels
+│       │   └── qt_app.py          # ensure_app (single QApplication)
+│       │
+│       └── assets/icons/          # icons (used in the bundle)
+│
+├── tests/                         # unit tests (default) + integration marker (opt-in)
+├── scripts/
+│   ├── step1_absolute_roi.py      # validation ladder (capture)
+│   ├── step2_anchored_roi.py      # validation ladder (anchoring)
+│   ├── step3_selection_overlay.py # validation ladder (overlay)
+│   ├── probe_dpi.py               # DPI matrix
+│   └── build_release.py           # installer build (target OS)
+├── packaging/
+│   ├── screen-watch.spec          # PyInstaller (2 EXEs, onedir)
+│   ├── make_ico.py                # generates the .ico from the PNGs
+│   ├── windows/                   # .iss (Inno Setup), install-tesseract.ps1, tesseract.json
+│   └── linux/                     # control.template, launcher.template, .desktop, postinst
+└── .github/workflows/             # ci.yml (matrix) and release.yml (tag -> Release)
+```
+
+---
+
+## 5. Platform boundary (`platform/`)
+
+### 5.1 DPI awareness — mandatory and first
+
+**Rule**: `set_dpi_awareness()` must be called **before** instantiating any capture backend,
+any Qt window, any call to `pywinctl`. In the implementation, it is the first executable
+line of `main()` in `__main__.py` (and of the GUI entry point).
+
+```python
+# platform/dpi.py
+import ctypes, sys, os
+
+def set_dpi_awareness() -> None:
+    if sys.platform == "win32":
+        try:
+            ctypes.windll.shcore.SetProcessDpiAwareness(2)  # PER_MONITOR_AWARE_V2
+        except (AttributeError, OSError):
+            ctypes.windll.user32.SetProcessDPIAware()
+
+def is_wayland() -> bool:
+    return os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland"
+```
+
+**Reason**: without this, `pywinctl` (logical) and `mss` (physical) disagree at scales != 100%, and
+the ROI "slips" silently. It is the most expensive bug to debug if discovered late.
+
+**Result measured in the implementation**: with `set_dpi_awareness()` at the start, `pywinctl` and
+`mss` stay in the **same physical space** (`pywinctl == GetWindowRect` in 15/15 windows measured).
+That is why the `resolver` uses the identity converter and there is **no drift** in the monitoring
+path, even on a scaled monitor (e.g., 125%). Qt's `device_pixel_ratio` (`1.25` on the primary) belongs
+to Qt's logical space — used only by the overlay (§9.5).
+
+When starting `run`, the app checks each monitor, marks the suitable ones (`OK`, 100%) and warns if
+the target window is on a scaled monitor. `probe-dpi` and `scripts/probe_dpi.py` print the matrix.
+
+**Wayland**: if `is_wayland()` returns `True`, `run` displays a clear message and exits (code 2).
+Do not attempt to capture.
+
+### 5.2 Window wrapper (`platform/window.py`)
+
+Encapsulate `pywinctl` so that the rest of the code never imports `pywinctl` directly.
+
+Implemented interface:
+
+```python
+@dataclass(frozen=True)
+class WindowInfo:
+    handle: int
+    title: str
+    rect: tuple[int, int, int, int]   # (x, y, w, h) in logical space
+    is_minimized: bool
+    exists: bool
+
+def find_window_by_handle(handle: int) -> WindowInfo | None: ...
+def list_windows() -> list[WindowInfo]: ...
+def activate_window(handle: int) -> bool: ...   # used by the actions (activate)
+def is_window_active(handle: int) -> bool: ...  # action focus confirmation
+```
+
+**Rules**:
+- Always identify by `handle`. Title is only a `title_hint` for display, never a lookup key
+  (it changes in browsers, IDEs).
+- If `is_minimized` is `True`, the `rect` is garbage — the resolver returns `None` and the loop emits
+  `target_unavailable` (§7.2).
+- In the GUI, `list_windows()` filters out windows that are not from active applications (invisible,
+  hidden by DWM, tool windows, child/auxiliary, untitled) and displays the **application name** in Task
+  Manager style (`FileDescription`/`ProductName`, with fallback to the `.exe` name).
+
+### 5.3 Other OS ports (implemented)
+
+| Module | Responsibility |
+|---|---|
+| `platform/paths.py` | `app_home()`, `config_path()`, `selections_dir()`, `logs_dir()`, `state_path()`; `SCREEN_WATCH_HOME` override; Python MSIX/Store detection (uses the package's real path, visible outside it); `load_state`/`update_state` (atomic, no backup). |
+| `platform/display.py` | per-monitor scale: `mss` (physical) × Qt (logical) × DPR matrix, used by the monitor warning and by `probe-dpi`. |
+| `platform/tesseract.py` | `resolve_tesseract_cmd(configured)`: explicit path > `PATH` > common OS directories (never a hardcoded machine path). |
+| `platform/audio.py` | single port for playing sound: `winsound` on Windows (with `MessageBeep()` when there is no WAV), external players on Linux/macOS (`paplay`/`aplay`/`ffplay`/`afplay`); `probe` for `features`. |
+| `platform/input.py` | `pynput` **imported on demand** (`input` extra); pure helpers `interpolate_points`/`make_rng` (testable without a display) for action humanization. |
+| `platform/shell.py` | `open_path()`: `os.startfile` on Windows, `open`/`xdg-open` on the others; returns `False` with `log.warning` when there is no association (the GUI shows "open manually: <path>"). |
+
+**Rule**: no other package may import `pynput`, `winsound`, `mss` or `pywinctl` directly.
+
+---
+
+## 6. `Frame` contract
+
+Canonical definition. Any comparison strategy consumes only this.
+
+```python
+# capture/frame.py
+from dataclasses import dataclass
+import numpy as np
+
+Rect = tuple[int, int, int, int]          # (x, y, w, h) in physical space
+
+@dataclass(frozen=True)
+class Frame:
+    rgb: np.ndarray                     # (H, W, 3) uint8, RGB order
+    timestamp: float                    # time.time()
+    absolute_rect: Rect                 # physical space (for mss/debug)
+    window_rect: Rect                   # logical space (for debug and ref=window)
+    window_handle: int
+    sequence: int                       # increments on every successful tick
+```
+
+**Invariants**:
+- `rgb.shape[2] == 3` and `dtype == np.uint8` (the backend already delivers RGB; the loop normalizes and
+  ensures contiguity).
+- `rgb` is already masked (see §8).
+- `sequence` is monotonic per monitoring session; used to discard stale frames if the
+  consumer falls behind.
+
+---
+
+## 7. Capture chain — detailed operation
+
+### 7.1 Selection phase (once, per ROI)
+
+Exact order of steps:
+
+1. The user chooses the **target window** (`list_windows()` in the CLI, or the GUI/"New Target" list).
+2. The overlay is displayed (see §9); overlay-free alternative: `select-manual` with `--roi X Y W H`.
+3. The user drags the rectangle (or passes the coordinates).
+4. On release, the overlay emits a `QRect` in **global logical coordinates**.
+5. **Immediately** query `window.getRect()` → `origin_at_selection`.
+6. Convert the global logical rect → rect relative to the window: `roi_relative = global_rect − origin_at_selection`.
+7. Persist JSON v2 (§7.3), with `app_name` (friendly executable name) and, when present,
+   `overrides`.
+
+**Critical rule**: step 5 must happen before any I/O, log, or processing. The window
+can move between `mouseRelease` and persistence.
+
+### 7.2 Tick phase (loop)
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ 1. Resolve window (handle → WindowInfo)                 │
+│    - if it does not exist: emit target_unavailable      │
+│      (reason: not_found), wait                          │
+│    - if minimized: emit target_unavailable              │
+│      (reason: minimized), wait                          │
+│    - if ROI out of bounds: target_unavailable           │
+│      (reason: roi_out_of_bounds), wait                  │
+├─────────────────────────────────────────────────────────┤
+│ 2. Resolve absolute ROI                                 │
+│    abs = roi_relative + window_rect.topLeft()           │
+│    - logical→physical conversion (identity by default)  │
+├─────────────────────────────────────────────────────────┤
+│ 3. Clip against the backend's virtual desktop           │
+│    - clipped: capture_clipped (event)                   │
+│    - 100% outside: roi_off_screen (event); skip tick    │
+├─────────────────────────────────────────────────────────┤
+│ 4. Capture (mss, instance created in the loop thread)   │
+├─────────────────────────────────────────────────────────┤
+│ 5. Normalize (shape (H, W, 3), uint8, contiguous)       │
+├─────────────────────────────────────────────────────────┤
+│ 6. Apply mask                                           │
+├─────────────────────────────────────────────────────────┤
+│ 7. Emit Frame to the sink (sequence++)                  │
+└─────────────────────────────────────────────────────────┘
+```
+
+**`_tick` contract**: returns `Frame | None`. `None` means "nothing to process on this tick", and the
+`sink` **is not called**.
+
+**Loop events** (emitted by `on_event`, deduplicated by consecutive name):
+`target_unavailable` (with `reason`), `capture_clipped` and `roi_off_screen` (§7.6).
+
+### 7.3 Selection JSON schema
+
+Current version (**v2**):
+
+```json
+{
+  "version": 2,
+  "window_handle": 123456,
+  "window_title_hint": "ERP - Estoque",
+  "app_name": "ERP",
+  "origin_at_selection": [100, 200],
+  "roi_relative": [120, 340, 400, 80],
+  "mode": "advanced",
+  "masks": [],
+  "overrides": { "poll_interval_s": 1.5, "rearm": false }
+}
+```
+
+Required fields: `version`, `window_handle`, `origin_at_selection`, `roi_relative`.
+`app_name`, `mode`, `masks` and `overrides` are optional with defaults. `version: 1` selections
+still load without `overrides`/`app_name` (§12.3). `window_title_hint` is only a human hint;
+the lookup uses `window_handle`. `roi_relative` is the source of truth for reconstructing the ROI on
+each tick.
+
+### 7.4 Capture loop — implemented skeleton
+
+```python
+def _run(self) -> None:
+    backend = self.backend or self.backend_factory()   # mss is NOT thread-safe: create it in the thread
+    try:
+        while not self._stop.is_set():
+            t0 = time.perf_counter()
+            frame = None
+            try:
+                frame = self._tick(backend)
+            except Exception as exc:
+                self._error(exc)                        # deduplicates identical consecutive errors
+            if frame is not None:
+                try:
+                    self.sink(frame)                    # sink OUTSIDE the capture try
+                except Exception as exc:
+                    self._error(exc)
+            elapsed = time.perf_counter() - t0
+            self._stop.wait(max(0.0, self.interval_s - elapsed))
+    finally:
+        backend.close()
+```
+
+**Built-in decisions** (do not change without justification):
+- `_stop.wait` is the only sleep. Never `time.sleep` inside the loop.
+- The work time is subtracted from the interval.
+- Exceptions in `_tick` **and in the sink** do not break the loop (there is a separate `try` for each).
+- The `sink` (comparison) is outside the capture `try` — capture and comparison are separate
+  responsibilities.
+- The backend is created and closed **in the loop thread** (`mss` is not thread-safe).
+- Identical consecutive failures (same message) are reported **once**; they reappear if they change.
+
+### 7.5 Occluded window limitation
+
+`mss` captures **screen pixels**, not the window surface. If another window covers the ROI, the
+captured frame will contain the content of the overlapping window. **This is not a bug to be
+fixed** — it is a fundamental limitation of the available APIs. Documented in the README and the Wiki.
+
+### 7.6 Loop robustness (Stage H)
+
+- **Negative/off-screen coordinates**: the ROI is clipped against the virtual desktop
+  (`mss.monitors[0]`, via `bounds()` + `intersect_rect`). When clipping occurs, the loop emits
+  `capture_clipped`; when the ROI falls 100% outside, it emits `roi_off_screen` and **skips the
+  tick** — without breaking the loop.
+- **Repeated failures**: deduplicated by message (e.g., Tesseract missing, token missing).
+- **Stop**: `stop()` signals the event and performs `join`; `backend.close()` runs in the
+  worker's `finally`.
+- **DPI**: `probe-dpi`/`scripts/probe_dpi.py` print the matrix (physical mss × logical Qt × scale).
+
+---
+
+## 8. Mask
+
+### 8.1 Format
+
+List of rectangles `[x, y, w, h]` **relative to the ROI** (not absolute, not relative to the window).
+They survive moving the window. They come from `selection.masks` or `overrides.masks` (§12.3).
+
+### 8.2 Application
+
+```python
+def apply_mask(rgb: np.ndarray, masks: list[tuple[int, int, int, int]]) -> np.ndarray:
+    out = rgb.copy()
+    for (x, y, w, h) in masks:
+        out[y:y+h, x:x+w] = 0
+    return out
+```
+
+- Paints **black (0,0,0)**.
+- **Reason**: phash and mean color treat black neutrally. For OCR, black is acceptable in the
+  prototype (it does not generate ghost text).
+- **Application point**: stage 6 of the capture chain, **before** the `Frame` is emitted. The
+  strategies never see the mask.
+
+### 8.3 Typically masked regions
+
+Cursor, loading spinner, clock, network indicator, anything that blinks. The overlay does not yet
+draw masks (out of the MVP); edit `masks` in the YAML/selection JSON.
+
+---
+
+## 9. Selection overlay (PyQt6)
+
+### 9.1 Multi-monitor strategy
+
+**Decision**: **one window per monitor**, not a single window covering `virtualGeometry`.
+
+**Reason**: with mixed DPI between monitors, a single window forces Qt to map a single framebuffer
+to distinct scales — behavior varies per platform. One window per screen simplifies the calculation
+(each one operates in the space of its own `screen`).
+
+```python
+overlays = []
+for screen in QGuiApplication.screens():
+    ov = SelectionOverlay(screen)
+    ov.setGeometry(screen.geometry())
+    ov.show()
+    overlays.append(ov)
+```
+
+At the end of the drag on an overlay, the rect is converted to global by adding `screen.geometry().topLeft()`.
+The pure conversions live in `gui/overlay_geometry.py` (no Qt, testable).
+
+### 9.2 Flags and attributes
+
+```python
+self.setWindowFlags(
+    Qt.WindowType.FramelessWindowHint
+    | Qt.WindowType.WindowStaysOnTopHint
+    | Qt.WindowType.Tool
+)
+self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+self.setCursor(Qt.CursorShape.CrossCursor)
+```
+
+### 9.3 Drawing the selection "hole"
+
+Use `QPainter.CompositionMode.CompositionMode_Clear` to remove the dark mask in the
+selected area. **Do not use `setMask`** — it is slow and problematic with DPI.
+
+```python
+painter.fillRect(self.rect(), QColor(0, 0, 0, 100))
+if self._origin and self._current:
+    r = QRect(self._origin, self._current).normalized()
+    painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Clear)
+    painter.fillRect(r, Qt.GlobalColor.transparent)
+    painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+    painter.setPen(QPen(QColor("#0052d6"), 2))
+    painter.drawRect(r)
+```
+
+### 9.4 High DPI in Qt
+
+Before creating `QApplication`:
+
+```python
+QApplication.setHighDpiScaleFactorRoundingPolicy(
+    Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
+)
+```
+
+**Reason**: prevents factors such as 1.25 from being rounded to 1.0, which misaligns the overlay with
+`mss`.
+
+### 9.5 Logical → physical conversion
+
+The Qt `QRect` is in **logical** space. `mss` consumes **physical** space.
+
+```python
+def to_physical(rect: QRect, screen) -> tuple[int, int, int, int]:
+    dpr = screen.devicePixelRatio()
+    offset = screen.geometry().topLeft()
+    x = int((rect.x() - offset.x()) * dpr + offset.x() * dpr)
+    y = int((rect.y() - offset.y()) * dpr + offset.y() * dpr)
+    return (x, y, int(rect.width() * dpr), int(rect.height() * dpr))
+```
+
+**Note**: with `SetProcessDpiAwareness(2)` + `PassThrough`, in many cases `dpr == 1.0` and the conversion
+is the identity. **Do not assume that** — test at 125%, 150%, 200%.
+
+### 9.6 Post-drag validation
+
+Before persisting:
+
+1. **Minimum area**: reject rectangles smaller than 10×10 logical pixels (`MIN_ROI_SIDE = 10`).
+2. **Inside the target window**: convert to relative and check. If it extrapolates, **allow but log
+   a warning** (some apps have popups outside the main rect).
+3. **Origin captured before I/O**: see §7.1.
+
+---
+
+## 10. Comparison — interface and strategies
+
+### 10.1 Protocol
+
+```python
+from typing import Protocol, Any
+from dataclasses import dataclass
+
+@dataclass(frozen=True)
+class ComparisonResult:
+    changed: bool
+    score: float
+    threshold: float
+    strategy: str
+    severity: int = 0                 # 0..3; computed at the end of the pipeline when it is 0
+    detail: dict[str, Any] | None = None
+
+def compute_severity(score: float, threshold: float) -> int:
+    """score/threshold >= 3.0 -> 3; >= 2.0 -> 2; >= 1.0 -> 1; otherwise 0."""
+
+class CompareStrategy(Protocol):
+    name: str
+    def initialize(self, baseline: Frame) -> None: ...
+    def compare(self, current: Frame) -> ComparisonResult: ...
+```
+
+**Rules**:
+- `compare` is a **pure function** over the `Frame` (it may read internal state, but no I/O, no sleep,
+  no capture).
+- `initialize` is called once per session with the first frame (baseline); it is also re-called on
+  re-arm (§11.3) and on manual re-baseline.
+- `changed` always in the same sense (True = change detected). For OCR, which naturally produces
+  similarity, normalize before exposing.
+- `severity` (0..3) feeds the `severity_min` of alerts and actions; when a stage does not define it,
+  the pipeline computes `compute_severity(score, threshold)` in the final verdict.
+
+### 10.2 Light strategy — `MeanColorStrategy`
+
+```python
+class MeanColorStrategy:
+    name = "light"
+    def __init__(self, threshold: float = 12.0):
+        self.threshold = threshold
+        self._baseline_mean = None
+
+    def initialize(self, baseline: Frame) -> None:
+        self._baseline_mean = baseline.rgb.mean(axis=(0, 1))
+
+    def compare(self, current: Frame) -> ComparisonResult:
+        current_mean = current.rgb.mean(axis=(0, 1))
+        delta = float(np.linalg.norm(current_mean - self._baseline_mean))
+        return ComparisonResult(
+            changed=delta > self.threshold,
+            score=delta, threshold=self.threshold, strategy=self.name,
+        )
+```
+
+- `threshold=12.0` is an empirical starting point (0–255 scale).
+- If there is JPEG compression in the pipeline, raise it to 20–25.
+- **Do not use** for textual or fine structural content.
+
+### 10.3 Default strategy — `PerceptualHashStrategy`
+
+```python
+class PerceptualHashStrategy:
+    name = "default"
+    def __init__(self, hash_size: int = 8, threshold: int = 6):
+        self.hash_size = hash_size
+        self.threshold = threshold
+        self._baseline_hash = None
+
+    def initialize(self, baseline: Frame) -> None:
+        img = Image.fromarray(baseline.rgb)
+        self._baseline_hash = imagehash.phash(img, hash_size=self.hash_size)
+
+    def compare(self, current: Frame) -> ComparisonResult:
+        img = Image.fromarray(current.rgb)
+        h = imagehash.phash(img, hash_size=self.hash_size)
+        dist = int(self._baseline_hash - h)
+        return ComparisonResult(
+            changed=dist > self.threshold,
+            score=float(dist), threshold=float(self.threshold),
+            strategy=self.name,
+        )
+```
+
+- `hash_size=8` (64 bits) is the default.
+- Typical `threshold`: 4–10. Start with 6.
+- **Small ROIs (< 100×100)**: phash becomes unstable. Consider `hash_size=6` or switching to Light.
+- **`hash_size=16`**: more sensitive, more expensive, jumpier with anti-aliasing. Do not use it as
+  the default.
+
+### 10.4 Advanced strategy — `OCRTextDiffStrategy`
+
+```python
+class OCRTextDiffStrategy:
+    name = "advanced"
+    def __init__(self, similarity_threshold: float = 0.92,
+                 psm: int = 6, lang: str = "por+eng", upscale: int = 2,
+                 tesseract_cmd: str | None = None):
+        ...
+        self._tesseract_cmd = resolve_tesseract_cmd(tesseract_cmd)  # platform/tesseract.py
+        self._baseline_text = ""
+
+    def _extract(self, rgb: np.ndarray) -> str:
+        # without the binary: AppError(code="runtime.tesseract_missing") with a clear message
+        # upscale > 1: nearest-neighbor (np.repeat), without depending on cv2
+        # sets/restores pytesseract.pytesseract.tesseract_cmd (does not leak between instances)
+        ...
+
+    def compare(self, current: Frame) -> ComparisonResult:
+        ratio = difflib.SequenceMatcher(None, self._baseline_text, current_text).ratio()
+        score = 1.0 - ratio          # normalized: high = changed
+        threshold = 1.0 - self.similarity_threshold
+        return ComparisonResult(changed=score > threshold, score=score,
+                                threshold=threshold, strategy=self.name,
+                                detail={"baseline_text": ..., "current_text": ...})
+```
+
+- Implementation defaults: `similarity_threshold=0.92`, `psm=6`, `lang="por+eng"`,
+  `upscale=2`. The text is normalized (`" ".join(txt.split())`).
+- `upscale` uses **pixel repetition** (`np.repeat`) — enough for a small ROI and without the
+  optional dependency on `cv2` (the `ocr-preproc` extra brings `opencv-python` for experiments, but
+  it is not required by the default path).
+- **Tesseract path**: resolved behind `platform/tesseract.py` (explicit > `PATH` >
+  common directories). Never use `TESSDATA_PREFIX` — the `tessdata` comes from the binary.
+- **Recommended preprocessing for difficult ROIs** (future extensions): grayscale +
+  Otsu, `image_to_data` for scattered text; measure with `compare-modes` before changing defaults.
+- **Performance**: OCR takes 100–500 ms per call. In `advanced` mode it **is** the detector (it runs
+  on every tick); that is why it is not combined with OCR at 1 Hz — the default interval is 2 s.
+
+### 10.5 Pipeline with short-circuit
+
+```python
+MODE_STAGES: dict[str, tuple[str, ...]] = {
+    "light": ("light",),
+    "default": ("default",),
+    "advanced": ("advanced",),   # OCR is the detector: runs alone, without a phash/mean gate
+}
+
+class ComparePipeline:
+    def compare(self, current: Frame) -> ComparisonResult:
+        last = self.stages[0].compare(current)
+        for stage in self.stages[1:]:
+            if not last.changed:
+                return last        # the first stage that returns False ends the pipeline
+            last = stage.compare(current)
+        if last.changed and last.severity == 0:
+            last = replace(last, severity=compute_severity(last.score, last.threshold))
+        return last
+```
+
+**Recorded decision (change from the original recommendation)**: `advanced` mode runs **pure
+OCR**, and not `[MeanColor, PerceptualHash, OCRTextDiff]`. Reason: the cheap layers would work
+as a *gate* and could return `changed=False` before the OCR, masking text changes (which the
+advanced mode exists to catch); the OCR cost per tick is accepted with a default `poll_interval_s` of
+2 s. The short-circuit mechanism remains implemented and tested for future compositions
+(e.g., `[MeanColor, PerceptualHash]` as a "strict" mode).
+
+**Rule**: the first stage that returns `changed=False` ends the pipeline. The final verdict is from the
+last stage that ran, with `severity` computed when absent.
+
+### 10.6 Initial state
+
+**Non-negotiable rule**: the first frame is **baseline**, not change. The pipeline is initialized
+with it via `initialize`, and `compare` is only called from the **second** frame onward. The same
+applies after re-arm/re-baseline: the frame that re-initializes does not generate an alert.
+
+---
+
+## 11. Alerts
+
+### 11.1 Protocol
+
+```python
+class Notifier(Protocol):
+    name: str
+    enabled: bool
+    severity_min: int
+    cooldown_s: float
+
+    def notify(self, result: ComparisonResult, frame: Frame) -> None: ...
+```
+
+**Rules**:
+- `severity_min`: the notifier only fires if the change severity is >= this value.
+- `cooldown_s`: after **attempting** to fire, the notifier is silenced for N seconds,
+  regardless of new changes (including on failure — backoff, see §11.3).
+- `frame` is passed complete to allow attaching the ROI image (Telegram) or logging context.
+
+### 11.2 Prototype notifiers
+
+**Sound (`sound.py`)**:
+- All playback goes through the `platform/audio.py` boundary; `alerts/` does **not** know
+  `sys.platform`.
+- Windows: `winsound` (stdlib); without `alert.wav`, it uses `MessageBeep()`.
+- Linux/macOS: external player in order of preference — `paplay`, `aplay -q`,
+  `ffplay -nodisp -autoexit -loglevel quiet`; on macOS, `afplay`.
+- Optional `simpleaudio` extra (`pip install -e ".[sound]"`); it does **not** go into the installers
+  (no reliable wheel for Python 3.13). With no player at all, the sound is silent — the alert never
+  breaks.
+- **Do not use** `playsound` (abandoned).
+
+**Popup (`popup.py`)**:
+- Library: `plyer.notification`.
+
+**Telegram (`telegram.py`)**:
+- Sent via `httpx` to `https://api.telegram.org/bot<token>/sendPhoto` (with `attach_roi: true`,
+  default) or `sendMessage`.
+- **Attaches the ROI screenshot** at alert time — essential to validate false positives.
+- Serializes `rgb` → PNG in memory (`PIL.Image.fromarray(...).save(buf, format="PNG")`).
+- Short timeout (**5 s**) so as not to block the loop; token read from `bot_token_env`
+  (`TELEGRAM_BOT_TOKEN` by default) — **never** in the YAML.
+
+**Log (`log.py`)**:
+- `JsonlNotifier`: one JSON line per firing in `app-data/logs/alerts.jsonl` (or the path
+  configured in `path`).
+
+**Rule**: an unknown type is ignored with `log.warning` (`build_notifier` returns `None`).
+
+### 11.3 Chaining, outcomes and re-arm
+
+```python
+class AlertChain:
+    def dispatch(self, result: ComparisonResult, frame: Frame) -> DispatchOutcome:
+        # no enabled notifiers -> NONE_ENABLED
+        # none with severity >= severity_min -> BELOW_MIN
+        # for each eligible one outside the cooldown: notify; a failure does not stop the others
+        #   -> FIRED (some fired) / FAILED (all failed) /
+        #      SUPPRESSED_COOLDOWN (all in cooldown)
+```
+
+**Outcomes** (`DispatchOutcome`): `FIRED`, `SUPPRESSED_COOLDOWN`, `BELOW_MIN`, `NONE_ENABLED`,
+`FAILED`. `MonitorSession` uses the outcome for the **edge-triggered re-arm**:
+
+- With `rearm: true` (default), the baseline advances after `FIRED`, `BELOW_MIN` or `NONE_ENABLED` — a
+  sustained change alarms once, and a new change re-arms.
+- On `SUPPRESSED_COOLDOWN` and `FAILED` the baseline is **kept**: the pending change alarms when the
+  cooldown expires, and failures are retried respecting the cooldown (backoff) — without hammering on
+  every tick.
+- A failure in one notifier records the attempt (`_last_attempt`) and does not prevent the others;
+  each has its own `try`.
+- Manual re-arm: tray/"Re-arm" button/hotkey `rearm`, via `MonitorSession.request_rebaseline()`
+  (thread-safe) or `rebaseline_now(frame)`.
+
+### 11.4 Pseudo-human actions (opt-in, `actions/`)
+
+Reaction **separate** from the alerts: evaluated after `AlertChain.dispatch` when `result.changed`,
+**without altering** the `DispatchOutcome` or the alert re-arm. It only executes when **armed**; by
+default it stays in **rehearsal** (dry-run), which records what it would do and saves evidence,
+without clicking.
+
+- **Trigger**: `changed` (the only one supported; `changed: false` is a validation error), effective
+  `severity_min` (`when.severity_min` > `severity_min`) and OCR filters
+  (`text_any`/`text_all`/`text_regex`, case-insensitive by default). Text filters require
+  `mode: advanced` (validation refuses in the other modes).
+- **Steps**: `activate`/`click`/`move`/`type`/`key`/`wait`; `ref` is `roi` (relative to
+  `frame.absolute_rect`), `window` (`frame.window_rect`) or `screen`. A click requires `activate`
+  before it (explicit focus + `isActive` verification). Since Windows `SetForegroundWindow` is
+  asynchronous/blocked (foreground lock), focus is confirmed with small pauses (up to ~0.5 s before
+  aborting); the reason distinguishes `activate refused` from `focus not confirmed`
+  (`focus_changed: ...`).
+- **Humanization** (`defaults.humanize`, §12.2): mouse movement interpolated over `mouse_steps`
+  points with `jitter_px`; pauses with `wait_jitter_ms` jitter; typing with a default interval of
+  `key_interval_ms`; `seed` for deterministic tests.
+- **Cooldown**: a trigger ignored due to `cooldown_s` does **not** go to the JSONL (so as not to
+  pollute it), but is published in the live log as `skipped -> cooldown`.
+- **Limits**: `max_per_min` (60 s sliding window) and `max_per_session`, checked before execution
+  (`reason: rate_limited` in the result/audit).
+- **Synchronous execution on the loop thread**: capture/comparison pause during the sequence
+  (no re-entrancy); `settle_s` at the end. Between steps, the runner re-checks arming/abort.
+- **Re-arm**: `rebaseline: false` by default (the baseline remains after the action); `rebaseline: true`
+  opt-in repeats the trigger (report/page). Manual re-arm at runtime (tray/button/hotkey `rearm`,
+  via `MonitorSession.request_rebaseline()`).
+- **Rehearsal x armed**: `ArmingController` with `disarmed`/`armed`/`timed` states; state only in
+  memory, it starts disarmed on every session. `Esc` aborts immediately (`aborted`).
+- **Scheduler**: outside the time window the action is suspended (`suspended_schedule`); monitoring and
+  alerts continue.
+- **Auditing**: `logs/actions.jsonl` (rehearsal, execution, suspension, reason, duration and paths of
+  the evidence).
+- **Creation via the GUI**: `gui/action_editor.py` (`New action...`/`Edit...`/`Remove action`) writes
+  to `overrides.actions` of the selection JSON. Since `resolve_actions` reads the overrides before the
+  profile, this also works with config v1 (`targets:`), without migration. Validation reuses
+  `parse_actions` (click requires `activate`, `text_*` requires `mode: advanced`), so the YAML rules
+  apply in the window; profile/YAML actions are read-only in the GUI.
+- **Position locator**: `gui/locator.py::run_locator` ("Locate mouse
+  position..." button in the `click`/`move` steps) shows a box following the cursor; Enter/left click
+  confirms, Esc/right click cancels. It returns the **logical** global point (same base as the `Frame`)
+  and converts it by the `ref` via `overlay_geometry.resolve_ref_point` (`roi`→`absolute_rect`,
+  `window`→`window_rect`, `screen`→origin); without a base, it falls back to `screen`. It differs from
+  the countdown: here focus is required to capture the Enter.
+- **Per-session selection**: checklist in the GUI (and `--actions` in the CLI, one-shot) reduces the
+  subset by **action name**; it applies only on the next `build_target`. The state lives in
+  `state.json["action_selection"][selection]` (missing key = all, empty list = none).
+  `resolve_actions` keeps the OCR/mode validation; the filter only subtracts names (it never
+  re-enables `enabled: false`).
+- **Live log**: each trigger emits an ephemeral payload (`ActionDispatcher.on_event` →
+  `MonitorSession.on_action` → `kind: "action_event"` in the GUI queue, distinct from `action` =
+  tray/hotkey commands); the source of truth remains the JSONL.
+- **3s countdown**: one-off flows (`test-action --armed`, `record-actions` and the "Execute
+  action (3s)" button in the GUI) use `gui/countdown.py::run_countdown` — a borderless, always-on-top
+  Qt overlay with `WindowDoesNotAcceptFocus`, **without** `activateWindow` (the target window may be
+  focused during the countdown); a click cancels. Instantiated by `gui/qt_app.py::ensure_app` with
+  `QEventLoop` (callable from inside the GUI). The loop's automatic firing **has no** countdown.
+  Textual fallback in the console without Qt/display.
+- **Backend**: `pynput` as an optional extra (`pip install -e ".[input]"`), lazy import in
+  `platform/input.py`; without it, hotkeys fall back to tray-only and real execution fails with a
+  clear message (`InputUnavailable`). Wayland/elevation remain out of scope.
+
+### 11.5 Evidence (prints)
+
+Output subsystem, like the alerts: it saves **prints of the whole window** (unmasked) of the baseline
+and of each detected change, for visual auditing.
+
+- **Format/folder**: `<folder>/<target>/<YYYYMMDD-HHMMSS-mmm>_<baseline|change>.png` (actions use
+  `_action`/`_action-<step>`). Writing is **synchronous** (called by the loop/session); failures only
+  `log.warning` and never break the loop. The effective folder is
+  `evidence.dir` when configured; otherwise `%TEMP%/screen_watch/captures`
+  (`platform.paths`/`evidence.recorder.captures_dir`, displayed in `show-paths` as `captures:`).
+- **Retention**: `keep_per_target` (count per target) and `max_total_mb` (total cap), pruned after
+  each write.
+- **On/off**: `evidence.enabled` in the YAML v2 **or** the runtime toggle
+  `state.json["evidence_enabled"]` ("Record prints" checkbox in the GUI), which has **precedence** and
+  also works with config v1. `app.effective_evidence_options()` does the composition.
+- **One-off flows**: `test-evidence` and the `run_actions` path (`test-action --armed` and the
+  "Execute action (3s)" button) record with `force_enabled=True`, respecting `per_step` (print per step)
+  and registering the paths in the action audit.
+- **Open folder/file**: always goes through `platform/shell.py::open_path`; the GUI warns when the
+  loop prints are off.
+
+---
+
+## 12. Configuration
+
+### 12.1 YAML v2 schema (global config per profile)
+
+The YAML is no longer a list of targets and became **global configuration**. Targets live in JSON
+selection files (`app-data/selections/*.json`); the YAML defines profiles, alerts, hotkeys,
+scheduler, humanization and evidence.
+
+```yaml
+version: 2
+profile: default                 # active profile; switchable with --profile / GUI selector
+profiles:
+  default:
+    defaults:
+      mode: "advanced"           # "light" | "default" | "advanced"
+      poll_interval_s: 2.0       # minimum 1.0
+      rearm: true
+      humanize:                  # pseudo-human noise of the actions (§11.4)
+        mouse_steps: 24
+        key_interval_ms: 60
+        jitter_px: 3
+        wait_jitter_ms: 150
+        seed: null               # only for deterministic tests
+      compare_options:
+        light:    { threshold: 12.0 }
+        default:  { hash_size: 8, threshold: 6 }
+        advanced: { similarity_threshold: 0.92, psm: 6, lang: "por+eng", upscale: 2,
+                    tesseract_cmd: null }
+    alerts:
+      - { type: "sound",    enabled: true, severity_min: 1, cooldown_s: 30, file: "alert.wav" }
+      - { type: "popup",    enabled: true, severity_min: 1, cooldown_s: 30 }
+      - { type: "telegram", enabled: true, severity_min: 2, cooldown_s: 60,
+          bot_token_env: "TELEGRAM_BOT_TOKEN", chat_id: "123456789", attach_roi: true }
+      - { type: "log",      enabled: true, severity_min: 1, cooldown_s: 0 }   # optional
+    actions: []                  # see §11.4
+  trabalho:
+    defaults: { mode: "default", poll_interval_s: 1.0 }
+ui:
+  hotkeys: { arm: "<ctrl>+<alt>+a", disarm: "<ctrl>+<alt>+d", toggle: "<ctrl>+<alt>+<space>",
+             rearm: "<ctrl>+<alt>+r", abort: "<esc>" }
+  arm_durations_min: [1, 5, 15, 30]
+  language: auto                 # auto | pt-BR | en-US | tag discovered in i18n/*.json
+schedule: { enabled: false, days: [mon, tue, wed, thu, fri], windows: ["08:00-12:00"], timezone: local }
+evidence: { enabled: false, dir: null, keep_per_target: 50, max_total_mb: 200,
+            on_baseline: true, on_change: true, per_step: false }
+```
+
+**Rules**:
+- Tokens and secrets **never** in the YAML. Use environment variables (`bot_token_env`).
+- `version` accepts 1 or 2 (any other value is `ConfigError`); v2 **requires** `profiles`; a
+  nonexistent `profile` is `ConfigError` (`config.profile_unknown`).
+- `version` absent with `targets:` is the legacy v1: it loads for one version, with a warning, and is
+  converted by `migrate-config` (`config.yaml.bak` backup, one JSON selection per target).
+- An unknown `ui.language` generates a warning and falls back to `auto` (not an error).
+- `TargetConfig` remains the runtime's internal contract; the profile + the selection are resolved
+  into it by `persistence.selection.build_target`.
+
+### 12.2 Profiles and defaults
+
+Named profiles (`profiles.<name>.defaults` + `.alerts` + `.actions`) allow switching parameter sets
+with `--profile` (CLI) or the GUI/tray selector. The switch **applies on the next start** (not live).
+The active profile is also written to `state.json.profile`.
+
+`defaults` covers: `mode`, `poll_interval_s` (>= 1.0), `rearm`, `compare_options` and `humanize`
+(§11.4). `humanize` has no UI of its own: edit the YAML (the GUI creates actions, not humanization).
+
+### 12.3 Selection JSON and overrides
+
+Each selection is a JSON v2; `overrides` is optional and **replaces** (does not add to) the profile
+values for that target: `mode`, `poll_interval_s`, `rearm`, `masks`, `alerts` and `actions`.
+`version: 1` selections still load without overrides.
+
+```json
+{
+  "version": 2,
+  "window_handle": 123456,
+  "window_title_hint": "ERP - Estoque",
+  "app_name": "ERP",
+  "origin_at_selection": [100, 200],
+  "roi_relative": [120, 340, 400, 80],
+  "mode": "advanced",
+  "masks": [],
+  "overrides": { "poll_interval_s": 1.5, "rearm": false }
+}
+```
+
+**Mode precedence**: explicit `mode` from `build_target` (GUI selector) > `overrides.mode` >
+`selection.mode`. `actions` overrides are parsed with the resolved mode (`text_*` filters require
+`advanced`; §11.4). `window_title_hint` is only a human hint; the lookup uses `window_handle`.
+
+### 12.4 State, app-data and writing
+
+`platform/paths.py` centralizes `app_home()`, `config_path()`, `selections_dir()`, `logs_dir()` and
+`state_path()`. Base: `%APPDATA%\screen_watch` on Windows, `~/.config/screen_watch` on Linux,
+`~/Library/Application Support/screen_watch` on macOS, or the `SCREEN_WATCH_HOME` override.
+
+`state.json` stores `{"last_selection": "...", "profile": "...", "language": "...",
+"action_selection": {"<selection>": ["action-name", ...]}, "evidence_enabled": true|false}` and is
+updated on a successful `run`/GUI start (the `action_selection` and `evidence_enabled` keys are
+optional and backward compatible).
+
+The YAML is rewritten atomically (temp + `os.replace`) with a `config.yaml.bak` backup **without
+preserving comments**; `state.json` is atomic, without backup. `migrate-config` reloads from disk
+before rewriting.
+
+The effective prints folder comes from `evidence/recorder.py::captures_dir(options)` (`evidence.dir`
+when configured, otherwise `%TEMP%/screen_watch/captures`) and `ensure_captures_dir` creates it if
+missing; `show-paths` prints it as `captures:` (with an override note). Opening a folder/file is done
+exclusively by `platform/shell.py::open_path` (best-effort) — the "Open prints folder" button in the
+GUI and "Open YAML" use that helper.
+
+Turning the loop prints on/off does not depend on the YAML: `app.effective_evidence_options(config)`
+starts from the YAML `evidence` (v2) and applies the runtime toggle
+`state.json["evidence_enabled"]` ("Record prints" checkbox in the GUI), which has precedence — it
+also works with config v1 (§11.5).
+
+### 12.5 Scheduler, profiles in the UI and recorder
+
+- **Profiles in the UI**: window selector + tray submenu; the switch applies on the next start and
+  persists in `state.json.profile` (`--profile` in the CLI).
+- **Scheduler** (`scheduler/schedule.py::is_open`, pure function with an injectable clock; `gate()`
+  returns the callable): outside the time window only the **actions** are suspended
+  (`suspended_schedule`); capture, comparison and alerts continue. Windows crossing midnight are
+  accepted; a scheduler enabled without `days`/`windows` does not restrict.
+- **Recorder** (`actions/recorder.py` + `record-actions`): with the `input` extra, it captures
+  clicks/keys (`F10` ends), converts absolute coordinates to `ref: roi`/`window`/`screen` and
+  generates an `actions:` snippet with `when` commented out. Default: 3s countdown and automatic
+  recording (the countdown runs on the main thread, before the `pynput` listeners); `--no-countdown`
+  keeps the explicit `F9`. Clicks outside the window fall back to `ref: screen`.
+- **Action selection in the UI**: "Session actions" checklist (`describe_action`/`describe_actions`
+  in `actions/summary.py`) + "N of M" counter; persists per selection name
+  (`actions/selection.py::load_action_selection`/`save_action_selection`) and applies on the next
+  start. In the CLI, `--actions a,b|all|none` (one-shot, does not persist, precedes the saved one) and
+  `list-actions` to check; `run` prints the summary and the live lines
+  `[action] rehearsal|armed <name> -> ok|failed|rehearsal`.
+- **Tests/validation**: `is_open` with a fake clock, recorder conversion without a real listener and
+  profile switching (next start).
+
+### 12.6 Languages (i18n)
+
+- **Catalog**: JSON inside the package (`screen_watch/i18n/<tag>.json`), discovered at runtime by
+  `i18n.available_locales()` (uses `_meta.code`). Initial ones: `pt-BR` (fallback) and `en-US`. No
+  language comes from app-data.
+- **Scope**: GUI + help (`help.*`) + displayed summary/labels + errors translated by code
+  (`errors.py::ERROR_CODES` → `error.<code>`). **CLI and `logging` remain in fixed English**; the GUI
+  log panel is also English (it is a log). `str(exc)` of `AppError`/`ConfigError` is English and
+  `render_error(exc)` translates by code (without a code, it falls back to `str(exc)`).
+- **Choice**: `--language` > `state.json["language"]` > `ui.language` > `auto` (OS locale via
+  `QLocale.system()` with fallback to `locale`/`LANG`); exact match (`pt-BR`) → same language
+  (`pt` → `pt-BR`) → `pt-BR`. The switch applies **on the next start**; the window selector writes
+  `state.json["language"]`. An unknown `ui.language` warns and falls back to `auto`.
+- **Validation**: `python -m screen_watch validate-i18n` (also in CI) checks for missing/extra keys
+  vs. fallback, untranslated `error.*`/`help.*` and an invalid `_meta`.
+- **Hover help**: 2 s `QTimer` + HTML tooltip (`title`, `purpose`, `example`) in
+  `gui/help.py` (pure) + `gui/hover_help.py` (Qt).
+
+### 12.7 Errors with stable code
+
+- `AppError` carries `code` + `params`; `str(exc)` renders **in English** (CLI/log).
+- `ConfigError` inherits from `AppError` and `ValueError` (preserves existing `except ValueError`) —
+  the loader converts action errors (`ActionError`) into `ConfigError` preserving code/params.
+- The GUI calls `render_error(exc)`, which translates `error.<code>` through the active catalog and
+  falls back to `str(exc)` when there is no code/translation.
+- Codes are **stable** (contract with the catalogs): renaming a code breaks the translation.
+
+---
+
+## 13. Test ladder (implementation history and current validation)
+
+The implementation followed the ladder below, in order; **the scripts remain in the repository** as
+diagnostic tools. On capture/DPI regressions, redo the ladder — do not start with the GUI.
+
+1. **`scripts/step1_absolute_roi.py`** — hardcoded absolute ROI, prints a hash every 1 s. Validates
+   capture and measures real Hz.
+2. **`scripts/step2_anchored_roi.py`** — anchoring via `pywinctl` (Model B). Moves the window and
+   confirms that the ROI follows. Validates DPI and multi-monitor.
+3. **`scripts/step3_selection_overlay.py`** — PyQt6 overlay, mouse selection, JSON dump.
+   Validates logical↔physical conversion.
+4. **JSON loading** — load the selection from step 3 and run anchored capture (today:
+   `run`/`select-manual`).
+5. **Mask** — confirm that touching the masked area does not change the hash.
+6. **Comparison** — test the three strategies separately before composing (`compare-modes`).
+7. **Local alerts** — sound + popup (`test-alert`).
+8. **Telegram** — webhook with attached image (opt-in integration test).
+9. **Full GUI** — main window, tray, action editing.
+
+**Do not skip steps.** The cost of debugging DPI/multi-monitor through the GUI is orders of magnitude
+higher than via script.
+
+---
+
+## 14. Known pitfalls (for the implementing AI)
+
+Each item below is a **real** pitfall already discussed and resolved. Do not reintroduce it. Items
+1–15 are the originals; items 16–22 were recorded during implementation.
+
+1. **Wayland**: `mss` does not capture. Detect and warn. Do not try to work around it in the prototype.
+2. **DPI awareness out of order**: if `SetProcessDpiAwareness` is called after `mss` or Qt,
+   it has no effect. Call it first.
+3. **`window_title_hint` as a key**: never. Use `window_handle`.
+4. **`time.sleep` in the loop**: never. Use `Event.wait`, subtracting work time.
+5. **Comparison inside the capture `try`**: never. Separation of responsibilities.
+6. **First frame as change**: never. It is baseline.
+7. **`setMask` in the overlay**: never. Use `CompositionMode_Clear`.
+8. **Re-querying `window.getRect()` after I/O**: never. Capture immediately after the drag.
+9. **`hash_size=16` as default**: never. 8.
+10. **OCR on every tick**: never. Only in the advanced pipeline, with short-circuit.
+11. **`playsound`**: abandoned. Use the `platform/audio.py` boundary.
+12. **`pygetwindow`**: abandoned. Use `pywinctl`.
+13. **Token in the YAML**: never. Environment variable.
+14. **Creating `mss.mss()` on every tick**: never. Reused instance.
+15. **Trusting `devicePixelRatio()` as 1.0**: never. Test at 125/150/200%.
+16. **`mss` outside the loop thread**: never. It is not thread-safe; the backend is created/closed
+    inside the worker (including the reused instance).
+17. **Importing `pynput`/`winsound`/`mss`/`pywinctl` outside `platform/`**: never. Every OS dependency
+    stays behind the boundary (CI runs without `pynput`).
+18. **Assuming `simpleaudio`**: never. It has no reliable wheel for 3.13; sound is an optional extra
+    with fallback to an external player; the installers do **not** include it.
+19. **Using raw `%APPDATA%` on Windows with Store/MSIX Python**: the path is redirected to
+    inside the package. `platform/paths.py` detects this and uses the real path.
+20. **Replacing the `.deb` wrapper with a symlink**: never. PyInstaller resolves `_internal` by the
+    real path; the wrapper uses `exec`.
+21. **Setting `TESSDATA_PREFIX`**: never. The `tessdata` comes from the binary; `advanced.py` does
+    not pass `--tessdata-dir`.
+22. **Publishing a tag != `__version__`**: `release.yml` fails on purpose. The tag `vX.Y.Z` must be
+    identical (without `v`) to `screen_watch.__version__`.
+
+---
+
+## 15. Dependencies (implemented)
+
+Pinned in `pyproject.toml`. Organized by layer (mandatory core):
+
+| Layer | Package | Use |
+|---|---|---|
+| Capture | `mss` | screen capture |
+| Capture | `numpy` | canonical buffer |
+| Window | `pywinctl` | window location and geometry |
+| Comparison | `Pillow` | `numpy` ↔ `imagehash`/Tesseract bridge |
+| Comparison | `imagehash` | phash |
+| Comparison | `pytesseract` | OCR (requires the Tesseract binary installed) |
+| GUI | `PyQt6` | overlay and main window |
+| Tray | `pystray` | tray icon |
+| Alerts | `plyer` | popup |
+| Alerts | `httpx` | Telegram |
+| Config | `PyYAML` | config |
+
+**Optional extras** (`pyproject.toml::[project.optional-dependencies]`):
+
+| Extra | Packages | Note |
+|---|---|---|
+| `sound` | `simpleaudio>=1.0.4` | no reliable wheel on 3.13; it does **not** go into the bundle |
+| `input` | `pynput>=1.7` | pseudo-human actions and global hotkeys |
+| `ocr-preproc` | `opencv-python>=4.8` | OCR preprocessing experiments (not required) |
+| `logging` | `structlog>=24.1` | optional structured logging |
+| `dev` | `pytest>=8.0`, `pytest-cov>=5.0`, `ruff==0.16.9` | development and CI |
+| `build` | `pyinstaller>=6.11.1` | packaging (supports 3.13 from this version on) |
+
+**External requirements**:
+- **Tesseract** installed on the system (it does not come with `pytesseract`), with the `por` and
+  `eng` traineddata. On Windows the installer downloads a pinned release (with SHA256 verification),
+  and on the Linux `.deb` it becomes a `Depends:`. Path searchable via
+  `compare_options.advanced.tesseract_cmd`.
+- **Sound on Linux**: an external player (`paplay`/`aplay`/`ffplay`); in the `.deb`,
+  `pulseaudio-utils` and `alsa-utils` come as `Recommends`.
+- **Linux**: X11 session (Wayland out of scope).
+
+---
+
+## 16. Contracts between modules (executive summary)
+
+For quick reference by the implementing AI:
+
+```
+platform/dpi.set_dpi_awareness()   → call FIRST (first line of main)
+platform/window.find_window_by_handle(handle) → WindowInfo | None
+
+capture/resolver.resolve(window_info, roi_relative, logical_to_physical=...) → Rect | None
+capture/backend.MssCaptureBackend.bounds() → Rect          (virtual desktop, can be negative)
+capture/backend.MssCaptureBackend.capture(abs_rect) → np.ndarray   (RGB)
+capture/mask.apply_mask(rgb, masks) → np.ndarray
+capture/frame.Frame(rgb, timestamp, absolute_rect, window_rect, window_handle, sequence)
+
+compare/protocol.CompareStrategy.initialize(baseline: Frame)
+compare/protocol.CompareStrategy.compare(current: Frame) → ComparisonResult
+compare/pipeline.MODE_STAGES / ComparePipeline.compare(current) → ComparisonResult
+
+alerts/chain.AlertChain.dispatch(result, frame) → DispatchOutcome
+actions/dispatch.ActionDispatcher.on_result(result, frame) → rebaseline: bool
+
+config/loader.load_config(path) → AppConfig
+persistence/selection.build_target(selection, profile, name=..., mode=..., schedule=...,
+                                   action_filter=...) → TargetConfig
+app.MonitorSession(target, recorder=..., on_action=...) → sink(frame)
+app.build_loop(target, session, on_event=..., on_error=...) → MonitorLoop
+scheduler/loop.MonitorLoop.start()/.stop()/.join()
+scheduler/schedule.is_open(options, now=...) → bool; gate(options) → Callable | None
+
+evidence/recorder.EvidenceRecorder.from_options(options, force_enabled=...) → recorder
+app.effective_evidence_options(config) → EvidenceOptions
+```
+
+**Data flow**:
+
+```
+MonitorLoop._tick
+  → window_lookup → resolve → clip → backend.capture → normalize → apply_mask
+  → Frame
+  → MonitorSession.__call__(frame)
+      → (1st frame / re-arm) pipeline.initialize  (baseline; records evidence)
+      → pipeline.compare
+      → AlertChain.dispatch            (sound/popup/Telegram/log; cooldown; DispatchOutcome)
+      → ActionDispatcher.on_result     (rehearsal/armed; scheduler; limits; audit)
+      → baseline re-arm (outcome/rebaseline) + change evidence
+```
+
+---
+
+## 17. Glossary
+
+- **ROI** — Region of Interest; the monitored rectangle inside the window.
+- **Baseline** — first frame captured in a session (or after re-arm); reference for
+  comparison. It is never a change.
+- **Model B** — anchoring by window origin: `abs = roi_relative + window_rect.topLeft()`.
+- **Pipeline** — composition of comparison strategies with short-circuit.
+- **Frame** — immutable dataclass with `rgb` (numpy) and capture metadata.
+- **Tick** — one iteration of the capture loop.
+- **DPR** — device pixel ratio; factor between logical and physical space.
+- **Chrome** — non-client elements of a window (title bar, borders).
+- **Profile** — named set of defaults/alerts/actions in the YAML v2 (`profiles.<name>`), switchable
+  on the next start.
+- **Overrides** — selection JSON fields that **replace** (do not add to) the profile values
+  for that target.
+- **Arming / rehearsal** — in-memory state that decides whether the actions execute (`armed`/`timed`)
+  or only record (`disarmed` = rehearsal). It always starts disarmed.
+- **Evidence** — print (baseline/change/per step) saved by the `EvidenceRecorder` for visual
+  auditing.
+- **Outcome (`DispatchOutcome`)** — result of a `dispatch` (`FIRED`, `SUPPRESSED_COOLDOWN`,
+  `BELOW_MIN`, `NONE_ENABLED`, `FAILED`) used by the edge-triggered re-arm.
+
+---
+
+## 18. Final notes for the implementing AI
+
+1. **Read this entire document before touching the code.** Many decisions here seem
+   arbitrary in isolation, but have recorded motivation.
+2. **Use the test ladder (§13) when investigating capture/DPI regressions.** It exists to reduce
+   the bug search space.
+3. **If something here seems wrong or insufficient, record it as a comment/issue — do not change it
+   silently.** If the code changed on purpose, update the document with the new reason and the
+   decision history.
+4. **Every OS dependency stays in `platform/`.** Never import `pywinctl`/`pynput`/`mss`/
+   `winsound` outside that folder.
+5. **Comparison never touches screen, window, or sleep.** If your implementation needs any
+   of those, the design has been violated.
+6. **The first frame is baseline.** If your code fires an alert on the first tick, there is a bug.
+7. **If a test fails at 125% or 150% scaling on Windows, that is the most important bug in the
+   project.** Prioritize it before any feature.
+8. **Document every empirical experiment** (thresholds, hash_size, psm, upscale) with the context in
+   which it was tuned. The defaults are starting points, not truths.

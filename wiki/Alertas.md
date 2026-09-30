@@ -1,4 +1,5 @@
 # Alertas
+[English](Alerts.md) · **Português (Brasil)**
 
 Um alerta é disparado quando a comparação confirma uma **mudança** (`changed: true`) e a
 **severidade** da mudança atinge o `severity_min` do canal, respeitando o `cooldown_s` de cada um.

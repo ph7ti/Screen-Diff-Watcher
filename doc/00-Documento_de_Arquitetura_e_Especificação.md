@@ -1,4 +1,5 @@
 # Screen Diff Watcher — Documento de Arquitetura e Especificação
+[English](00-Architecture_and_Specification.md) · **Português (Brasil)**
 
 > **Propósito deste documento**: servir como **fonte única de verdade do design** para que outra IA
 > (ou desenvolvedor) continue o projeto sem precisar reconstruir decisões, e registrar **o que está
@@ -12,9 +13,9 @@
 
 Guias relacionados:
 
-- Uso e recursos (wiki): [`../wiki/Home.md`](../wiki/Home.md)
+- Uso e recursos (wiki): [`../wiki/Home-pt-BR.md`](../wiki/Home-pt-BR.md)
 - Build e release: [`01-Build_e_Release.md`](01-Build_e_Release.md)
-- Visão geral no README: [`../README.md`](../README.md)
+- Visão geral no README: [`../README.pt-BR.md`](../README.pt-BR.md)
 
 ---
 
@@ -1038,7 +1039,7 @@ e de cada mudança detectada, para auditoria visual.
   `_action`/`_action-<passo>`). A gravação é **síncrona** (chamada pelo loop/sessão); falhas apenas
   `log.warning` e nunca quebram o loop. A pasta efetiva é
   `evidence.dir` quando configurado; senão `%TEMP%/screen_watch/captures`
-  (`platform.paths`/`evidence.recorder.captures_dir`, exibida em `show-paths` como `capturas:`).
+  (`platform.paths`/`evidence.recorder.captures_dir`, exibida em `show-paths` como `captures:`).
 - **Retenção**: `keep_per_target` (contagem por alvo) e `max_total_mb` (teto total), podadas após
   cada gravação.
 - **Ligar/desligar**: `evidence.enabled` no YAML v2 **ou** o toggle de runtime
@@ -1159,7 +1160,7 @@ antes de regravar.
 
 A pasta de prints efetiva vem de `evidence/recorder.py::captures_dir(options)` (`evidence.dir` quando
 configurado, senão `%TEMP%/screen_watch/captures`) e `ensure_captures_dir` a cria se faltar;
-`show-paths` imprime-a como `capturas:` (com nota de override). Abrir pasta/arquivo é feito
+`show-paths` imprime-a como `captures:` (com nota de override). Abrir pasta/arquivo é feito
 exclusivamente por `platform/shell.py::open_path` (best-effort) — o botão "Abrir pasta de prints" da
 GUI e "Abrir YAML" usam esse helper.
 

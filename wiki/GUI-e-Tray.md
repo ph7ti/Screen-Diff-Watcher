@@ -1,4 +1,5 @@
 # GUI e tray
+[English](GUI-and-Tray.md) · **Português (Brasil)**
 
 `python -m screen_watch gui` (ou o atalho instalado; no Linux o comando é
 `screen-diff-watcher-gui`) abre a janela, cujo layout segue o mockup `UI.txt`.

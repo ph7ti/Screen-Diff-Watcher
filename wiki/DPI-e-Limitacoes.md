@@ -1,4 +1,5 @@
 # DPI e limitações
+[English](DPI-and-Limitations.md) · **Português (Brasil)**
 
 ## Escala de tela (DPI)
 

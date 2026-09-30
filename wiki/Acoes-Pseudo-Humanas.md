@@ -1,4 +1,5 @@
 # Ações pseudo-humanas (opt-in)
+[English](Pseudo-Human-Actions.md) · **Português (Brasil)**
 
 As ações são uma **reação separada dos alertas**: só são avaliadas depois de uma mudança detectada,
 **não alteram** o resultado dos alertas nem o re-arm, e são **opt-in e desarmadas por padrão** — em

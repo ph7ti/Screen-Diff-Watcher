@@ -31,9 +31,10 @@ versionamento semântico. Versão: `screen_watch.__version__` (fonte única).
 
 ### Notas
 
-- **Documentação**: `README.md` reorganizado para uso (o que faz e o que não faz, como funciona,
-  plataformas, quick start, pré-requisitos e build); os detalhes de uso e recursos foram para a
-  Wiki (`wiki/`) e o `doc/00` foi reciclado para o estado implementado (v0.3.0).
+- **Documentação bilíngue (EN/PT)**: `README.md` e a wiki passam a ser publicados em **inglês
+  (principal)** com espelho em **português** (`README.pt-BR.md` + páginas PT da wiki, com link de
+  idioma no topo); `doc/00` e `doc/01` ganharam versões em inglês, e o `doc/00` em português foi
+  reciclado para o estado implementado (v0.3.0).
 
 ## [0.2.1] — 2026-09-30
 

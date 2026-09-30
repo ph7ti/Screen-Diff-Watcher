@@ -1,4 +1,5 @@
 # Evidências (prints)
+[English](Evidence.md) · **Português (Brasil)**
 
 As evidências são **desabilitadas por padrão**. Quando ligadas, o app grava prints da **janela
 inteira** (sem máscara) no baseline e a cada mudança detectada:
@@ -37,7 +38,7 @@ A **retenção** poda a pasta após cada gravação: por contagem (`keep_per_tar
 - Padrão: `%TEMP%/screen_watch/captures` (fora do repositório — os prints ficam **só na sua
   máquina**).
 - Com `evidence.dir` configurado, os prints vão para lá.
-- `python -m screen_watch show-paths` mostra a pasta efetiva na linha `capturas:` (com nota quando
+- `python -m screen_watch show-paths` mostra a pasta efetiva na linha `captures:` (com nota quando
   há override).
 
 O botão **Abrir pasta de prints** da janela abre a pasta efetiva no gerenciador de arquivos,

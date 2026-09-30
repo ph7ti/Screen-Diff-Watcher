@@ -1,10 +1,12 @@
 # Screen Diff Watcher — Build e Release (instaladores Windows/Linux)
 
+[English](01-Build_and_Release.md) · **Português (Brasil)**
+
 Guia operacional para **humano ou IA**: como atualizar as informações de build e gerar os
 instaladores depois de novos incrementos de código.
 
 Decisões de arquitetura: [`00-Documento_de_Arquitetura_e_Especificação.md`](00-Documento_de_Arquitetura_e_Especificação.md) §3.8 (PyInstaller, build por plataforma).
-Resumo de uso no [`README.md`](../README.md) (seção "Build dos instaladores").
+Resumo de uso no [`README.pt-BR.md`](../README.pt-BR.md) (seção "Build dos instaladores").
 
 Todos os comandos assumem o **repositório como diretório atual** (`cd ScreenDiffWatcher`).
 

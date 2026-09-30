@@ -1,4 +1,5 @@
 # Desenvolvimento, testes e CI
+[English](Development-Tests-and-CI.md) · **Português (Brasil)**
 
 ## Preparar o ambiente
 

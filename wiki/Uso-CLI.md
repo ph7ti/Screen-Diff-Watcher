@@ -1,4 +1,5 @@
 # Uso (CLI)
+[English](CLI-Usage.md) · **Português (Brasil)**
 
 Se você instalou pelos binários, o comando é **`screen-watch`**; do código-fonte, use
 **`python -m screen_watch`**. Os dois têm a mesma superfície de comandos.
@@ -23,7 +24,7 @@ python -m screen_watch <comando> --help
 |---|---|
 | `init-config [--path CAMINHO] [--force]` | cria o `config.yaml` v2 padrão em app-data (ou no caminho dado); sem `--force`, não sobrescreve |
 | `validate-config [--config CAMINHO] [--selections]` | valida o YAML (e, com `--selections`, os overrides de cada seleção) |
-| `show-paths` | mostra app-data, config, seleções, estado, logs e a pasta efetiva de prints (`capturas:`) |
+| `show-paths` | mostra app-data, config, seleções, estado, logs e a pasta efetiva de prints (`captures:`) |
 
 ```powershell
 python -m screen_watch init-config
