@@ -256,7 +256,8 @@ ScreenDiffWatcher/
 ├── src/
 │   └── screen_watch/
 │       ├── __init__.py            # __version__ (single source)
-│       ├── __main__.py            # entry point: python -m screen_watch (CLI + parsers)
+│       ├── __main__.py            # entry point: python -m screen_watch (main() only)
+│       ├── cli/                   # CLI: subcommands (commands.py) + parser (parser.py)
 │       ├── app.py                 # orchestration: pipeline + chain + session + evidence
 │       ├── errors.py              # AppError/ConfigError + ERROR_CODES + render_error
 │       ├── gui_main.py            # entry point of the windowless executable (GUI)
@@ -1217,8 +1218,8 @@ also works with config v1 (§11.5).
 ### 12.7 Errors with stable code
 
 - `AppError` carries `code` + `params`; `str(exc)` renders **in English** (CLI/log).
-- `ConfigError` inherits from `AppError` and `ValueError` (preserves existing `except ValueError`) —
-  the loader converts action errors (`ActionError`) into `ConfigError` preserving code/params.
+- `ConfigError` inherits from `AppError` (not `ValueError`); the loader converts action errors
+  (`ActionError`) into `ConfigError` preserving code/params.
 - The GUI calls `render_error(exc)`, which translates `error.<code>` through the active catalog and
   falls back to `str(exc)` when there is no code/translation.
 - Codes are **stable** (contract with the catalogs): renaming a code breaks the translation.

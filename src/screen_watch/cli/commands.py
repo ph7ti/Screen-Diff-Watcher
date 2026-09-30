@@ -546,7 +546,6 @@ def _cmd_compare_modes(args: argparse.Namespace) -> int:
     import time
 
     from screen_watch.app import build_pipeline
-    from screen_watch.capture.frame import Frame
     from screen_watch.compare.pipeline import MODE_STAGES
     from screen_watch.config.loader import ConfigError
 
@@ -563,36 +562,20 @@ def _cmd_compare_modes(args: argparse.Namespace) -> int:
         return 1
 
     try:
-        rgb_baseline, abs_rect, info = _capture_target_roi(target)
+        baseline, abs_rect, _ = _capture_frame(target, 1)
     except Exception as exc:
         print(f"failed to capture ROI: {exc}")
         return 1
-    baseline = Frame(
-        rgb=rgb_baseline,
-        timestamp=time.time(),
-        absolute_rect=abs_rect,
-        window_rect=info.rect,
-        window_handle=info.handle,
-        sequence=1,
-    )
 
     print(f"target={target.name!r} handle={target.window_handle} roi={abs_rect} mode={target.mode}")
     print(f"baseline captured; waiting {args.delay:.1f}s (change the panel now)...")
     time.sleep(max(0.0, args.delay))
 
     try:
-        rgb_sample, abs_rect2, info2 = _capture_target_roi(target)
+        sample, _, _ = _capture_frame(target, 2)
     except Exception as exc:
         print(f"failed to capture sample: {exc}")
         return 1
-    sample = Frame(
-        rgb=rgb_sample,
-        timestamp=time.time(),
-        absolute_rect=abs_rect2,
-        window_rect=info2.rect,
-        window_handle=info2.handle,
-        sequence=2,
-    )
 
     print("")
     print(f"{'mode':<9} {'changed':<8} {'score':>10} {'threshold':>10} {'sev':>4} {'ms':>8}")

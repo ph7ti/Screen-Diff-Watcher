@@ -255,7 +255,8 @@ ScreenDiffWatcher/
 ├── src/
 │   └── screen_watch/
 │       ├── __init__.py            # __version__ (fonte única)
-│       ├── __main__.py            # entry point: python -m screen_watch (CLI + parsers)
+│       ├── __main__.py            # entry point: python -m screen_watch (só main())
+│       ├── cli/                   # CLI: subcomandos (commands.py) + parser (parser.py)
 │       ├── app.py                 # orquestração: pipeline + cadeia + sessão + evidências
 │       ├── errors.py              # AppError/ConfigError + ERROR_CODES + render_error
 │       ├── gui_main.py            # entry point do executável windowless (GUI)
@@ -1214,8 +1215,8 @@ do `evidence` do YAML (v2) e aplica o toggle de runtime `state.json["evidence_en
 ### 12.7 Erros com código estável
 
 - `AppError` carrega `code` + `params`; `str(exc)` renderiza **em inglês** (CLI/log).
-- `ConfigError` herda de `AppError` e `ValueError` (preserva `except ValueError` existentes) — o
-  loader converte erros de ação (`ActionError`) em `ConfigError` preservando código/params.
+- `ConfigError` herda de `AppError` (não de `ValueError`); o loader converte erros de ação
+  (`ActionError`) em `ConfigError` preservando código/params.
 - A GUI chama `render_error(exc)`, que traduz `error.<code>` pelo catálogo ativo e cai para
   `str(exc)` quando não há código/tradução.
 - Códigos são **estáveis** (contrato com os catálogos): renomear um código quebra a tradução.
