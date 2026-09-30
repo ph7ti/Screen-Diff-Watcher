@@ -16,6 +16,7 @@ from screen_watch.actions.protocol import (
     ActionSpec,
     ActionStep,
 )
+from screen_watch.config.coerce import as_bool, as_float, as_int, as_str, as_str_list
 from screen_watch.errors import AppError
 
 
@@ -24,49 +25,23 @@ class ActionError(AppError, ValueError):
 
 
 def _as_int(value: Any, field_name: str) -> int:
-    if isinstance(value, bool):
-        raise ActionError(code="action.not_integer", params={"field": field_name, "value": value})
-    try:
-        return int(value)
-    except (TypeError, ValueError) as exc:
-        raise ActionError(
-            code="action.not_integer", params={"field": field_name, "value": value}
-        ) from exc
+    return as_int(value, field_name, error=ActionError, prefix="action")
 
 
 def _as_float(value: Any, field_name: str) -> float:
-    if isinstance(value, bool):
-        raise ActionError(code="action.not_number", params={"field": field_name, "value": value})
-    try:
-        return float(value)
-    except (TypeError, ValueError) as exc:
-        raise ActionError(
-            code="action.not_number", params={"field": field_name, "value": value}
-        ) from exc
+    return as_float(value, field_name, error=ActionError, prefix="action")
 
 
 def _as_bool(value: Any, field_name: str) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, int) and value in (0, 1):
-        return bool(value)
-    raise ActionError(code="action.not_bool", params={"field": field_name, "value": value})
+    return as_bool(value, field_name, error=ActionError, prefix="action")
 
 
 def _as_str(value: Any, field_name: str) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, (str, int, float)):
-        return str(value)
-    raise ActionError(code="action.not_text", params={"field": field_name, "value": value})
+    return as_str(value, field_name, error=ActionError, prefix="action")
 
 
 def _as_str_list(value: Any, field_name: str) -> tuple[str, ...]:
-    if value is None:
-        return ()
-    if not isinstance(value, (list, tuple)):
-        raise ActionError(code="action.not_text_list", params={"field": field_name})
-    return tuple(_as_str(item, f"{field_name}[]") for item in value)
+    return as_str_list(value, field_name, error=ActionError, prefix="action")
 
 
 def _parse_step(raw: Any, field: str) -> ActionStep:

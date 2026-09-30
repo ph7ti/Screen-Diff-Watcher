@@ -351,13 +351,28 @@ def _capture_target_roi(target):
     return apply_mask(rgb, target.masks), abs_rect, info
 
 
-def _cmd_test_alert(args: argparse.Namespace) -> int:
+def _capture_frame(target, sequence: int):
+    """Captura a ROI atual e monta o `Frame` (reusado pelos comandos de teste)."""
     import time
 
+    from screen_watch.capture.frame import Frame
+
+    rgb, abs_rect, info = _capture_target_roi(target)
+    frame = Frame(
+        rgb=rgb,
+        timestamp=time.time(),
+        absolute_rect=abs_rect,
+        window_rect=info.rect,
+        window_handle=info.handle,
+        sequence=sequence,
+    )
+    return frame, abs_rect, info
+
+
+def _cmd_test_alert(args: argparse.Namespace) -> int:
     from screen_watch.alerts.chain import DispatchOutcome
     from screen_watch.alerts.log import JsonlNotifier, default_log_path
     from screen_watch.app import build_alert_chain
-    from screen_watch.capture.frame import Frame
     from screen_watch.compare.protocol import ComparisonResult
     from screen_watch.config.loader import ConfigError
 
@@ -371,19 +386,11 @@ def _cmd_test_alert(args: argparse.Namespace) -> int:
         return 1
 
     try:
-        rgb, abs_rect, info = _capture_target_roi(target)
+        frame, abs_rect, info = _capture_frame(target, 1)
     except Exception as exc:
         print(f"failed to capture ROI: {exc}")
         return 1
 
-    frame = Frame(
-        rgb=rgb,
-        timestamp=time.time(),
-        absolute_rect=abs_rect,
-        window_rect=info.rect,
-        window_handle=info.handle,
-        sequence=1,
-    )
     result = ComparisonResult(
         changed=True,
         score=1.0,
@@ -407,10 +414,7 @@ def _cmd_test_alert(args: argparse.Namespace) -> int:
 
 def _cmd_test_evidence(args: argparse.Namespace) -> int:
     """Grava baseline+change de exemplo no ROI atual (valida a secao `evidence`)."""
-    import time
-
     from screen_watch.app import evidence_recorder
-    from screen_watch.capture.frame import Frame
     from screen_watch.config.loader import ConfigError
 
     try:
@@ -419,19 +423,11 @@ def _cmd_test_evidence(args: argparse.Namespace) -> int:
         print(f"error: {exc}")
         return 1
     try:
-        rgb, abs_rect, info = _capture_target_roi(target)
+        frame, _abs_rect, info = _capture_frame(target, 1)
     except Exception as exc:
         print(f"failed to capture ROI: {exc}")
         return 1
 
-    frame = Frame(
-        rgb=rgb,
-        timestamp=time.time(),
-        absolute_rect=abs_rect,
-        window_rect=info.rect,
-        window_handle=info.handle,
-        sequence=1,
-    )
     recorder = evidence_recorder(_load_config_or_none(args.config), force_enabled=True)
     if recorder is None:
         print("evidence unavailable")
@@ -446,11 +442,8 @@ def _cmd_test_evidence(args: argparse.Namespace) -> int:
 
 def _cmd_test_action(args: argparse.Namespace) -> int:
     """Executa/ensaias as acoes da selecao sobre o ROI atual (plano, F2-T9)."""
-    import time
-
     from screen_watch.actions.once import run_actions
     from screen_watch.app import evidence_recorder
-    from screen_watch.capture.frame import Frame
     from screen_watch.config.loader import ConfigError
 
     try:
@@ -462,19 +455,11 @@ def _cmd_test_action(args: argparse.Namespace) -> int:
         print(f"selection {target.name!r} has no actions configured")
         return 1
     try:
-        rgb, abs_rect, info = _capture_target_roi(target)
+        frame, _, _ = _capture_frame(target, 1)
     except Exception as exc:
         print(f"failed to capture ROI: {exc}")
         return 1
 
-    frame = Frame(
-        rgb=rgb,
-        timestamp=time.time(),
-        absolute_rect=abs_rect,
-        window_rect=info.rect,
-        window_handle=info.handle,
-        sequence=1,
-    )
     recorder = evidence_recorder(_load_config_or_none(args.config), force_enabled=True)
 
     countdown = None

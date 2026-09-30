@@ -22,6 +22,7 @@ import yaml
 
 from screen_watch.actions.plan import ActionError
 from screen_watch.actions.plan import parse_actions as _parse_actions_raw
+from screen_watch.config.coerce import as_bool, as_float, as_int, as_str
 from screen_watch.config.schema import (
     VALID_DAYS,
     VALID_MODES,
@@ -55,41 +56,19 @@ __all__ = ["ConfigError", "load_config"]
 
 
 def _as_int(value: Any, field_name: str) -> int:
-    if isinstance(value, bool):
-        _raise_not("config.not_integer", field_name, value)
-    try:
-        return int(value)
-    except (TypeError, ValueError) as exc:
-        raise ConfigError(
-            code="config.not_integer", params={"field": field_name, "value": value}
-        ) from exc
+    return as_int(value, field_name, error=ConfigError, prefix="config")
 
 
 def _as_float(value: Any, field_name: str) -> float:
-    if isinstance(value, bool):
-        _raise_not("config.not_number", field_name, value)
-    try:
-        return float(value)
-    except (TypeError, ValueError) as exc:
-        raise ConfigError(
-            code="config.not_number", params={"field": field_name, "value": value}
-        ) from exc
+    return as_float(value, field_name, error=ConfigError, prefix="config")
 
 
 def _as_bool(value: Any, field_name: str) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, int) and value in (0, 1):
-        return bool(value)
-    _raise_not("config.not_bool", field_name, value)
+    return as_bool(value, field_name, error=ConfigError, prefix="config")
 
 
 def _as_str(value: Any, field_name: str) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, (str, int, float)):
-        return str(value)
-    _raise_not("config.not_text", field_name, value)
+    return as_str(value, field_name, error=ConfigError, prefix="config")
 
 
 def _as_rect(value: Any, field_name: str) -> Rect:
@@ -104,10 +83,6 @@ def _as_point(value: Any, field_name: str) -> tuple[int, int] | None:
     if not isinstance(value, (list, tuple)) or len(value) != 2:
         raise ConfigError(code="config.not_point", params={"field": field_name})
     return _as_int(value[0], f"{field_name}[0]"), _as_int(value[1], f"{field_name}[1]")
-
-
-def _raise_not(code: str, field_name: str, value: Any) -> None:
-    raise ConfigError(code=code, params={"field": field_name, "value": value})
 
 
 def _as_mode(value: Any, field_name: str = "mode") -> str:

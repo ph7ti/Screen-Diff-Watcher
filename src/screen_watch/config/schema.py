@@ -162,9 +162,6 @@ class AppConfig:
                 return target
         return None
 
-    def get_profile(self, name: str | None = None) -> ProfileOptions | None:
-        return self.profiles.get(name or self.profile)
-
     def resolve(self, name: str | None = None) -> ProfileOptions:
         """Perfil ativo/explicito; `KeyError` claro se nao existir."""
         profile_name = name or self.profile
