@@ -3,6 +3,10 @@
 O token nunca fica no YAML: ele e lido de uma variavel de ambiente. A imagem do ROI
 e anexada sempre que `attach_roi` estiver ligado, para validar falsos positivos.
 Timeout curto (5 s) para nao travar o loop.
+
+Falhas HTTP viram `TelegramAPIError` com a descricao do Telegram (ex.: "chat not
+found", "the bot can't send messages to the bot"), sem expor o token: o httpx
+inclui a URL completa na mensagem de erro, e a URL carrega o token.
 """
 
 from __future__ import annotations
@@ -18,6 +22,16 @@ log = logging.getLogger(__name__)
 
 API_BASE = "https://api.telegram.org"
 REQUEST_TIMEOUT_S = 5.0
+
+
+class TelegramAPIError(RuntimeError):
+    """Falha ao falar com a API do Telegram, sem expor token/URL."""
+
+    def __init__(self, status_code: int | None, description: str) -> None:
+        self.status_code = status_code
+        self.description = description
+        detail = f"HTTP {status_code}: {description}" if status_code else description
+        super().__init__(detail)
 
 
 class TelegramNotifier:
@@ -63,12 +77,39 @@ class TelegramNotifier:
         caption = f"{result.strategy}: score={result.score:.2f} (severidade {result.severity})"
         url = f"{API_BASE}/bot{token}"
 
-        if self.attach_roi:
-            files = {"photo": ("roi.png", self._png_bytes(frame), "image/png")}
-            data = {"chat_id": self.chat_id, "caption": caption}
-            response = httpx.post(f"{url}/sendPhoto", data=data, files=files, timeout=REQUEST_TIMEOUT_S)
-        else:
-            data = {"chat_id": self.chat_id, "text": caption}
-            response = httpx.post(f"{url}/sendMessage", data=data, timeout=REQUEST_TIMEOUT_S)
+        try:
+            if self.attach_roi:
+                files = {"photo": ("roi.png", self._png_bytes(frame), "image/png")}
+                data = {"chat_id": self.chat_id, "caption": caption}
+                response = httpx.post(
+                    f"{url}/sendPhoto", data=data, files=files, timeout=REQUEST_TIMEOUT_S
+                )
+            else:
+                data = {"chat_id": self.chat_id, "text": caption}
+                response = httpx.post(
+                    f"{url}/sendMessage", data=data, timeout=REQUEST_TIMEOUT_S
+                )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise TelegramAPIError(
+                exc.response.status_code, self._error_text(exc.response)
+            ) from None
+        except httpx.RequestError as exc:
+            raise TelegramAPIError(None, self._sanitize(str(exc))) from None
 
-        response.raise_for_status()
+    def _sanitize(self, message: str) -> str:
+        """Remove o token de qualquer mensagem antes de ela chegar ao log."""
+        token = self._token
+        return message.replace(token, "<TOKEN>") if token else message
+
+    def _error_text(self, response) -> str:
+        """Descricao do Telegram (JSON) ou a razao HTTP, sempre sem o token."""
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = None
+        if isinstance(payload, dict):
+            description = payload.get("description")
+            if isinstance(description, str) and description.strip():
+                return self._sanitize(description.strip())
+        return self._sanitize(response.reason_phrase or "request failed")

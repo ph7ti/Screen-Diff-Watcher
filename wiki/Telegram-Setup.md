@@ -141,11 +141,24 @@ You should receive a message with the ROI image (when `attach_roi: true`); the c
 strategy, score and severity that triggered the alert. Exit code `0` means the chain fired; `1`
 means nothing fired (check the messages below).
 
+### Automated validation (opt-in)
+
+```powershell
+$env:TEST_REAL_TELEGRAM="1"; python -m pytest -m integration -k from_app_config
+```
+
+Reads the **active config** (app-data), validates the token with `getMe` and sends a synthetic
+photo to the configured chat. On failure it reports Telegram's own description (e.g.
+`HTTP 400: Bad Request: chat not found`) and it also detects the classic mistake of using the
+bot's own id as `chat_id`.
+
 ## Troubleshooting
 
 - **`variable TELEGRAM_BOT_TOKEN missing, Telegram disabled` (warning)** — the process did not see
   the environment variable. Set it and open a **new** terminal / restart the app.
-- **`notifier telegram failed: ...` (error)** — the HTTP call failed. Most common causes:
+- **`notifier telegram failed: HTTP 400/403: ...` (error)** — the HTTP call failed. The message
+  shows Telegram's own description (e.g. `chat not found`, `the bot can't send messages to the
+  bot`) and never includes the token. Most common causes:
   - `401 Unauthorized`: wrong token (or revoked).
   - `400 Bad Request` / `chat not found`: wrong `chat_id`; for groups use the negative id.
   - `403 Forbidden`: the bot was blocked, or you never sent `/start` to it.

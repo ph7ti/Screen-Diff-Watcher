@@ -140,11 +140,24 @@ Você deve receber uma mensagem com a imagem da ROI (com `attach_roi: true`); a 
 estratégia, o score e a severidade que dispararam o alerta. Código de saída `0` significa que a
 cadeia disparou; `1` significa que nada disparou (veja abaixo).
 
+### Validação automatizada (opt-in)
+
+```powershell
+$env:TEST_REAL_TELEGRAM="1"; python -m pytest -m integration -k from_app_config
+```
+
+Lê o **config ativo** (app-data), valida o token com `getMe` e envia uma foto sintética ao chat
+configurado. Em falha, reporta a descrição do próprio Telegram (ex.:
+`HTTP 400: Bad Request: chat not found`) e também detecta o erro clássico de usar o ID do próprio
+bot como `chat_id`.
+
 ## Solução de problemas
 
 - **`variable TELEGRAM_BOT_TOKEN missing, Telegram disabled` (aviso)** — o processo não viu a
   variável de ambiente. Defina-a e abra um terminal novo / reinicie o app.
-- **`notifier telegram failed: ...` (erro)** — a chamada HTTP falhou. Causas mais comuns:
+- **`notifier telegram failed: HTTP 400/403: ...` (erro)** — a chamada HTTP falhou. A mensagem
+  mostra a descrição do próprio Telegram (ex.: `chat not found`, `the bot can't send messages to
+  the bot`) e nunca inclui o token. Causas mais comuns:
   - `401 Unauthorized`: token errado (ou revogado).
   - `400 Bad Request` / `chat not found`: `chat_id` errado; em grupos use o id negativo.
   - `403 Forbidden`: bot bloqueado, ou você nunca enviou `/start` a ele.

@@ -936,6 +936,9 @@ class Notifier(Protocol):
 - Serializes `rgb` → PNG in memory (`PIL.Image.fromarray(...).save(buf, format="PNG")`).
 - Short timeout (**5 s**) so as not to block the loop; token read from `bot_token_env`
   (`TELEGRAM_BOT_TOKEN` by default) — **never** in the YAML.
+- **Sanitized errors**: HTTP failures become `TelegramAPIError` with Telegram's description
+  (e.g. `chat not found`), without URL/token — `httpx` would include the token (which lives in
+  the URL) in the error message, leaking it into the chain log.
 
 **Log (`log.py`)**:
 - `JsonlNotifier`: one JSON line per firing in `app-data/logs/alerts.jsonl` (or the path

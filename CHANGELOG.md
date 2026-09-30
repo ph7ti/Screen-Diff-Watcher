@@ -25,6 +25,13 @@ versionamento semântico. Versão: `screen_watch.__version__` (fonte única).
 - `seed: null` deixou de ser gravado no `config.yaml` gerado por `init-config` (o campo
   `seed` continua aceito no YAML).
 
+### Corrigido
+
+- **Telegram**: falhas de envio não expõem mais o token no log — o erro agora traz a descrição do
+  Telegram (ex.: `HTTP 400: Bad Request: chat not found`) sem a URL; novo teste de integração
+  opt-in (`TEST_REAL_TELEGRAM=1`) valida o config real (token via `getMe`, `chat_id` e envio) e
+  detecta o caso clássico de `chat_id` igual ao ID do bot.
+
 ### Mudado
 
 - Refatoração interna sem mudança de comportamento: remoção de código morto, deduplicação dos
