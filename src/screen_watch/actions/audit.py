@@ -10,18 +10,14 @@ import logging
 import time
 from pathlib import Path
 
+from screen_watch.platform.paths import actions_log_path
+
 log = logging.getLogger(__name__)
-
-
-def default_actions_path() -> Path:
-    from screen_watch.platform.paths import logs_dir  # noqa: PLC0415
-
-    return logs_dir() / "actions.jsonl"
 
 
 class ActionAudit:
     def __init__(self, path: str | Path | None = None) -> None:
-        self.path = Path(path) if path else default_actions_path()
+        self.path = Path(path) if path else actions_log_path()
 
     def record(self, payload: dict) -> None:
         record = {"ts": time.time(), **payload}

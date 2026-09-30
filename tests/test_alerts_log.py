@@ -44,6 +44,6 @@ def test_appends_multiple_lines(make_frame, tmp_path):
 
 def test_default_path_uses_app_data(monkeypatch, tmp_path):
     monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
-    from screen_watch.alerts.log import default_log_path
+    from screen_watch.platform.paths import alerts_log_path
 
-    assert default_log_path() == tmp_path / "logs" / "alerts.jsonl"
+    assert alerts_log_path() == tmp_path / "logs" / "alerts.jsonl"

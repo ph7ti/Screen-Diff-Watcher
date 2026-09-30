@@ -13,14 +13,9 @@ from pathlib import Path
 
 from screen_watch.capture.frame import Frame
 from screen_watch.compare.protocol import ComparisonResult
+from screen_watch.platform.paths import alerts_log_path
 
 log = logging.getLogger(__name__)
-
-
-def default_log_path() -> Path:
-    from screen_watch.platform.paths import logs_dir  # noqa: PLC0415
-
-    return logs_dir() / "alerts.jsonl"
 
 
 class JsonlNotifier:
@@ -34,7 +29,7 @@ class JsonlNotifier:
         severity_min: int = 1,
         cooldown_s: float = 0.0,
     ) -> None:
-        self.path = Path(path) if path else default_log_path()
+        self.path = Path(path) if path else alerts_log_path()
         self.enabled = bool(enabled)
         self.severity_min = int(severity_min)
         self.cooldown_s = float(cooldown_s)

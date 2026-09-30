@@ -367,10 +367,11 @@ def _capture_frame(target, sequence: int):
 
 def _cmd_test_alert(args: argparse.Namespace) -> int:
     from screen_watch.alerts.chain import DispatchOutcome
-    from screen_watch.alerts.log import JsonlNotifier, default_log_path
+    from screen_watch.alerts.log import JsonlNotifier
     from screen_watch.app import build_alert_chain
     from screen_watch.compare.protocol import ComparisonResult
     from screen_watch.config.loader import ConfigError
+    from screen_watch.platform.paths import alerts_log_path
 
     try:
         target = _resolve_run_target(args)
@@ -397,7 +398,7 @@ def _cmd_test_alert(args: argparse.Namespace) -> int:
     )
     chain = build_alert_chain(target.alerts)
     outcome = chain.dispatch(result, frame)
-    log_path = default_log_path()
+    log_path = alerts_log_path()
     # So grava a linha extra se a config nao tiver um notificador `log` (evita duplicar).
     if not any(alert.type == "log" for alert in target.alerts):
         JsonlNotifier(path=log_path).notify(result, frame)

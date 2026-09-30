@@ -94,6 +94,16 @@ def logs_dir() -> Path:
     return app_home() / LOGS_DIRNAME
 
 
+def alerts_log_path() -> Path:
+    """Caminho padrao do log de alertas (JSONL) em app-data/logs/."""
+    return logs_dir() / "alerts.jsonl"
+
+
+def actions_log_path() -> Path:
+    """Caminho padrao da auditoria de acoes (JSONL) em app-data/logs/."""
+    return logs_dir() / "actions.jsonl"
+
+
 def state_path() -> Path:
     """Estado leve de runtime persistido entre sessoes (doc, secao 12.4)."""
     return app_home() / STATE_FILENAME

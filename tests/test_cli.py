@@ -131,7 +131,6 @@ def test_resolve_run_target_from_selection_uses_defaults(monkeypatch, tmp_path):
     _write_selection(selection_path)
     args = argparse.Namespace(
         selection=str(selection_path),
-        target=None,
         config=str(tmp_path / "absent.yaml"),
         profile=None,
     )
@@ -164,7 +163,7 @@ def test_resolve_run_target_uses_legacy_yaml_profile(monkeypatch, tmp_path):
     _write_selection(selection_path)
 
     args = argparse.Namespace(
-        selection=str(selection_path), target=None, config=str(config_path), profile=None
+        selection=str(selection_path), config=str(config_path), profile=None
     )
     target = cli._resolve_run_target(args)
 
@@ -192,7 +191,7 @@ def test_resolve_run_target_uses_v2_profile(monkeypatch, tmp_path):
     _write_selection(selection_path)
 
     args = argparse.Namespace(
-        selection=str(selection_path), target=None, config=str(config_path), profile=None
+        selection=str(selection_path), config=str(config_path), profile=None
     )
     target = cli._resolve_run_target(args)
 
@@ -340,7 +339,6 @@ def test_compare_modes_rejects_invalid_mode(monkeypatch, tmp_path, capsys):
     _write_selection(selection_path)
     args = argparse.Namespace(
         selection=str(selection_path),
-        target=None,
         config=str(tmp_path / "absent.yaml"),
         profile=None,
         modes="turbo",
@@ -364,7 +362,6 @@ def test_compare_modes_runs_with_mocked_capture(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(cli, "_capture_target_roi", _fake_capture)
     args = argparse.Namespace(
         selection=str(selection_path),
-        target=None,
         config=str(tmp_path / "absent.yaml"),
         profile=None,
         modes="light",
@@ -394,7 +391,7 @@ def test_test_alert_runs_with_mocked_capture(monkeypatch, tmp_path):
     monkeypatch.setattr(cli, "_capture_target_roi", _fake_capture)
 
     args = argparse.Namespace(
-        config=str(config_path), selection="demo", target=None, profile=None
+        config=str(config_path), selection="demo", profile=None
     )
 
     assert cli._cmd_test_alert(args) == 0
@@ -425,7 +422,7 @@ def test_resolve_run_target_carries_schedule(monkeypatch, tmp_path):
     selection_path = tmp_path / "demo.json"
     _write_selection(selection_path)
     args = argparse.Namespace(
-        selection=str(selection_path), target=None, config=str(config_path), profile=None
+        selection=str(selection_path), config=str(config_path), profile=None
     )
     target = cli._resolve_run_target(args)
     assert target.schedule.enabled is True
@@ -439,7 +436,7 @@ def test_resolve_run_target_invalid_profile_is_config_error(monkeypatch, tmp_pat
     selection_path = tmp_path / "demo.json"
     _write_selection(selection_path)
     args = argparse.Namespace(
-        selection=str(selection_path), target=None, config=str(config_path), profile="nao_existe"
+        selection=str(selection_path), config=str(config_path), profile="nao_existe"
     )
     with pytest.raises(ConfigError) as excinfo:
         cli._resolve_run_target(args)
@@ -453,7 +450,7 @@ def test_test_alert_invalid_profile_reports_error(monkeypatch, tmp_path, capsys)
     selection_path = tmp_path / "demo.json"
     _write_selection(selection_path)
     args = argparse.Namespace(
-        config=str(config_path), selection=str(selection_path), target=None, profile="nao_existe"
+        config=str(config_path), selection=str(selection_path), profile="nao_existe"
     )
     assert cli._cmd_test_alert(args) == 1
     assert "unknown profile" in capsys.readouterr().out
@@ -521,7 +518,7 @@ def test_run_starts_and_stops_loop(monkeypatch, tmp_path):
     monkeypatch.setattr("screen_watch.app.build_loop", lambda target, session, **kw: FakeLoop())
 
     args = argparse.Namespace(
-        selection="demo", target=None, config=str(tmp_path / "absent.yaml"), profile=None
+        selection="demo", config=str(tmp_path / "absent.yaml"), profile=None
     )
     assert cli._cmd_run(args) == 0
 
@@ -553,7 +550,6 @@ def test_test_action_dry_run(monkeypatch, tmp_path, capsys):
     args = argparse.Namespace(
         config=str(config_path),
         selection="demo",
-        target=None,
         profile=None,
         armed=False,
         dry_run=True,
@@ -589,7 +585,6 @@ def test_test_action_armed_executes(monkeypatch, tmp_path, capsys):
     args = argparse.Namespace(
         config=str(config_path),
         selection="demo",
-        target=None,
         profile=None,
         armed=True,
         dry_run=False,
@@ -618,7 +613,7 @@ def test_test_evidence_writes(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(
         "screen_watch.app.evidence_recorder", lambda config, force_enabled=False: FakeRecorder()
     )
-    args = argparse.Namespace(config=str(config_path), selection="demo", target=None, profile=None)
+    args = argparse.Namespace(config=str(config_path), selection="demo", profile=None)
     assert cli._cmd_test_evidence(args) == 0
     out = capsys.readouterr().out
     assert "baseline" in out and "change" in out
@@ -638,7 +633,7 @@ def test_record_actions_writes_snippet(monkeypatch, tmp_path):
         "screen_watch.actions.recorder.record_interactively", lambda **kw: FakeRecorder()
     )
     out_path = tmp_path / "snippet.yaml"
-    args = argparse.Namespace(selection="demo", target=None, name="teste", out=str(out_path))
+    args = argparse.Namespace(selection="demo", name="teste", out=str(out_path))
     assert cli._cmd_record_actions(args) == 0
     assert "name: teste" in out_path.read_text(encoding="utf-8")
 
@@ -670,7 +665,6 @@ def test_resolve_run_target_applies_actions_flag(monkeypatch, tmp_path):
     selection_path = _actions_selection(tmp_path)
     args = argparse.Namespace(
         selection=str(selection_path),
-        target=None,
         config=str(tmp_path / "absent.yaml"),
         profile=None,
         actions="b",
@@ -686,7 +680,6 @@ def test_resolve_run_target_actions_none(monkeypatch, tmp_path):
     selection_path = _actions_selection(tmp_path)
     args = argparse.Namespace(
         selection=str(selection_path),
-        target=None,
         config=str(tmp_path / "absent.yaml"),
         profile=None,
         actions="none",
@@ -703,7 +696,6 @@ def test_resolve_run_target_uses_saved_action_selection(monkeypatch, tmp_path):
     save_action_selection("demo", ["a"])
     args = argparse.Namespace(
         selection=str(selection_path),
-        target=None,
         config=str(tmp_path / "absent.yaml"),
         profile=None,
         actions=None,
@@ -723,7 +715,7 @@ def test_list_actions_prints_marks(monkeypatch, tmp_path, capsys):
     save_action_selection("demo", ["b"])
 
     args = argparse.Namespace(
-        config=str(tmp_path / "absent.yaml"), selection="demo", target=None, profile=None
+        config=str(tmp_path / "absent.yaml"), selection="demo", profile=None
     )
     assert cli._cmd_list_actions(args) == 0
 
@@ -747,7 +739,7 @@ def test_list_actions_reads_overrides_even_with_v1_config(monkeypatch, tmp_path,
     )
 
     args = argparse.Namespace(
-        config=str(config_path), selection="demo", target=None, profile=None
+        config=str(config_path), selection="demo", profile=None
     )
     assert cli._cmd_list_actions(args) == 0
     assert "[x] nova" in capsys.readouterr().out
@@ -759,7 +751,7 @@ def test_list_actions_without_actions(monkeypatch, tmp_path, capsys):
     _write_selection(tmp_path / "selections" / "demo.json")
 
     args = argparse.Namespace(
-        config=str(tmp_path / "absent.yaml"), selection="demo", target=None, profile=None
+        config=str(tmp_path / "absent.yaml"), selection="demo", profile=None
     )
     assert cli._cmd_list_actions(args) == 0
     assert "has no actions" in capsys.readouterr().out
@@ -796,7 +788,6 @@ def test_test_action_armed_cancelled_countdown(monkeypatch, tmp_path, capsys):
     args = argparse.Namespace(
         config=str(config_path),
         selection="demo",
-        target=None,
         profile=None,
         armed=True,
         dry_run=False,
@@ -826,7 +817,7 @@ def test_record_actions_auto_start_passes_before_start(monkeypatch, tmp_path):
 
     monkeypatch.setattr("screen_watch.actions.recorder.record_interactively", fake_record)
     args = argparse.Namespace(
-        selection="demo", target=None, name="teste", out=None, no_countdown=False
+        selection="demo", name="teste", out=None, no_countdown=False
     )
 
     assert cli._cmd_record_actions(args) == 0
@@ -852,7 +843,7 @@ def test_record_actions_no_countdown_keeps_f9(monkeypatch, tmp_path):
 
     monkeypatch.setattr("screen_watch.actions.recorder.record_interactively", fake_record)
     args = argparse.Namespace(
-        selection="demo", target=None, name="teste", out=None, no_countdown=True
+        selection="demo", name="teste", out=None, no_countdown=True
     )
 
     assert cli._cmd_record_actions(args) == 0
@@ -871,6 +862,6 @@ def test_record_actions_without_input_reports_error(monkeypatch, tmp_path, capsy
         raise InputUnavailable("sem pynput")
 
     monkeypatch.setattr("screen_watch.actions.recorder.record_interactively", boom)
-    args = argparse.Namespace(selection="demo", target=None, name=None, out=None)
+    args = argparse.Namespace(selection="demo", name=None, out=None)
     assert cli._cmd_record_actions(args) == 1
     assert "sem pynput" in capsys.readouterr().out
