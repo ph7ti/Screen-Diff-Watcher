@@ -29,6 +29,12 @@ versionamento semântico. Versão: `screen_watch.__version__` (fonte única).
 - Textos de CLI e `logging` reescritos em inglês; painel de log da GUI também é inglês.
 - `ArmingController.label()` passa a devolver inglês; a GUI traduz por `state`/`remaining_s`.
 
+### Notas
+
+- **Documentação**: `README.md` reorganizado para uso (o que faz e o que não faz, como funciona,
+  plataformas, quick start, pré-requisitos e build); os detalhes de uso e recursos foram para a
+  Wiki (`wiki/`) e o `doc/00` foi reciclado para o estado implementado (v0.3.0).
+
 ## [0.2.1] — 2026-09-30
 
 ### Adicionado

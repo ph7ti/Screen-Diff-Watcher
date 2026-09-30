@@ -1,621 +1,233 @@
 # Screen Diff Watcher
 
-Aplicativo desktop multiplataforma (Python) que monitora uma região retangular (ROI) de
-uma janela e alerta quando essa região sofre mudança visual.
+Vigia uma **região retangular (ROI) de uma janela** e avisa quando ela muda — som, popup,
+Telegram ou log — para você não precisar ficar olhando para a tela.
 
-Fonte única de verdade para o design: [`doc/00-Documento_de_Arquitetura_e_Especificação.md`](doc/00-Documento_de_Arquitetura_e_Especificação.md).
-Leia-o inteiro antes de alterar qualquer decisão registrada.
+Roda no **Windows e no Linux**, capturando apenas pixels (não toca no aplicativo vigiado).
 
-## Estado atual
+[Wiki — guia de uso](wiki/Home.md) ·
+[Arquitetura e especificação](doc/00-Documento_de_Arquitetura_e_Especificação.md) ·
+[Build e release](doc/01-Build_e_Release.md) ·
+[Changelog](CHANGELOG.md)
 
-Implementado:
+## O que ele faz
 
-- Fronteira de plataforma (`platform/`): DPI awareness, detecção de Wayland, wrapper `pywinctl`,
-  caminhos em app-data (`paths.py`), escala por monitor (`display.py`) e localização do Tesseract
-  (`tesseract.py`).
-- Camada de captura (`capture/`): `Frame`, protocolo de backend, backend `mss`, resolver
-  janela→ROI (Modelo B), máscaras.
-- Camada de comparação (`compare/`): `MeanColorStrategy`, `PerceptualHashStrategy`,
-  `OCRTextDiffStrategy`, `ComparePipeline` com curto-circuito. Modo padrão: **`advanced`**
-  (OCR puro); `default` = phash; `light` = cor média.
-- Camada de alertas (`alerts/`): som, popup, Telegram, log JSONL e `AlertChain` com cooldown;
-  `dispatch` devolve `DispatchOutcome`
-  (`FIRED`/`SUPPRESSED_COOLDOWN`/`BELOW_MIN`/`NONE_ENABLED`/`FAILED`) para o re-arm. O som passa
-  pela fronteira `platform/audio.py` (`winsound` no Windows; `paplay`/`aplay`/`ffplay` no Linux,
-  `afplay` no macOS) — `alerts/` nao conhece `sys.platform`.
-- Agendamento (`scheduler/loop.py`): `threading.Thread` + `Event.wait`. A janela de horário
-  (`scheduler/schedule.py::is_open`, função pura) suspende **apenas as ações** fora do horário.
-- Config (`config/`): schema v2 global (perfis `profiles`, `ui`, `schedule`, `evidence`) +
-  loader YAML com defaults `advanced`, `rearm: true`, `lang="por+eng"`, `upscale=2`, validação de
-  tipos com mensagem clara e gravação atômica com backup. O YAML v1 (`targets:`) ainda carrega por
-  uma versão, com aviso, e é convertido por `migrate-config`. Persistência (`persistence/`): JSON de
-  seleção v2 (com `overrides`) e `state.json` (`platform/paths.py`) para a última seleção/perfil.
-- Evidências (`evidence/`): `EvidenceRecorder` grava prints da janela inteira (baseline/change) em
-  `%TEMP%`, com retenção por contagem e por MB; desabilitado por padrão.
-- Ações pseudo-humanas (`actions/`): passos `activate`/`click`/`move`/`type`/`key`/`wait`,
-  ensaio (dry-run) por padrão, armado/temporizado (`ArmingController`), limites por minuto/sessão,
-  guarda de foco e auditoria em `logs/actions.jsonl`. Backend `pynput` no extra opcional `input`.
-- CLI (`__main__.py`): `init-config`, `validate-config` (`--selections`), `list-selections`,
-  `migrate-config` (`--dry-run`), `list-windows`, `show-paths`, `probe-dpi`, `select-manual`
-  (coordenadas), `select` (overlay), `test-alert`, `test-evidence`, `test-action`, `record-actions`,
-  `compare-modes` (calibração), `run`, `gui`, `features` (diagnóstico do ambiente),
-  `validate-i18n` (catálogos) e `--language` global. CLI e `logging` são **em inglês fixo**.
-- **Multi-idioma (i18n)**: catálogos JSON no pacote (`screen_watch/i18n/*.json`, `pt-BR`/`en-US`),
-  descoberta dinâmica, `ui.language`/`--language`/seletor na GUI e erros traduzidos por código
-  (`errors.py`). Detalhes na seção "Idiomas (i18n)".
-- Overlay de seleção (`gui/`): `overlay_geometry.py` (conversões lógico↔físico, sem Qt) e
-  `overlay.py` (PyQt6, uma janela por monitor).
-- GUI + tray (`gui/`): `main_window.py` no layout do `UI.txt` (Monitoramento/Seleções/Ações da
-  sessão/Log, modo/perfil/idioma, armar/desarmar ações, ajuda no hover de 2 s) e `tray.py`
-  (mostrar/ocultar, iniciar/parar, armar/desarmar, sair); eventos via fila + `QTimer`
-  (`gui/controller.py`). Editor de ações com reordenar/editar/duplicar passos (`gui/action_editor.py`
-  + `actions/steps.py`).
-- Escada: `scripts/step1_absolute_roi.py`, `scripts/step2_anchored_roi.py`,
-  `scripts/step3_selection_overlay.py`, `scripts/probe_dpi.py`.
-- Empacotamento (PyInstaller onedir) com dois executáveis (`screen-watch` console e
-  `screen-watch-gui` sem console) e instaladores nativos: **Inno Setup** (Windows) e **`.deb`**
-  (Linux). Build por `scripts/build_release.py`; release por tag em
-  `.github/workflows/release.yml`. Diagnóstico de ambiente pelo comando `features`.
+- **Monitora uma ROI de uma janela**: você desenha o retângulo e o app captura só aquela área a
+  cada N segundos. A ROI é ancorada à janela — se ela se mover, a ROI acompanha (Modelo B, doc §3.3).
+- **Detecta mudanças visuais** em três modos: `light` (cor média), `default` (hash perceptivo) e
+  `advanced` (OCR + diff de texto; exige Tesseract).
+- **Alerta** por som, popup, Telegram e/ou log JSONL, com severidade mínima e cooldown por canal.
+- **Máscaras** para ignorar áreas que mudam sozinhas (relógio, spinner, cursor).
+- **Evidências**: prints do baseline e de cada mudança — opt-in.
+- **Ações pseudo-humanas** (clique, teclas, texto) quando armadas — ensaio por padrão e auditoria
+  em `logs/actions.jsonl`.
+- **GUI com tray + CLI completa**, com **perfis**, agendador (suspende ações fora do horário) e
+  atalhos globais.
+- **Multi-idioma**: GUI em pt-BR/en-US; o CLI e o log técnico são em inglês fixo.
 
-Ainda não implementado / validação manual pendente:
+## O que ele não faz
 
-- Validação manual da GUI/tray e do overlay em 100/125/150% (§6.3).
-- Ícone da janela/tray no bundle, `StartupWMClass` do `.desktop`, tamanho do pacote e o aviso do
-  SmartScreen (assinatura de código fora de escopo) — checar numa máquina/container limpos.
+- **Não grava tela nem vídeo** — só observa uma região e compara.
+- **Não é OCR de documentos**: o OCR serve apenas para perceber mudança de texto.
+- **Não captura janelas ocluídas**: a captura lê **pixels da tela**; se outra janela cobrir a ROI,
+  o conteúdo sobreposto entra na comparação. É limitação das APIs de captura, não um bug (doc §7.5).
+- **Não funciona em Wayland**: no Linux, rode em X11 — o app detecta e avisa.
+- **Não tem instalador para macOS nem para ARM** (o build é Windows x64 e Linux amd64).
+- **Não assina digitalmente os instaladores** — o SmartScreen vai avisar (assinatura fora de escopo).
+- **Não contorna DRM/anti-cheat** nem elevação (UAC).
+- **Não clica sozinho por padrão**: as ações exigem o extra `input` e precisam ser armadas.
 
-## Config, seleção e logs (app-data)
+## Como funciona (resumo)
 
-Tudo fica em `%APPDATA%\screen_watch` (`config.yaml`, `selections/`, `state.json`, `logs/`). Para
-apontar para outro diretório, defina `SCREEN_WATCH_HOME`.
+1. Você escolhe a **janela-alvo** e **desenha a ROI** (`select` no overlay, ou coordenadas no
+   `select-manual`).
+2. A cada `poll_interval_s`, o app captura a ROI. O **primeiro frame é o baseline** — não é mudança.
+3. Cada tick: captura → **máscaras** → **comparação** com o baseline no modo escolhido.
+4. Mudança confirmada → a **cadeia de alertas** dispara (severidade + cooldown) e, se as ações
+   estiverem armadas, a sequência configurada roda.
+5. Config e estado ficam em **app-data**: `config.yaml`, `selections/`, `state.json` e `logs/`.
 
-**Python da Microsoft Store (MSIX):** o Windows redireciona `%APPDATA%` para dentro do pacote, e
-o arquivo fica invisível para o Explorer/editor. Nesse caso o app passa a usar o caminho real
-(`...\AppData\Local\Packages\<pacote>\LocalCache\Roaming\screen_watch`). Rode
-`python -m screen_watch show-paths` para ver o caminho efetivo.
-
-O app regrava o YAML sem preservar comentários; a escrita é atômica (temp + `os.replace`)
-e deixa um backup `config.yaml.bak`.
-
-## Config global v2 (perfis, overrides e migração)
-
-O `config.yaml` v2 é **global**: define um perfil ativo (`profile`), um ou mais `profiles` nomeados
-(cada um com `defaults` + `alerts`), e as seções `ui`, `schedule` e `evidence`.
-
-```yaml
-version: 2
-profile: default
-profiles:
-  default:
-    defaults:
-      mode: advanced
-      poll_interval_s: 2.0
-      rearm: true
-      compare_options: { light: { threshold: 12.0 }, default: { hash_size: 8, threshold: 6 },
-                         advanced: { similarity_threshold: 0.92, psm: 6, lang: "por+eng",
-                                     upscale: 2, tesseract_cmd: null } }
-    alerts:
-      - { type: sound, enabled: true, severity_min: 1, cooldown_s: 30, file: "alert.wav" }
-  trabalho:
-    defaults: { mode: default, poll_interval_s: 1.0 }
-ui:
-  hotkeys: { arm: "<ctrl>+<alt>+a", disarm: "<ctrl>+<alt>+d", toggle: "<ctrl>+<alt>+<space>",
-             rearm: "<ctrl>+<alt>+r", abort: "<esc>" }
-  arm_durations_min: [1, 5, 15, 30]
-schedule: { enabled: false, days: [mon, tue, wed, thu, fri], windows: ["08:00-12:00"], timezone: local }
-evidence: { enabled: false, dir: null, keep_per_target: 50, max_total_mb: 200 }
+```text
+janela-alvo ──► ROI ──► captura ──► máscara ──► comparação (light/default/advanced)
+                                                      │ mudou?
+                                                      ▼
+                                    alertas (som/popup/Telegram/log) + ações (se armadas)
 ```
 
-Regras: segredos nunca no YAML (mantém `bot_token_env`); `profile` inexistente é erro de validação;
-`version` ausente com `targets:` é tratado como v1 legado (com aviso); `version` > 2 é erro.
+## Que problemas ele resolve
 
-Cada **seleção JSON** pode trazer `overrides` (`mode`, `masks`, `poll_interval_s`, `rearm` e,
-adiante, `alerts`/`actions`) que **substituem** os valores do perfil para aquele alvo (não somam).
-Seleções `version: 1` continuam carregando sem overrides.
+- Acompanhar um **painel/indicador** (ERP, dashboard, tela de status) sem ficar de olho nele.
+- Saber que **algo mudou** (fila, pedido, senha de atendimento, saldo, estado de job) mesmo quando
+  o sistema não oferece notificação.
+- Ser avisado quando um **texto** muda — modo `advanced`.
+- Vigiar um **processo longo** (build, importação, robô) e reagir quando ele termina ou falha.
+- Responder a uma mudança com uma **ação simples** (clique/atalho/texto) — opt-in, tipo um mini-RPA.
 
-Migração de um YAML v1:
+## Plataformas atendidas
+
+| Plataforma | Como rodar | Status |
+|---|---|---|
+| **Windows (x64)** | instalador `.exe` (Inno Setup) ou código-fonte | suportado; o instalador baixa o Tesseract automaticamente (opcional) |
+| **Linux Debian/Ubuntu (amd64, X11)** | pacote `.deb` ou código-fonte | suportado; Wayland não é suportado na captura |
+| **macOS** | somente código-fonte | **não validado** e sem instalador (fora do escopo do build) |
+
+Detalhes por plataforma: [wiki/Instalacao.md](wiki/Instalacao.md).
+
+## Como utilizar (passo a passo)
+
+Se você instalou pelos binários, o comando é `screen-watch`; com o código-fonte, use
+`python -m screen_watch`.
 
 ```powershell
-python -m screen_watch migrate-config --dry-run   # imprime o plano
-python -m screen_watch migrate-config             # grava selections/*.json + config.yaml v2 (.bak)
-python -m screen_watch list-selections            # lista as seleções (marca a última usada)
+python -m screen_watch list-windows                           # 1. escolha a janela (veja o handle)
+python -m screen_watch select --handle 12345 --name painel    # 2. desenhe a ROI no overlay
+python -m screen_watch test-alert --selection painel          # 3. confira o alerta
+python -m screen_watch run --selection painel                 # 4. monitore
+python -m screen_watch gui                                    # ...ou use a GUI com tray
 ```
 
-`run`/`test-alert`/`compare-modes`/`gui` aceitam `--selection NOME` (resolvido em `selections/`) ou
-caminho e `--profile NOME`. Sem `--selection`, usa `state.json.last_selection`; se não houver,
-lista as disponíveis e sai com erro. `--target` ainda funciona como alias deprecado de `--selection`.
+O caminho mais curto é a GUI: **Novo Target (overlay)** → desenhe a ROI → **Iniciar**. A seleção
+fica salva em app-data (`selections/painel.json`) e pode ser reusada por `run`.
 
-## Requisitos
+**Referência rápida dos comandos** (detalhes em [wiki/Uso-CLI.md](wiki/Uso-CLI.md)):
 
-- Python 3.11+.
-- **Tesseract** instalado no sistema (não vem com `pytesseract`) com os traineddata `por` e
-  `eng`. Necessário apenas para o modo `advanced`. O executável é procurado no `PATH` e nos
-  diretórios de instalação comuns do sistema; para forçar um caminho, use
-  `compare_options.advanced.tesseract_cmd`. Sem o binário, o OCR falha com mensagem clara.
-- Som: `simpleaudio` não tem wheel confiável para Python 3.13; instale com
-  `pip install -e ".[sound]"` se o seu ambiente suportar (os instaladores **não** o incluem). Sem
-  ele, o Windows usa `winsound` (com `MessageBeep()` quando não há `alert.wav`) e o Linux/macOS usa
-  um player externo (`paplay`/`aplay`/`ffplay`, ou `afplay`). Sem player, o som fica silencioso
-  (o alerta nunca quebra). No `.deb`, `pulseaudio-utils`/`alsa-utils` vêm como `Recommends`.
-- Ações pseudo-humanas exigem `pynput` (`pip install -e ".[input]"`). Sem ele, as ações permanecem
-  em ensaio e as hotkeys globais ficam indisponíveis (tray-only).
-- O token do Telegram vem da variável de ambiente `TELEGRAM_BOT_TOKEN` (nunca do YAML).
+```powershell
+python -m screen_watch init-config            # cria o config.yaml v2 em app-data
+python -m screen_watch validate-config --selections
+python -m screen_watch list-windows           # handle/título/rect
+python -m screen_watch probe-dpi              # matriz de DPI (mss físico × Qt lógico)
+python -m screen_watch select --handle 12345 --name painel    # overlay: arrastar na tela
+python -m screen_watch select-manual --handle 12345 --roi 120 340 400 80 --name painel
+python -m screen_watch list-selections
+python -m screen_watch migrate-config --dry-run               # conv. YAML v1 -> v2
+python -m screen_watch test-alert --selection painel          # alerta sintético
+python -m screen_watch test-evidence --selection painel       # prints de exemplo
+python -m screen_watch test-action --selection painel         # ensaio das ações (--armed executa)
+python -m screen_watch list-actions --selection painel
+python -m screen_watch record-actions --selection painel --out snippet.yaml
+python -m screen_watch compare-modes --selection painel --delay 5   # calibração
+python -m screen_watch show-paths
+python -m screen_watch run --selection painel                 # monitorar
+python -m screen_watch gui                                    # GUI + tray
+python -m screen_watch features                               # diagnóstico do ambiente
+python -m screen_watch validate-i18n                          # valida os catálogos de idioma
+```
 
-## Escala de tela (DPI)
+As flags globais `--language TAG` (idioma da GUI) e `--verbose` vêm **antes** do subcomando, por
+exemplo: `python -m screen_watch --language en-US gui`.
 
-Com `set_dpi_awareness()` no início do processo (feito pelo CLI), `pywinctl` e `mss` ficam no
-**mesmo espaço físico** — medido em 15/15 janelas (`pywinctl == GetWindowRect`). Por isso o
-`resolver` usa o conversor identidade e **não há drift** no caminho de monitoramento, mesmo no
-monitor de 125%. O `device_pixel_ratio` do Qt (`1.25` no primário) é do espaço lógico do Qt.
+- Guia completo do CLI: [wiki/Uso-CLI.md](wiki/Uso-CLI.md)
+- Janela e tray: [wiki/GUI-e-Tray.md](wiki/GUI-e-Tray.md)
+- Configuração (perfis, overrides, migração): [wiki/Configuracao.md](wiki/Configuracao.md)
 
-O overlay, por outro lado, recebe o arrasto em coordenadas lógicas do Qt e converte para físico
-com `gui/overlay_geometry.to_physical` antes de gravar a seleção (doc §9.5).
+## Pré-requisitos
 
-Ao iniciar `run`, o app verifica cada monitor, marca os adequados (`OK`, 100%) e avisa se a janela
-do target estiver num monitor com escala. `probe-dpi` e `scripts/probe_dpi.py` mostram a matriz.
+**Para usar os instaladores (Windows/Linux):**
 
-## Instalação (código-fonte)
+- Nenhum para os modos `light`/`default`.
+- **Tesseract** no sistema (traineddata `por` + `eng`) para o modo `advanced` — no Windows o
+  instalador baixa sob demanda; no `.deb` ele já vem como dependência.
+- **Telegram** (opcional): token via variável de ambiente `TELEGRAM_BOT_TOKEN` (nunca no YAML).
+- **Ações e hotkeys globais** (opcional): extra `input` (`pynput`).
+- **Som** (opcional): `winsound` no Windows; no Linux, um player (`paplay`/`aplay`/`ffplay`).
+- **Linux**: sessão **X11** — Wayland não é suportado.
+
+**Para rodar do código-fonte:** Python **3.11+** e os extras conforme o uso:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1          # Linux/macOS: source .venv/bin/activate
+python -m pip install -e ".[dev]"     # núcleo + testes (ruff/pytest)
+python -m pip install -e ".[input]"   # opcional: ações/hotkeys (pynput)
+python -m pip install -e ".[sound]"   # opcional: som via simpleaudio
+```
+
+## Instalação
+
+### Opção 1 — binários (recomendado)
+
+Baixe em [GitHub Releases](https://github.com/ph7ti/Screen-Diff-Watcher/releases):
+
+- **Windows**: `screen-diff-watcher_<versão>_windows_x64_setup.exe` (Inno Setup, per-machine,
+  requer admin). Cria atalhos no menu Iniciar e, opcionalmente, na Área de Trabalho e o início
+  automático com o Windows. O SmartScreen vai avisar (`.exe` sem assinatura): use
+  "Mais informações" → "Executar assim mesmo"; o antivírus pode fazer o mesmo.
+- **Linux (Debian/Ubuntu amd64)**: `screen-watch_<versão>_amd64.deb`
+  (`sudo apt install ./screen-watch_<versão>_amd64.deb`). O pacote declara `tesseract-ocr` +
+  `tesseract-ocr-por` e as libs Qt6/X11.
+
+### Opção 2 — código-fonte
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -e ".[dev]"
+python -m screen_watch --help
 ```
 
-## Instalação por binários (Windows e Linux)
+Instalação detalhada (Tesseract automático, autostart no Linux, desinstalação, app-data,
+diagnóstico `features`): [wiki/Instalacao.md](wiki/Instalacao.md).
 
-Os instaladores são publicados no GitHub Releases (a partir da tag `v0.2.0`):
+## Build dos instaladores
 
-- **Windows** — `screen-diff-watcher_<versão>_windows_x64_setup.exe` (Inno Setup, per-machine,
-  requer admin). Cria atalho no Menu Iniciar e, opcionalmente (desmarcados), na Área de Trabalho e o
-  início automático com o Windows.
-- **Linux (Debian/Ubuntu amd64)** — `screen-watch_<versão>_amd64.deb`
-  (`sudo apt install ./screen-watch_<versão>_amd64.deb`). Requer X11 (Wayland não é suportado). O
-  `.deb` declara `tesseract-ocr` + `tesseract-ocr-por` e as libs Qt6/X11 como dependências.
-
-No Windows, o **SmartScreen** vai avisar porque o `.exe` não é assinado (assinatura fora de escopo):
-use "Mais informações" → "Executar assim mesmo". O mesmo pode valer para o antivírus.
-
-### Tesseract (OCR) automático
-
-No Windows, se o Tesseract não estiver instalado, o instalador baixa o release fixado do
-UB-Mannheim, **verifica o SHA256**, instala em silêncio e garante o `por.traineddata` (o pacote traz
-`eng`). Precisa de rede e admin; se o download/verificação falhar, o instalador **avisa e continua** —
-o app funciona em `light`/`default` e o `advanced` acusa a falta com a mensagem já existente.
-**Offline**: instale o Tesseract manualmente (https://github.com/UB-Mannheim/tesseract/wiki) com os
-traineddata `por` e `eng`; o instalador detecta o binário e não baixa nada.
-
-No Linux, `tesseract-ocr` + `tesseract-ocr-por` vêm como dependência do `.deb`. A desinstalação
-remove só o app e **preserva** o Tesseract e o app-data do usuário.
-
-### Início automático (Linux)
-
-O `.deb` não configura autostart. Para iniciar com a sessão, crie
-`~/.config/autostart/screen-diff-watcher.desktop`:
-
-```ini
-[Desktop Entry]
-Type=Application
-Exec=screen-diff-watcher-gui
-X-GNOME-Autostart-enabled=true
-```
-
-### Diagnóstico: `features`
-
-```powershell
-screen-watch features           # versão/origem, app-data, nº de seleções, Tesseract, entrada, som, tray, monitores
-screen-watch features --json    # saída JSON (usada no smoke do CI)
-```
-
-Degrada sem display (não quebra) e informa se o binário é `bundle` ou `source`.
-
-### Limitações dos instaladores
-
-- **Wayland**: a captura via `mss` não funciona; rode em X11. O app avisa e encerra.
-- **Tray no GNOME**: pode não aparecer sem extensão de tray; a janela continua funcional.
-- **Som no Linux**: depende de `paplay`/`aplay`/`ffplay`; sem player, fica silencioso.
-- **Arquitetura**: apenas `amd64`/`x86_64`. ARM fora de escopo.
-
-## Build dos instaladores (desenvolvimento)
-
-Guia completo (atualizar versão/pin do Tesseract, buildar, publicar e validar):
-[`doc/01-Build_e_Release.md`](doc/01-Build_e_Release.md).
+Os instaladores são gerados **no SO alvo** (sem cross-build) por `scripts/build_release.py`.
+Guia completo: [`doc/01-Build_e_Release.md`](doc/01-Build_e_Release.md).
 
 ```powershell
 python -m pip install -e ".[dev,build,input]"
-python scripts/build_release.py --windows   # no Windows (ISCC.exe do Inno Setup no PATH)
-python scripts/build_release.py --linux     # no Linux (dpkg-deb)
+python scripts/build_release.py --windows   # no Windows (requer Inno Setup 6 / ISCC.exe)
+python scripts/build_release.py --linux     # no Linux (requer dpkg-deb)
 ```
 
-O script roda **no SO alvo** (sem cross-build), lê a versão de `screen_watch.__version__` (fonte
-única; o `pyproject` usa versão dinâmica), roda o PyInstaller com `packaging/screen-watch.spec` e
-grava os artefatos + `build-info.json` em `dist/installers/`. O ícone `.ico` é versionado; para
-regenerá-lo, `python packaging/make_ico.py`.
+O script lê a versão de `screen_watch.__version__` (fonte única; o `pyproject.toml` é dinâmico),
+roda o PyInstaller e grava os artefatos + `build-info.json` em `dist/installers/`. Para publicar,
+crie a tag `vX.Y.Z` (igual à `__version__`) e faça push: o workflow
+`.github/workflows/release.yml` builda os dois instaladores, gera `SHA256SUMS.txt` e cria o
+GitHub Release. `workflow_dispatch` gera só os artefatos (sem release).
 
-Para publicar: crie a tag `vX.Y.Z` (igual a `__version__`) e faça push. O workflow
-`.github/workflows/release.yml` builda os dois instaladores, gera `SHA256SUMS.txt` e publica o
-GitHub Release; `workflow_dispatch` com `version` gera só os artefatos (sem release).
+## Estado atual
 
-## Uso
+**Implementado:** captura e ancoragem (Modelo B), modos de comparação (`light`/`default`/`advanced`)
+com pipeline e curto-circuito, alertas com cooldown/rearm, evidências, ações pseudo-humanas (com
+editor na GUI e gravador), agendador, perfis, CLI completa, GUI + tray com i18n (pt-BR/en-US),
+empacotamento (Inno Setup e `.deb`) e CI/release por tag.
+
+**Validação manual pendente:** GUI/tray/overlay em 100/125/150% (doc §5.1, §9.5) e detalhes do
+bundle em máquina limpa (ícone, `StartupWMClass`, tamanho do pacote, aviso do SmartScreen) —
+checklist em [`doc/01`](doc/01-Build_e_Release.md) §9.
+
+**Radar:** seleção totalmente via CLI, sem overlay, ainda não está definida — avaliar quando
+houver demanda.
+
+## Limitações conhecidas (resumo)
+
+- **Wayland** não captura; **janela ocluída** compara o que estiver na frente; **ARM** e **macOS**
+  não fazem parte do build.
+- **Tray no GNOME** pode não aparecer sem extensão de tray (a janela continua funcional).
+- **Som no Linux** depende de um player externo; sem ele, fica silencioso (o alerta nunca quebra).
+- Janela minimizada ou ausente emite `target_unavailable` e o loop segue tentando (nunca quebra).
+
+Lista completa, escala de tela (DPI) e notas de robustez:
+[wiki/DPI-e-Limitacoes.md](wiki/DPI-e-Limitacoes.md).
+
+## Desenvolvimento
 
 ```powershell
-python -m screen_watch init-config            # cria o YAML v2 em app-data
-python -m screen_watch validate-config --selections
-python -m screen_watch list-windows          # handle/titulo/rect
-python -m screen_watch probe-dpi             # monitores mss/Qt, escala e rect (matriz de DPI)
-python -m screen_watch select --handle 12345 --name painel      # overlay: arrastar na tela
-python -m screen_watch select-manual --handle 12345 --roi 120 340 400 80 --name painel
-python -m screen_watch list-selections
-python -m screen_watch migrate-config --dry-run
-python -m screen_watch test-alert --selection painel        # alerta sintetico com o ROI atual
-python -m screen_watch test-evidence --selection painel     # grava baseline+change de exemplo
-python -m screen_watch run --selection painel               # nome em selections/
-python -m screen_watch run --selection "%APPDATA%\screen_watch\selections\painel.json"
-python -m screen_watch run --profile trabalho --selection painel
-python -m screen_watch compare-modes --selection painel --delay 5   # calibracao (Etapa D)
-python -m screen_watch show-paths
-python -m screen_watch gui --profile default                # GUI minima + tray
-python -m screen_watch gui --language en-US                 # GUI em ingles (proximo start)
-python -m screen_watch features                             # diagnostico do ambiente
-python -m screen_watch validate-i18n                        # valida os catalogos de idioma
+ruff check .
+python -m pytest -q -m "not integration"
 ```
 
-O `select` abre o overlay (uma janela por monitor): arraste com o botão esquerdo; botão direito
-cancela. A seleção é gravada como JSON em app-data. Alternativa por coordenadas: `select-manual`.
-
-O `run --selection` monta o target a partir do JSON de seleção + perfil do YAML. Os `overrides` da
-seleção substituem os valores do perfil; sem YAML (ou com YAML v1), usa som + popup + log (Telegram
-exige `chat_id`, então não entra no default).
-
-## Máscara de regiões voláteis
-
-Máscaras são retângulos `[x, y, w, h]` **relativos à ROI**, pintados de preto antes da comparação
-(doc §8) — úteis para spinners/relógios que mudam sozinhos. O `MonitorLoop` aplica a máscara
-capturada de `TargetConfig.masks` antes de entregar o `Frame` ao detector. O overlay ainda não
-desenha máscaras (fora do MVP); por enquanto edite o campo `masks` no YAML ou no JSON de seleção.
-
-## Evidências (prints)
-
-Desabilitadas por padrão. Quando ligadas, o app grava prints da **janela inteira** (sem máscara) no
-baseline e a cada mudança detectada — em
-`%TEMP%\screen_watch\captures\<alvo>\<AAAAMMDD-HHMMSS-mmm>_<baseline|change>.png` (o `<alvo>` é o
-nome do arquivo de seleção).
-
-A forma mais simples de ligar é o checkbox **Gravar prints (evidências)** na janela: ele persiste em
-`state.json` (`evidence_enabled`) e vale **sem editar o YAML** — inclusive com config v1 (`targets:`).
-Se preferir pela config (v2), use a seção `evidence:` abaixo; o checkbox tem precedência sobre ela.
-
-```yaml
-evidence:
-  enabled: true
-  dir: null              # null = %TEMP%/screen_watch/captures
-  keep_per_target: 50    # mantém os N mais recentes por alvo
-  max_total_mb: 200      # teto total (todos os alvos)
-  on_baseline: true
-  on_change: true
-```
-
-Os prints ficam **só na sua máquina** (em `%TEMP%`, fora do repositório) e a retenção os poda após
-cada gravação. Duas formas de gerar prints na hora, sem esperar um evento real (ambas **sempre**
-gravam, mesmo com as evidências do loop desligadas):
-
-```powershell
-python -m screen_watch test-evidence --selection painel   # baseline+change, imprime caminhos
-python -m screen_watch test-action --selection painel --armed   # print da execucao da acao
-```
-
-O botão **Executar ação (3s)** da janela também grava um print ao executar.
-
-A janela tem o botão **Abrir pasta de prints**, que abre a pasta efetiva (`evidence.dir` quando
-configurado, senão `%TEMP%/screen_watch/captures`) no gerenciador de arquivos — criando-a se ainda
-não existir; **se os prints do loop estiverem desligados ele avisa no log**. O mesmo caminho aparece
-em `python -m screen_watch show-paths` (linha `capturas:`, com nota quando há override). Abrir
-pasta/arquivo passa sempre por `platform/shell.py::open_path` (`os.startfile` no Windows,
-`open`/`xdg-open` nos demais); se não houver associação/utilitário, a GUI apenas registra
-"abra manualmente: <caminho>".
-
-Falhas ao gravar (permissão, disco, janela fora da tela) apenas geram `log.warning`; o
-monitoramento continua.
-
-## Ações pseudo-humanas (opt-in)
-
-As ações são **opt-in e desarmadas por padrão**: em modo ensaio o app só registra o que faria (e
-grava evidências), sem clicar. A execução real exige armar via tray, hotkey ou "armar por N min".
-`Esc` aborta na hora. O backend de entrada (`pynput`) é um extra opcional:
-
-```powershell
-python -m pip install -e ".[input]"
-```
-
-```yaml
-profiles:
-  default:
-    actions:
-      - name: reprocessar
-        enabled: true
-        severity_min: 1
-        cooldown_s: 30
-        when:
-          changed: true
-          text_any: ["erro", "falha"]   # exige mode: advanced (OCR)
-        settle_s: 1.5
-        rebaseline: false               # default: baseline permanece apos a acao
-        max_per_min: 6
-        max_per_session: 100
-        steps:
-          - activate: true              # obrigatorio quando houver cliques
-          - click: { x: 380, y: 40, ref: roi, button: left, clicks: 1 }
-          - wait:  { ms: 400 }
-          - key:   { keys: "ctrl+s" }
-          - type:  { text: "abc", interval_ms: 60 }
-ui:
-  hotkeys: { arm: "<ctrl>+<alt>+a", disarm: "<ctrl>+<alt>+d", toggle: "<ctrl>+<alt>+<space>",
-             rearm: "<ctrl>+<alt>+r", abort: "<esc>" }
-  arm_durations_min: [1, 5, 15, 30]
-```
-
-`ref` é relativo à ROI (`roi`), à janela (`window`) ou absoluto na tela (`screen`). O passo `click`
-exige um `activate` antes: o app foca a janela e confere `isActive`. No Windows o `SetForegroundWindow`
-é assíncrono/bloqueado (foreground lock), então o foco é reconferido por ~0,5 s antes de abortar; o
-motivo no log diferencia `activate recusado` de `foco não confirmou`. Como a execução é síncrona na
-thread do loop, captura/comparação pausam durante a sequência. Um gatilho barrado por `cooldown_s`
-aparece no log ao vivo como `skipped -> cooldown` (sem gravar no JSONL).
-
-Arme/desarme por: itens do tray ("Armar ações"/"Desarmar ações"/"Armar por N min"), botão
-**Re-armar** na janela (re-arma o baseline na hora), botão **Executar ação (3s)** (roda uma vez, com
-contagem, fora do loop), ou hotkeys globais (quando o extra `input` está instalado; sem ele a GUI
-avisa e fica tray-only).
-
-Para testar sem esperar um evento real:
-
-```powershell
-python -m screen_watch test-action --selection painel            # ensaio (default)
-python -m screen_watch test-action --selection painel --armed    # executa de verdade (com contagem de 3s)
-python -m screen_watch test-action --selection painel --armed --no-countdown   # sem contagem
-```
-
-Em `--armed`, uma contagem de 3s aparece no topo da tela (overlay Qt **sem roubar foco**) para você
-focar a janela-alvo; um clique no overlay cancela. `--no-countdown` pula a contagem (útil em
-automação). O disparo automático por mudança no `run` **não** tem contagem (ele roda no loop). A
-janela tem o botão equivalente **Executar ação (3s)**, que usa o subconjunto de ações marcado no
-checklist e também respeita a contagem.
-
-Cada gatilho (ensaio, execução, suspensão) vira uma linha em `logs/actions.jsonl` com passos,
-resultado, duração, motivo e os caminhos das evidências.
-
-### Criar ações pela janela
-
-A janela tem os botões **Nova ação…**, **Editar…** e **Remover Ação** na coluna de botões ao lado do
-checklist. **Nova ação…** abre um formulário com nome, `enabled`, `severity_min` (gatilho),
-`cooldown_s`, `settle_s`, `rebaseline` e uma lista de passos (`activate`, `click`, `move`, `key`,
-`type`, `wait`); cada passo é adicionado com os campos do seu tipo (`x`/`y`/`ref`/`botão`/`cliques`,
-teclas, texto, `ms`). Ao confirmar, o app valida com o **mesmo parser do YAML** (`parse_actions`):
-cliques exigem um passo `activate` antes e filtros de texto exigem `mode: advanced`; erros aparecem
-num diálogo traduzido.
-
-A ordem dos passos importa e é editável: use **Subir**/**Descer**, arraste e solte um passo na lista,
-**Editar passo** (carrega o passo no formulário; o botão vira **Salvar alteração** com **Cancelar**)
-ou **Duplicar passo** para criar uma cópia logo abaixo. Excluir um passo é **Remover passo**.
-
-Para não adivinhar o `x`/`y`, há o botão **Localizar posição do mouse...** (nos passos `click`/`move`):
-aparece uma caixa seguindo o cursor com os valores já no `ref` escolhido (mais o absoluto); mova o
-mouse até o ponto e pressione **Enter** para preencher `x`/`y` (**Esc** ou clique direito cancela).
-A conversão usa a mesma base do disparo: `roi` = ROI monitorada, `window` = janela-alvo, `screen` =
-tela; se a janela/ROI não estiver disponível no momento, cai para `screen` e avisa.
-
-As ações criadas pela janela são gravadas em `overrides.actions` do **JSON da seleção**
-(`app-data/selections/<nome>.json`), então funcionam **mesmo com um `config.yaml` v1** (`targets:`) —
-não é preciso migrar. Cada seleção tem o seu conjunto; a seleção atual continua podendo herdar ações do
-perfil (v2) quando não há override. Ações que vêm do perfil/YAML aparecem no checklist, mas os botões
-de editar/remover avisam que devem ser alteradas no YAML (os botões operam só sobre as ações da
-própria seleção).
-
-Depois de criar, use **Executar ação** para ensaiar a ação marcada, ou
-`python -m screen_watch list-actions --selection <nome>` para conferir sem iniciar a sessão.
-
-### Seleção de ações por sessão e log ao vivo
-
-Abaixo da lista de seleções, o checklist **"Ações da sessão (aplicam no próximo start)"** mostra
-todas as ações resolvidas da seleção/perfil atuais, com um contador "N de M selecionadas" e um
-resumo (`[x]`/`[ ]`) no log. A escolha é **por nome de seleção** e persiste em
-`state.json["action_selection"][seleção]`:
-
-- **sem escolha salva** → todas as ações habilitadas rodam;
-- **lista vazia** (tudo desmarcado) → nenhuma roda: a sessão **só monitora** (os alertas continuam).
-
-Trocar o subconjunto vale **no próximo start** (mesma regra de perfil/modo); a sessão em execução
-não muda. No CLI, `--actions` sobrepõe o subconjunto salvo **sem persistir**:
-
-```powershell
-python -m screen_watch run --selection painel --actions reprocessar,confirmar   # lista a,b
-python -m screen_watch run --selection painel --actions none                    # so monitora
-python -m screen_watch list-actions --selection painel                          # confere sem iniciar
-```
-
-`run` imprime o resumo das ações escolhidas e, durante a execução, uma linha por gatilho no
-console (`[action] rehearsal|armed <nome> -> ok|failed (motivo)|rehearsal`). Na GUI, o mesmo evento
-aparece no log. A auditoria em `logs/actions.jsonl` continua sendo a fonte de verdade; a linha ao
-vivo é efêmera e respeita o `cooldown_s`.
-
-> O CLI, o painel de log da GUI e o `logging` de diagnóstico são **em inglês fixo**; apenas a GUI
-> (rótulos, diálogos e resumo exibido) passa pelo catálogo de idiomas.
-
-## Perfis e agendador
-
-Com mais de um perfil no YAML, a janela mostra um seletor **Perfil** (e o tray, um submenu
-equivalente). A troca vale **no próximo start** — o loop ativo não muda; a UI e o `state.json`
-registram o perfil escolhido. No CLI, use `--profile NOME` em `run`/`test-alert`/`test-action`/
-`compare-modes`/`gui`.
-
-```yaml
-schedule:
-  enabled: true
-  days: [mon, tue, wed, thu, fri]
-  windows: ["08:00-12:00", "13:30-18:00"]   # janelas que cruzam a meia-noite sao aceitas
-  timezone: local
-```
-
-Fora da janela de horário o monitoramento e os alertas seguem normais, mas as **ações** ficam
-suspensas (registrado como `suspended_schedule` na auditoria; o tooltip do status mostra "fora do
-horário (ações suspensas)").
-
-## Gravador de ações
-
-Com o extra `input`, `record-actions` escuta cliques e teclas e gera um snippet pronto para colar
-em `actions:`:
-
-```powershell
-python -m screen_watch record-actions --selection painel --out snippet.yaml
-```
-
-Fluxo padrão: contagem de 3s (mesmo overlay sem foco) → a gravação começa automaticamente → `F10`
-encerra. Use `--no-countdown` para voltar ao `F9` manual (tempo para se preparar sem o overlay). O
-clique no overlay cancela a contagem. Os cliques são convertidos de coordenadas absolutas para
-`ref: roi`/`window` (ou `screen` se caírem fora da janela) e o snippet já inclui um passo `activate`
-e o bloco `when` comentado, para você revisar antes de armar.
-
-A contagem é chamada na **thread principal**, antes de criar os listeners do `pynput` (nunca dentro
-do callback). Sem Qt/display (headless/Wayland), a contagem cai para o console (`3... 2... 1...`) e
-segue. Ressalva: em Wayland a captura/entrada continuam limitadas (doc §14.1); a elevação (UAC) não
-é contornada.
-
-## Calibração (Etapa D)
-
-`compare-modes` captura o ROI, espera `--delay` segundos (altere o painel nesse intervalo) e mede
-`changed`/`score`/`threshold`/`severity` e o tempo de `compare` de cada modo (`--modes`,
-`--repeat`). Para o `advanced`, imprime também os textos reconhecidos pelo OCR. Use isso para
-ajustar `similarity_threshold`, `upscale`, `psm` e o `severity_min` dos alertas; registre cada
-ajuste com contexto (doc §18.8).
-
-`rearm: true` (default) torna o alerta edge-triggered: uma mudança sustentada alarma uma vez,
-uma nova mudança realarma, e uma mudança durante o cooldown fica pendente e alarma ao expirar.
-Se um alerta falhar (ex.: Telegram fora do ar), ele é re-tentado respeitando o `cooldown_s`
-(backoff), sem martelar a cada tick.
-
-## Radar (futuras implementações)
-
-- **Seleção via CLI**: o `select-manual` cobre o uso por linha de comando; um fluxo de seleção
-  totalmente CLI (sem overlay) ainda não está definido — avaliar viabilidade quando houver
-  demanda.
-
-## Idiomas (i18n)
-
-A GUI é traduzível por catálogos **JSON dentro do pacote** (`screen_watch/i18n/*.json`); o CLI e o
-log de diagnóstico permanecem **em inglês fixo**. Idioma inicial: **`pt-BR`** e **`en-US`**.
-Parâmetros de configuração (`ui`) ficam em §12 do doc.
-
-**Descoberta dinâmica.** Qualquer arquivo `screen_watch/i18n/xx-YY.json` válido passa a aparecer no
-seletor da janela e em `--language`, sem mudar código. O `_meta` precisa trazer `code` igual ao nome
-do arquivo, um `name` nativo (exibido no combo) e `fallback: "pt-BR"`. As chaves do novo idioma devem
-cobrir o mesmo conjunto do `pt-BR` (o `en-US` serve de referência).
-
-**Escolha do idioma** (precedência): `--language TAG` > `state.json["language"]` (preferência salva
-pelo seletor da GUI) > `ui.language` do YAML > `auto` (locale do SO). `auto` usa `QLocale.system()`
-com fallback para `locale`/`LANG`; casamento exato (ex.: `pt-BR`) → mesmo idioma (`pt` → `pt-BR`) →
-`pt-BR`. A troca vale **no próximo start** (sem retradução ao vivo).
-
-```powershell
-python -m screen_watch --language en-US gui        # abre a GUI em inglês
-python -m screen_watch validate-i18n               # valida chaves, error.* , help.* e _meta
-```
-
-No YAML v2:
-
-```yaml
-ui:
-  language: auto        # auto | pt-BR | en-US | qualquer tag descoberta
-```
-
-Erros da aplicação têm **códigos estáveis** (`errors.py::ERROR_CODES`): a GUI exibe a mensagem
-traduzida (`error.<código>`) pelo catálogo e o CLI/log mostram o texto em inglês. O CI roda
-`validate-i18n` além de `ruff`/`pytest`.
-
-## GUI e tray
-
-`python -m screen_watch gui` abre a janela (layout do mockup `UI.txt`): à esquerda a coluna
-**Monitoramento** (`Iniciar`/`Parar`/`Re-armar`/`Minimizar para o tray`, seletores de **Modo**,
-**Perfil** e **Idioma**, e os controles de arming **Armar ações**/**Desarmar**/**Armar por…** com o
-estado visível); à direita o grupo **Seleções** (lista de `app-data/selections/*.json` e legenda da
-ROI). Abaixo, a linha **Novo Target**/**Remover**/**Recarregar**/**Abrir YAML**/**Prints** + checkbox
-**Gravar prints (evidências)** e o grupo **Ações da sessão (aplicam no próximo start)** com o
-checklist e a coluna de botões (`Nova ação…`, `Editar…`, `Remover Ação`, `Armar Ação`, `Executar
-ação`). Status/último resultado e o **Log** ficam no rodapé, num `QSplitter`. Duplo clique na lista
-inicia/para.
-
-**Armar/desarmar pela janela**: as ações rodam em **ensaio** por padrão (só registram). Armar
-executa de verdade; **Armar por…** limita por tempo e desarma sozinho. Os botões só ficam ativos com
-uma sessão em execução (o arming é por sessão).
-
-**Ajuda no hover**: passar o mouse por ~2 s sobre qualquer controle mostra um tooltip com **propósito
-e exemplo** (texto do catálogo, `help.<chave>.*`).
-
-**Prints**: o botão `Executar ação` sempre grava um print; o checkbox controla os prints do
-monitoramento. O tray oferece mostrar/ocultar, minimizar, iniciar/parar, armar/desarmar e sair.
-
-Cada item da lista mostra o **nome do aplicativo**, a **região monitorada** e o **modo** — por
-exemplo `Seleção WhatsApp — Região 120,340 400x80 — advanced`. Há um **seletor de modo**
-(`light`/`default`/`advanced`) que vale para a próxima execução e é gravado no JSON da seleção, e um
-seletor de **Perfil** (aplica no próximo start; o tray tem submenu equivalente).
-
-O botão **Remover** apaga um ou mais JSONs de seleção selecionados (seleção múltipla com
-Ctrl/Shift).
-
-No `Novo target (overlay)`, a lista de janelas usa o **nome do aplicativo no estilo Gerenciador de
-Tarefas** (`FileDescription`/`ProductName` do executável, com fallback para o nome do `.exe`) e
-**oculta janelas que não são de aplicativos ativos** (invisíveis, ocultas pelo DWM, tool windows,
-janelas filhas/auxiliares e sem título).
-
-O loop roda em thread separada; a GUI só recebe eventos/resultados por fila (`QTimer`), nunca de
-dentro do callback. O `Parar` encerra o loop e fecha o backend antes de sair.
-
-## Limitações conhecidas (aceitas)
-
-- **Wayland**: `mss` não captura. O app avisa e encerra; não há backend Wayland no protótipo.
-- **Janela ocluída**: `mss` captura pixels da tela, não a superfície da janela. Se outra janela
-  cobrir a ROI, o frame conterá a janela sobreposta. Não é bug a corrigir.
-
-## Robustez (Etapa H)
-
-- **Coordenadas negativas/fora da tela**: a ROI é recortada contra o desktop virtual
-  (`mss.monitors[0]`). Quando há recorte, o loop emite `capture_clipped`; quando a ROI cai 100% fora,
-  emite `roi_off_screen` e pula o tick — sem quebrar o loop.
-- **Falhas repetidas**: erros consecutivos idênticos (ex.: Tesseract ausente, token ausente) são
-  reportados uma vez, não a cada tick.
-- **Parada**: `parar` sinaliza o evento e faz `join`; o `backend.close()` roda no `finally` do worker.
-- **DPI**: `probe-dpi`/`scripts/probe_dpi.py` imprimem a matriz (mss físico × Qt lógico × escala).
-
-## Testes
-
-```powershell
-python -m pytest                  # unitarios (padrao)
-python -m pytest -m "not integration"
-```
-
-Testes que dependem de `imagehash`/`pytesseract` são pulados automaticamente se a dependência
-não estiver instalada.
-
-### Integração (opt-in, fora do CI)
-
-```powershell
-$env:TEST_REAL_CAPTURE="1"; python -m pytest -m integration
-$env:TEST_REAL_TELEGRAM="1"; $env:TELEGRAM_BOT_TOKEN="..."; `
-  $env:TELEGRAM_TEST_CHAT_ID="..."; python -m pytest -m integration
-```
-`TEST_REAL_CAPTURE` captura de verdade do monitor primário; `TEST_REAL_TELEGRAM` envia uma foto
-sintética e falha se o HTTP não for 2xx (aceite do §1.3).
-
-## CI (GitHub Actions)
-
-`.github/workflows/ci.yml` roda `ruff check .`, `python -m screen_watch validate-i18n` e
-`pytest -m "not integration"` em
-**`ubuntu-latest` e `windows-latest`** × **Python 3.11 e 3.13**; em pull requests, o job `package`
-(se recomendado) monta os instaladores sem publicar. O CI não instala `simpleaudio`, não usa
-Tesseract (OCR é mockado) e não importa Qt na coleta de testes.
-
-`.github/workflows/release.yml` builda os instaladores (Windows/latest, Linux `ubuntu-22.04`) a
-partir de uma tag `v*.*.*` e publica o GitHub Release com `SHA256SUMS.txt`; `workflow_dispatch`
-gera apenas os artefatos de workflow.
-
-Configurações de ambiente necessárias em produção (nunca no YAML):
-- `compare_options.advanced.tesseract_cmd` — caminho do Tesseract quando fora do `PATH`.
-- `TELEGRAM_BOT_TOKEN` — token do bot, via `setx`/variável de ambiente.
-- `SCREEN_WATCH_HOME` — opcional, redireciona a app-data.
+Testes de integração são opt-in (`TEST_REAL_CAPTURE`, `TEST_REAL_TELEGRAM`) — detalhes,
+escada de scripts e CI em [wiki/Desenvolvimento-Testes-e-CI.md](wiki/Desenvolvimento-Testes-e-CI.md).
+
+## Documentação
+
+| Onde | O que tem |
+|---|---|
+| [**Wiki**](wiki/Home.md) | detalhes de uso e recursos: CLI, GUI, config, ações, alertas, evidências, idiomas, DPI, build |
+| [`doc/00-Documento_de_Arquitetura_e_Especificação.md`](doc/00-Documento_de_Arquitetura_e_Especificação.md) | arquitetura e especificação — **fonte única de verdade do design** |
+| [`doc/01-Build_e_Release.md`](doc/01-Build_e_Release.md) | pipeline de build e release dos instaladores |
+| [`CHANGELOG.md`](CHANGELOG.md) | mudanças por versão (semântico) |
+
+> **Nota de design**: o `doc/00` decide o design; a Wiki descreve uso e recursos. Não registre uma
+> decisão de design aqui sem que ela esteja (ou deva estar) no `doc/00`.
