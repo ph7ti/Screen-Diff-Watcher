@@ -2,6 +2,10 @@
 
 [English](README.md) · **Português (Brasil)**
 
+<p align="center">
+  <img src="src/screen_watch/assets/icons/ScreenDiffWatcher.png" width="60%">
+</p>
+
 Vigia uma **região retangular (ROI) de uma janela** e avisa quando ela muda — som, popup,
 Telegram ou log — para você não precisar ficar olhando para a tela.
 
