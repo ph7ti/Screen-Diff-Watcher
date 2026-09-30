@@ -3,6 +3,21 @@
 Todas as mudanças relevantes deste projeto. Formato inspirado em "Keep a Changelog";
 versionamento semântico. Versão: `screen_watch.__version__` (fonte única).
 
+## [0.4.0] — 2026-09-30
+
+### Removido
+
+- Flag de CLI `--target` (deprecada) — use `--selection`.
+- Campo de configuração `schedule.timezone` (aceitava apenas `local` e não era lido em runtime).
+- `seed: null` deixou de ser gravado no `config.yaml` gerado por `init-config` (o campo
+  `seed` continua aceito no YAML).
+
+### Mudado
+
+- Refatoração interna sem mudança de comportamento: remoção de código morto, deduplicação dos
+  helpers de coerção de tipos (`config/coerce.py`), centralização da construção de `Frame` nos
+  comandos de teste e da execução de ações armadas (`actions/execute.py`).
+
 ## [0.3.0] — 2026-09-30
 
 ### Adicionado
