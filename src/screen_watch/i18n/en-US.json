@@ -300,7 +300,6 @@
   "error.config.schedule_days_not_list": "schedule.days must be a list",
   "error.config.schedule_windows_not_list": "schedule.windows must be a list",
   "error.config.schedule_invalid_days": "invalid schedule.days: {days}; use one of {valid}",
-  "error.config.schedule_timezone": "unsupported schedule.timezone: {value!r}",
   "error.config.v2_missing_profiles": "config v2 requires 'profiles'",
   "error.config.profiles_not_mapping": "'profiles' must be a mapping",
   "error.config.profile_unknown": "unknown profile: {name!r}",

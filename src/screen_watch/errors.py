@@ -51,7 +51,6 @@ _EN: dict[str, str] = {
     "config.schedule_days_not_list": "schedule.days must be a list",
     "config.schedule_windows_not_list": "schedule.windows must be a list",
     "config.schedule_invalid_days": "invalid schedule.days: {days}; use one of {valid}",
-    "config.schedule_timezone": "unsupported schedule.timezone: {value!r}",
     "config.v2_missing_profiles": "config v2 requires 'profiles'",
     "config.profiles_not_mapping": "'profiles' must be a mapping",
     "config.profile_unknown": "unknown profile: {name!r}",

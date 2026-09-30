@@ -53,7 +53,7 @@ ui:
              rearm: "<ctrl>+<alt>+r", abort: "<esc>" }
   arm_durations_min: [1, 5, 15, 30]
   language: auto                 # auto | pt-BR | en-US | tag descoberta em i18n/*.json
-schedule: { enabled: false, days: [mon, tue, wed, thu, fri], windows: ["08:00-12:00"], timezone: local }
+schedule: { enabled: false, days: [mon, tue, wed, thu, fri], windows: ["08:00-12:00"] }
 evidence: { enabled: false, dir: null, keep_per_target: 50, max_total_mb: 200,
             on_baseline: true, on_change: true, per_step: false }
 ```
@@ -145,7 +145,6 @@ schedule:
   enabled: true
   days: [mon, tue, wed, thu, fri]
   windows: ["08:00-12:00", "13:30-18:00"]   # janelas que cruzam a meia-noite são aceitas
-  timezone: local
 ```
 
 Fora da janela de horário o monitoramento e os alertas seguem normais, mas as **ações** ficam

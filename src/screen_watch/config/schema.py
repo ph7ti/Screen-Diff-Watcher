@@ -16,7 +16,6 @@ Point = tuple[int, int]
 
 VALID_MODES = ("light", "default", "advanced")
 VALID_DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
-VALID_TIMEZONES = ("local",)
 
 
 @dataclass(frozen=True)
@@ -122,7 +121,6 @@ class ScheduleOptions:
     enabled: bool = False
     days: tuple[str, ...] = ()
     windows: tuple[str, ...] = ()
-    timezone: str = "local"
 
 
 @dataclass(frozen=True)

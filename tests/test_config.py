@@ -208,7 +208,6 @@ def test_v2_parses_evidence_ui_and_schedule():
         "enabled": True,
         "days": ["sat", "sun"],
         "windows": ["09:00-10:30"],
-        "timezone": "local",
     }
     config = config_from_dict(raw)
     assert config.evidence.enabled is True

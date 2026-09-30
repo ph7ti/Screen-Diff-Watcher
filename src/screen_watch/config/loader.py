@@ -26,7 +26,6 @@ from screen_watch.config.coerce import as_bool, as_float, as_int, as_str
 from screen_watch.config.schema import (
     VALID_DAYS,
     VALID_MODES,
-    VALID_TIMEZONES,
     AdvancedOptions,
     AlertOptions,
     AppConfig,
@@ -379,14 +378,10 @@ def _parse_schedule(raw: Any) -> ScheduleOptions:
             params={"days": invalid_days, "valid": VALID_DAYS},
         )
     windows = tuple(_parse_window(window, "schedule.windows[]") for window in windows_raw)
-    timezone = _as_str(raw.get("timezone", "local"), "schedule.timezone") or "local"
-    if timezone not in VALID_TIMEZONES:
-        raise ConfigError(code="config.schedule_timezone", params={"value": timezone})
     return ScheduleOptions(
         enabled=_as_bool(raw.get("enabled", False), "schedule.enabled"),
         days=days,
         windows=windows,
-        timezone=timezone,
     )
 
 
@@ -551,7 +546,6 @@ def _default_schedule_dict() -> dict[str, Any]:
         "enabled": False,
         "days": ["mon", "tue", "wed", "thu", "fri"],
         "windows": ["08:00-12:00", "13:30-18:00"],
-        "timezone": "local",
     }
 
 
@@ -569,17 +563,21 @@ def _default_evidence_dict() -> dict[str, Any]:
 
 def _defaults_dict(defaults: GlobalDefaults) -> dict[str, Any]:
     humanize = defaults.humanize
+    humanize_dict = {
+        "mouse_steps": humanize.mouse_steps,
+        "key_interval_ms": humanize.key_interval_ms,
+        "jitter_px": humanize.jitter_px,
+        "wait_jitter_ms": humanize.wait_jitter_ms,
+    }
+    # `seed` e apenas para testes deterministicos; omitido quando ausente para
+    # nao poluir o `config.yaml` gerado por `init-config`.
+    if humanize.seed is not None:
+        humanize_dict["seed"] = humanize.seed
     return {
         "mode": defaults.mode,
         "poll_interval_s": defaults.poll_interval_s,
         "rearm": defaults.rearm,
-        "humanize": {
-            "mouse_steps": humanize.mouse_steps,
-            "key_interval_ms": humanize.key_interval_ms,
-            "jitter_px": humanize.jitter_px,
-            "wait_jitter_ms": humanize.wait_jitter_ms,
-            "seed": humanize.seed,
-        },
+        "humanize": humanize_dict,
         "compare_options": _compare_options_to_dict(defaults.compare_options),
     }
 
