@@ -130,6 +130,11 @@ jobs:
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
@@ -148,6 +153,9 @@ jobs:
           TAG: ${{ github.ref_name }}
         shell: bash
         run: |
-          gh release create "$TAG" artifacts/* \
-            --title "$TAG" \
-            --notes "Release $TAG. Instaladores: Windows (setup.exe) e Linux (.deb). Checksums em SHA256SUMS.txt."
+          # Notas do release = mensagem da tag anotada (melhorias/correcoes da versao).
+          NOTES="$(git tag -l --format='%(contents)' "$TAG" 2>/dev/null || true)"
+          if [ -z "$NOTES" ]; then
+            NOTES="Release $TAG. Instaladores: Windows (setup.exe) e Linux (.deb). Checksums em SHA256SUMS.txt."
+          fi
+          gh release create "$TAG" artifacts/* --title "$TAG" --notes "$NOTES"
