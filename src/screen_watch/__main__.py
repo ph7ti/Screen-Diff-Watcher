@@ -70,7 +70,7 @@ def _cmd_validate_config(args: argparse.Namespace) -> int:
 
 
 def _validate_selections() -> int:
-    from screen_watch.config.loader import parse_actions, parse_overrides
+    from screen_watch.config.loader import ConfigError, parse_actions, parse_overrides
     from screen_watch.persistence.selection import load_selection
     from screen_watch.platform.paths import selections_dir
 
@@ -84,7 +84,7 @@ def _validate_selections() -> int:
             if actions_raw is not None:
                 mode = overrides.get("mode", selection.mode)
                 parse_actions(actions_raw, "overrides.actions", mode=mode)
-        except (OSError, ValueError) as exc:
+        except (ConfigError, OSError, ValueError) as exc:
             print(f"invalid selection {path.name}: {exc}")
             failures += 1
     print(f"ok: {len(paths) - failures}/{len(paths)} valid selection(s)")
@@ -92,6 +92,7 @@ def _validate_selections() -> int:
 
 
 def _cmd_list_selections(_args: argparse.Namespace) -> int:
+    from screen_watch.errors import ConfigError
     from screen_watch.persistence.selection import load_selection
     from screen_watch.platform.paths import load_state, selections_dir
 
@@ -104,7 +105,7 @@ def _cmd_list_selections(_args: argparse.Namespace) -> int:
         marker = "  (last)" if path.name == last else ""
         try:
             selection = load_selection(path)
-        except (OSError, ValueError) as exc:
+        except (ConfigError, OSError, ValueError) as exc:
             print(f"{path.name}  unreadable ({exc}){marker}")
             continue
         name = selection.app_name or selection.window_title_hint or path.stem
@@ -248,7 +249,7 @@ def _resolve_run_target(args: argparse.Namespace):
     path = _resolve_selection_path(getattr(args, "selection", None))
     try:
         selection = load_selection(path)
-    except (OSError, ValueError) as exc:
+    except (ConfigError, OSError, ValueError) as exc:
         raise ConfigError(f"invalid selection ({path}): {exc}") from exc
     config = _load_config_or_none(args.config)
     name = path.stem

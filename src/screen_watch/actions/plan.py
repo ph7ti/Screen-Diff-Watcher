@@ -1,7 +1,7 @@
 """Parse e validacao de `actions:` / `overrides.actions` (plano, secao 3.2).
 
-Erros sobem como `ActionError` (subclasse de `AppError`/`ValueError`); o loader os
-converte em `ConfigError` preservando `code`/`params` para a GUI traduzir.
+Erros sobem como `ActionError` (subclasse de `AppError`); o loader os converte em
+`ConfigError` preservando `code`/`params`.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from screen_watch.config.coerce import as_bool, as_float, as_int, as_str, as_str
 from screen_watch.errors import AppError
 
 
-class ActionError(AppError, ValueError):
+class ActionError(AppError):
     pass
 
 

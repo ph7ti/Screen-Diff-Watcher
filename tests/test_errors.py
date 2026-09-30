@@ -16,10 +16,10 @@ def test_str_is_english():
     assert str(exc) == "version must be an integer (got 'x')"
 
 
-def test_config_error_is_a_value_error():
+def test_config_error_is_an_app_error_not_value_error():
     exc = ConfigError(code="config.not_bool", params={"field": "rearm", "value": 2})
-    assert isinstance(exc, ValueError)
     assert isinstance(exc, AppError)
+    assert not isinstance(exc, ValueError)
 
 
 def test_render_error_translates_with_language():

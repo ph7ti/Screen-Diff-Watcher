@@ -3,9 +3,6 @@
 `AppError` carrega `code` + `params`; `str(exc)` renderiza **em ingles** (e o que
 o CLI e o log mostram, sem passar pelo i18n). A GUI traduz via
 `render_error(exc)`, que consulta o catalogo (`error.<code>`).
-
-`ConfigError` herda de `AppError` e de `ValueError` para preservar os `except
-ValueError`/`except ConfigError` existentes (doc, secao 12).
 """
 
 from __future__ import annotations
@@ -167,8 +164,8 @@ class AppError(Exception):
         return self._message
 
 
-class ConfigError(AppError, ValueError):
-    """Erro de configuracao; continua sendo `ValueError` para os `except` existentes."""
+class ConfigError(AppError):
+    """Erro de configuracao/validacao com codigo estavel."""
 
 
 def render_error(exc: BaseException, language: str | None = None) -> str:

@@ -32,7 +32,7 @@ from PyQt6.QtWidgets import (
 )
 
 from screen_watch.actions.arming import ARMED, TIMED
-from screen_watch.errors import render_error
+from screen_watch.errors import ConfigError, render_error
 from screen_watch.gui.controller import MonitorController, new_event_queue
 from screen_watch.gui.hover_help import attach_help
 from screen_watch.gui.labels import selection_label
@@ -294,7 +294,6 @@ class MainWindow(QMainWindow):
     # -- dados -------------------------------------------------------------
     def _reload(self) -> None:
         from screen_watch.config.loader import (
-            ConfigError,
             default_config_dict,
             load_config,
             save_config,
@@ -435,7 +434,7 @@ class MainWindow(QMainWindow):
 
         try:
             selection = load_selection(value)
-        except (OSError, ValueError) as exc:
+        except (ConfigError, OSError, ValueError) as exc:
             return tr("label.unreadable", stem=Path(value).stem, error=exc)
         return selection_label(selection, Path(value).stem)
 
@@ -451,7 +450,7 @@ class MainWindow(QMainWindow):
 
         try:
             return load_selection(value).mode
-        except (OSError, ValueError):
+        except (ConfigError, OSError, ValueError):
             return MODES[-1]
 
     def _resolve_target(self, mode: str):
@@ -591,7 +590,7 @@ class MainWindow(QMainWindow):
 
         try:
             return value, load_selection(value)
-        except (OSError, ValueError) as exc:
+        except (ConfigError, OSError, ValueError) as exc:
             self._append(f"unreadable selection: {exc}")
             return value, None
 
@@ -774,7 +773,7 @@ class MainWindow(QMainWindow):
             from screen_watch.persistence.selection import dump_selection, load_selection
 
             dump_selection(value, replace(load_selection(value), mode=mode))
-        except (OSError, ValueError) as exc:
+        except (ConfigError, OSError, ValueError) as exc:
             self._append(f"could not save the mode: {exc}")
             return
         item = self.list.currentItem()

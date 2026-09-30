@@ -10,6 +10,7 @@ from screen_watch.config.schema import (
     ProfileOptions,
     TargetConfig,
 )
+from screen_watch.errors import ConfigError
 from screen_watch.persistence.selection import (
     Selection,
     build_target,
@@ -63,7 +64,7 @@ def test_defaults_applied(tmp_path):
 def test_missing_required_field_raises(tmp_path):
     path = tmp_path / "selection.json"
     path.write_text('{"version": 1, "window_handle": 9}', encoding="utf-8")
-    with pytest.raises(ValueError):
+    with pytest.raises(ConfigError):
         load_selection(path)
 
 
@@ -74,7 +75,7 @@ def test_unsupported_version_raises(tmp_path):
         ' "roi_relative": [1, 2, 3, 4]}',
         encoding="utf-8",
     )
-    with pytest.raises(ValueError):
+    with pytest.raises(ConfigError):
         load_selection(path)
 
 
@@ -110,7 +111,7 @@ def test_overrides_must_be_object(tmp_path):
         ' "roi_relative": [1, 2, 3, 4], "overrides": 3}',
         encoding="utf-8",
     )
-    with pytest.raises(ValueError):
+    with pytest.raises(ConfigError):
         load_selection(path)
 
 
@@ -174,7 +175,7 @@ def test_build_target_rejects_bad_override():
         roi_relative=(1, 2, 3, 4),
         overrides={"poll_interval_s": 0.1},
     )
-    with pytest.raises(ValueError):
+    with pytest.raises(ConfigError):
         build_target(selection, _profile(), name="x")
 
 
@@ -182,7 +183,7 @@ def test_build_target_rejects_invalid_mode():
     selection = Selection(
         window_handle=1, origin_at_selection=(0, 0), roi_relative=(1, 2, 3, 4), mode="turbo"
     )
-    with pytest.raises(ValueError):
+    with pytest.raises(ConfigError):
         build_target(selection, _profile(), name="x")
 
 
@@ -298,7 +299,7 @@ def test_build_target_rejects_text_action_in_non_advanced():
         mode="default",
         overrides={"actions": [{"name": "a", "when": {"text_any": ["x"]}}]},
     )
-    with pytest.raises(ValueError):
+    with pytest.raises(ConfigError):
         build_target(selection, _profile(mode="default"), name="x")
 
 
@@ -330,7 +331,7 @@ def test_resolve_actions_rejects_text_in_non_advanced():
         mode="default",
         overrides={"actions": [{"name": "a", "when": {"text_any": ["x"]}}]},
     )
-    with pytest.raises(ValueError):
+    with pytest.raises(ConfigError):
         resolve_actions(selection, _profile(mode="default"))
 
 
