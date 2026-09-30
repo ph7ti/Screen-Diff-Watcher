@@ -245,11 +245,7 @@ def _resolve_run_target(args: argparse.Namespace):
     from screen_watch.config.loader import ConfigError
     from screen_watch.persistence.selection import build_target, load_selection
 
-    deprecated = getattr(args, "target", None)
-    if deprecated and not getattr(args, "selection", None):
-        print("warning: --target is deprecated; use --selection NAME")
-
-    path = _resolve_selection_path(getattr(args, "selection", None) or deprecated)
+    path = _resolve_selection_path(getattr(args, "selection", None))
     try:
         selection = load_selection(path)
     except (OSError, ValueError) as exc:
@@ -492,7 +488,7 @@ def _cmd_record_actions(args: argparse.Namespace) -> int:
     from screen_watch.platform.input import InputUnavailable
     from screen_watch.platform.window import find_window_by_handle
 
-    value = getattr(args, "selection", None) or getattr(args, "target", None)
+    value = getattr(args, "selection", None)
     try:
         path = _resolve_selection_path(value)
         selection = load_selection(path)
@@ -961,9 +957,8 @@ def _cmd_list_actions(args: argparse.Namespace) -> int:
     from screen_watch.config.loader import ConfigError
     from screen_watch.persistence.selection import load_selection, resolve_actions
 
-    deprecated = getattr(args, "target", None)
     try:
-        path = _resolve_selection_path(getattr(args, "selection", None) or deprecated)
+        path = _resolve_selection_path(getattr(args, "selection", None))
         selection = load_selection(path)
         config = _load_config_or_none(args.config)
         profile = profile_from_config(config, getattr(args, "profile", None), path.stem)
@@ -1073,6 +1068,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
+    # Argumentos compartilhados por `run`/`test-*`/`list-actions`/`compare-modes`.
+    selection_args = argparse.ArgumentParser(add_help=False)
+    selection_args.add_argument("--config", default=str(config_path()))
+    selection_args.add_argument("--profile", default=None, help="active profile (default: the one from YAML)")
+    selection_args.add_argument("--selection", default=None, help="selection JSON (name or path)")
+
     p_init = sub.add_parser("init-config", help="create a default config YAML")
     p_init.add_argument("--path", default=str(config_path()))
     p_init.add_argument("--force", action="store_true")
@@ -1118,11 +1119,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_i18n.set_defaults(func=_cmd_validate_i18n)
 
-    p_run = sub.add_parser("run", help="start monitoring the selection")
-    p_run.add_argument("--config", default=str(config_path()))
-    p_run.add_argument("--profile", default=None, help="active profile (default: the one from YAML)")
-    p_run.add_argument("--selection", default=None, help="selection JSON (name or path)")
-    p_run.add_argument("--target", default=None, help="deprecated; alias of --selection")
+    p_run = sub.add_parser("run", help="start monitoring the selection", parents=[selection_args])
     p_run.add_argument(
         "--actions",
         default=None,
@@ -1130,29 +1127,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_run.set_defaults(func=_cmd_run)
 
-    p_test = sub.add_parser("test-alert", help="fire a synthetic alert with the current ROI")
-    p_test.add_argument("--config", default=str(config_path()))
-    p_test.add_argument("--profile", default=None, help="active profile (default: the one from YAML)")
-    p_test.add_argument("--selection", default=None, help="selection JSON (name or path)")
-    p_test.add_argument("--target", default=None, help="deprecated; alias of --selection")
+    p_test = sub.add_parser(
+        "test-alert", help="fire a synthetic alert with the current ROI", parents=[selection_args]
+    )
     p_test.set_defaults(func=_cmd_test_alert)
 
     p_ev = sub.add_parser(
-        "test-evidence", help="write a sample baseline+change on the current ROI (evidence)"
+        "test-evidence",
+        help="write a sample baseline+change on the current ROI (evidence)",
+        parents=[selection_args],
     )
-    p_ev.add_argument("--config", default=str(config_path()))
-    p_ev.add_argument("--profile", default=None, help="active profile (default: the one from YAML)")
-    p_ev.add_argument("--selection", default=None, help="selection JSON (name or path)")
-    p_ev.add_argument("--target", default=None, help="deprecated; alias of --selection")
     p_ev.set_defaults(func=_cmd_test_evidence)
 
     p_act = sub.add_parser(
-        "test-action", help="rehearse/execute the selection actions on the current ROI (Phase 2)"
+        "test-action",
+        help="rehearse/execute the selection actions on the current ROI (Phase 2)",
+        parents=[selection_args],
     )
-    p_act.add_argument("--config", default=str(config_path()))
-    p_act.add_argument("--profile", default=None, help="active profile (default: the one from YAML)")
-    p_act.add_argument("--selection", default=None, help="selection JSON (name or path)")
-    p_act.add_argument("--target", default=None, help="deprecated; alias of --selection")
     p_act.add_argument("--armed", action="store_true", help="actually execute (default: rehearsal)")
     p_act.add_argument("--dry-run", action="store_true", help="only rehearse (default)")
     p_act.add_argument(
@@ -1166,19 +1157,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_act.set_defaults(func=_cmd_test_action)
 
     p_listact = sub.add_parser(
-        "list-actions", help="list the resolved selection actions and the saved subset"
+        "list-actions",
+        help="list the resolved selection actions and the saved subset",
+        parents=[selection_args],
     )
-    p_listact.add_argument("--config", default=str(config_path()))
-    p_listact.add_argument("--profile", default=None, help="active profile (default: the one from YAML)")
-    p_listact.add_argument("--selection", default=None, help="selection JSON (name or path)")
-    p_listact.add_argument("--target", default=None, help="deprecated; alias of --selection")
     p_listact.set_defaults(func=_cmd_list_actions)
 
     p_rec = sub.add_parser(
         "record-actions", help="record clicks/keys and generate an actions: snippet (Phase 3)"
     )
     p_rec.add_argument("--selection", default=None, help="selection JSON (name or path)")
-    p_rec.add_argument("--target", default=None, help="deprecated; alias of --selection")
     p_rec.add_argument("--name", default=None, help="action name in the snippet (default: stem)")
     p_rec.add_argument("--out", default=None, help="output file (default: stdout)")
     p_rec.add_argument(
@@ -1189,12 +1177,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_rec.set_defaults(func=_cmd_record_actions)
 
     p_cmp = sub.add_parser(
-        "compare-modes", help="measure score/severity/time per mode on the current ROI (calibration)"
+        "compare-modes",
+        help="measure score/severity/time per mode on the current ROI (calibration)",
+        parents=[selection_args],
     )
-    p_cmp.add_argument("--config", default=str(config_path()))
-    p_cmp.add_argument("--profile", default=None, help="active profile (default: the one from YAML)")
-    p_cmp.add_argument("--selection", default=None, help="selection JSON (name or path)")
-    p_cmp.add_argument("--target", default=None, help="deprecated; alias of --selection")
     p_cmp.add_argument(
         "--delay", type=float, default=5.0, help="seconds between baseline and sample"
     )

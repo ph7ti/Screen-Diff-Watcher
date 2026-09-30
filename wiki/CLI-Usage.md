@@ -61,9 +61,6 @@ python -m screen_watch list-selections
 | `run [--config C] [--profile P] [--selection S] [--actions a,b|all|none]` | starts monitoring the selection |
 | `gui [--config C] [--profile P]` | opens the GUI with tray (see [GUI and tray](GUI-and-Tray.md)) |
 
-The `--target` alias still works as **deprecated** in `run`/`test-*`/`list-actions`/`record-actions`
-(use `--selection`).
-
 **How `run` resolves the selection**: `--selection NAME` looks for `selections/NAME.json` in app-data;
 it also accepts a **path** to a `.json`. Without `--selection`, it uses `state.json.last_selection`; if
 there is none, it lists the available ones and exits with an error.

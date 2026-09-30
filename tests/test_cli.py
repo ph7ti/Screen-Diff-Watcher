@@ -205,7 +205,7 @@ def test_resolve_run_target_uses_v2_profile(monkeypatch, tmp_path):
 
 
 def test_parser_accepts_compare_modes():
-    args = cli.build_parser().parse_args(["compare-modes", "--target", "x"])
+    args = cli.build_parser().parse_args(["compare-modes", "--selection", "x"])
     assert args.func is cli._cmd_compare_modes
     assert args.modes == "light,default,advanced"
 
