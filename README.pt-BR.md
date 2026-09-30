@@ -22,7 +22,8 @@ Roda no **Windows e no Linux**, capturando apenas pixels (não toca no aplicativ
   cada N segundos. A ROI é ancorada à janela — se ela se mover, a ROI acompanha (Modelo B, doc §3.3).
 - **Detecta mudanças visuais** em três modos: `light` (cor média), `default` (hash perceptivo) e
   `advanced` (OCR + diff de texto; exige Tesseract).
-- **Alerta** por som, popup, Telegram e/ou log JSONL, com severidade mínima e cooldown por canal.
+- **Alerta** por som, popup, Telegram, log JSONL, **webhook**, **HTTP POST** e **syslog**, com severidade
+  mínima e cooldown por canal.
 - **Máscaras** para ignorar áreas que mudam sozinhas (relógio, spinner, cursor).
 - **Evidências**: prints do baseline e de cada mudança — opt-in.
 - **Ações pseudo-humanas** (clique, teclas, texto) quando armadas — ensaio por padrão e auditoria
@@ -71,10 +72,14 @@ um com seu `severity_min` e `cooldown_s`:
 | `popup` | notificação local | [wiki/Alertas.md](wiki/Alertas.md) |
 | `telegram` | mensagem + imagem da ROI via bot | **[Configuração do Telegram — passo a passo](wiki/Configuracao-Telegram.md)** |
 | `log` | uma linha JSON por alerta (`logs/alerts.jsonl`) | [wiki/Alertas.md](wiki/Alertas.md) |
+| `webhook` | POST/PUT/PATCH JSON para URL de webhook (Teams **Workflows**, Slack, Discord, Mattermost) | [wiki/Alertas.md](wiki/Alertas.md) |
+| `http_post` | POST JSON para host/IP + porta (ou URL completa) | [wiki/Alertas.md](wiki/Alertas.md) |
+| `syslog` | mensagem syslog informacional (`udp`/`tcp`) — sem imagem | [wiki/Alertas.md](wiki/Alertas.md) |
 
-Os alertas são configurados por perfil no `config.yaml` (lista `alerts:`). Segredos nunca vão no
-YAML — o token do Telegram é lido de variável de ambiente. Novos canais estão previstos (ex.:
-webhook genérico); o mapa de canais é extensível por `type`.
+Os alertas são configurados por perfil no `config.yaml` (lista `alerts:`), cada um com um `id` estável
+opcional. Segredos nunca vão no YAML — o token do Telegram é lido de variável de ambiente, e os canais
+novos aceitam `url_env`/`${env:VAR}`. Teste um canal com `test-alert --list`/`--only ID` ou o botão
+**Testar alerta…** da janela. O mapa de canais é extensível por `type`.
 
 ## Que problemas ele resolve
 
@@ -123,6 +128,8 @@ python -m screen_watch select-manual --handle 12345 --roi 120 340 400 80 --name 
 python -m screen_watch list-selections
 python -m screen_watch migrate-config --dry-run               # conv. YAML v1 -> v2
 python -m screen_watch test-alert --selection painel          # alerta sintético
+python -m screen_watch test-alert --selection painel --list   # id/tipo/estado/destino
+python -m screen_watch test-alert --selection painel --only ID # um canal (modo texto)
 python -m screen_watch test-evidence --selection painel       # prints de exemplo
 python -m screen_watch test-action --selection painel         # ensaio das ações (--armed executa)
 python -m screen_watch list-actions --selection painel
@@ -240,7 +247,8 @@ ruff check .
 python -m pytest -q -m "not integration"
 ```
 
-Testes de integração são opt-in (`TEST_REAL_CAPTURE`, `TEST_REAL_TELEGRAM`) — detalhes,
+Testes de integração são opt-in (`TEST_REAL_CAPTURE`, `TEST_REAL_TELEGRAM`,
+`TEST_REAL_WEBHOOK_URL`, `TEST_REAL_HTTP_URL`) — detalhes,
 escada de scripts e CI em [wiki/Desenvolvimento-Testes-e-CI.md](wiki/Desenvolvimento-Testes-e-CI.md).
 
 ## Documentação
@@ -250,6 +258,7 @@ escada de scripts e CI em [wiki/Desenvolvimento-Testes-e-CI.md](wiki/Desenvolvim
 | [**Wiki**](wiki/Home-pt-BR.md) | detalhes de uso e recursos: CLI, GUI, config, ações, alertas, evidências, idiomas, DPI, build |
 | [`doc/00-Documento_de_Arquitetura_e_Especificação.md`](doc/00-Documento_de_Arquitetura_e_Especificação.md) | arquitetura e especificação — **fonte única de verdade do design** |
 | [`doc/01-Build_e_Release.md`](doc/01-Build_e_Release.md) | pipeline de build e release dos instaladores |
+| [`doc/releases/`](doc/releases/v0.5.0.pt-BR.md) | notas de release por versão (arquivo de detalhe) |
 | [`CHANGELOG.md`](CHANGELOG.md) | mudanças por versão (semântico) |
 | [`README.md`](README.md) | este guia em inglês |
 

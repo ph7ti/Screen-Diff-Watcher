@@ -910,7 +910,8 @@ class Notifier(Protocol):
 **Regras**:
 - `severity_min`: o notificador só dispara se a severidade da mudança for >= este valor.
 - `cooldown_s`: após **tentar** disparar, o notificador é silenciado por N segundos,
-  independentemente de novas mudanças (inclusive em falha — backoff, ver §11.3).
+  independentemente de novas mudanças (inclusive em falha — backoff, ver §11.3). A chave é o **`id`**
+  do alerta (`uid`), não o nome da classe (§11.2).
 - `frame` é passado completo para permitir anexar a imagem do ROI (Telegram) ou logar contexto.
 
 ### 11.2 Notificadores do protótipo
@@ -944,7 +945,35 @@ class Notifier(Protocol):
 - `JsonlNotifier`: uma linha JSON por disparo em `app-data/logs/alerts.jsonl` (ou caminho
   configurado em `path`).
 
-**Regra**: tipo desconhecido é ignorado com `log.warning` (`build_notifier` devolve `None`).
+**Webhook / HTTP POST (`http.py`)**:
+- `post_json` faz `POST`/`PUT`/`PATCH` JSON via `httpx`, redirects **não** seguidos, sucesso = 2xx
+  (não-2xx → `alert.http_status`; falha de rede → `alert.http_unreachable`).
+- `WebhookNotifier` usa `url` ou `url_env`; `HttpPostNotifier` também aceita `scheme`/`host`/`port`/
+  `path`. Payload default `{"text": "${message}"}`; `payload_raw` envia um corpo que não é objeto.
+- **Modelo de payload** (`alerts/template.py`): `string.Template` com `idpattern` estendido para
+  `${env:VAR}` (lido de `os.environ` **no envio**); placeholders `message`, `strategy`, `score`,
+  `threshold`, `severity`, `target`, `timestamp`, `window_handle`, `changed`, `roi`. Placeholder
+  desconhecido é erro de config (`config.alert_unknown_placeholder`).
+- **Segredos**: a URL resolvida é redigida (`scheme://host/…`) em erros/logs; `verify_tls: false`
+  avisa **a cada envio**.
+- **Sem imagem/ROI** (o print anexado continua exclusivo do Telegram).
+
+**Syslog (`syslog.py`)**:
+- `logging.handlers.SysLogHandler` para `(host, port)`; `socktype=SOCK_DGRAM` (udp, default) ou
+  `SOCK_STREAM` (tcp); `facility` default `local0`; `app_name` vira o `ident`/tag; `append_nul=False`.
+- `timeout=` no `SysLogHandler` só existe no Python 3.14, então o `createSocket` é sobrescrito para
+  chamar `settimeout`; no Windows, use **UDP**.
+- **Informational por default** (a severidade real vai no texto via `${severity}`), com `severity_map`
+  opcional (chaves 0..3). UDP é *fire-and-forget* (não confirma entrega) → prefira TCP quando a entrega
+  precisa ser confirmada.
+
+**`id` e chave de cooldown**:
+- Cada alerta tem `id` opcional (default `type`; `type#n` quando repetido no mesmo perfil, validado).
+  O `build_notifier` atribui `notifier.uid = id or type`; o `AlertChain` usa
+  `getattr(n, "uid", n.name)` como chave, então dois webhooks não compartilham o cooldown.
+
+**Regra**: tipo desconhecido é **erro de config** (`config.alert_unknown_type`) — o `build_notifier`
+mantém um `log.warning` + `None` defensivo.
 
 ### 11.3 Encadeamento, desfechos e re-arm
 
@@ -1091,6 +1120,17 @@ profiles:
       - { type: "telegram", enabled: true, severity_min: 2, cooldown_s: 60,
           bot_token_env: "TELEGRAM_BOT_TOKEN", chat_id: "123456789", attach_roi: true }
       - { type: "log",      enabled: true, severity_min: 1, cooldown_s: 0 }   # opcional
+      - type: webhook                    # Teams Workflows / Slack / Discord / Mattermost…
+        id: teams
+        severity_min: 2
+        cooldown_s: 60
+        options: { url_env: TEAMS_WEBHOOK, payload: { text: "Mudança em ${target} sev=${severity}" } }
+      - type: http_post
+        id: erp-api
+        options: { scheme: http, host: "10.0.0.20", port: 8080, path: "/alerta" }
+      - type: syslog
+        id: siem
+        options: { host: "10.0.0.9", port: 514, protocol: udp, facility: local0 }
     actions: []                  # ver §11.4
   trabalho:
     defaults: { mode: "default", poll_interval_s: 1.0 }
@@ -1105,7 +1145,14 @@ evidence: { enabled: false, dir: null, keep_per_target: 50, max_total_mb: 200,
 ```
 
 **Regras**:
-- Tokens e segredos **nunca** no YAML. Usar variáveis de ambiente (`bot_token_env`).
+- Tokens e segredos **nunca** no YAML. Usar variáveis de ambiente (`bot_token_env`, `url_env`,
+  `${env:VAR}` em `headers`/`payload`); erros/logs nunca expõem a URL resolvida nem os valores das
+  variáveis.
+- `type` de alerta: `sound`/`popup`/`telegram`/`log` mantêm **campos planos**;
+  `webhook`/`http_post`/`syslog` usam um bloco aninhado **`options:`**. `type` desconhecido é
+  `ConfigError` (`config.alert_unknown_type`).
+- Cada alerta tem **`id`** opcional (default `type`; `type#n` quando repetido), usado como **chave de
+  cooldown** e no teste de envio. `payload` XOR `payload_raw`; `${...}` desconhecido → `ConfigError`.
 - `version` aceita 1 ou 2 (outro valor é `ConfigError`); v2 **exige** `profiles`; `profile`
   inexistente é `ConfigError` (`config.profile_unknown`).
 - `version` ausente com `targets:` é o v1 legado: carrega por uma versão, com aviso, e é convertido
@@ -1220,6 +1267,9 @@ do `evidence` do YAML (v2) e aplica o toggle de runtime `state.json["evidence_en
 - A GUI chama `render_error(exc)`, que traduz `error.<code>` pelo catálogo ativo e cai para
   `str(exc)` quando não há código/tradução.
 - Códigos são **estáveis** (contrato com os catálogos): renomear um código quebra a tradução.
+- Canais de alerta acrescentam códigos `config.alert_*` (tipo desconhecido, options/URL/porta/protocolo/
+  facility/method, conflito de payload, placeholder desconhecido, severity map, id duplicado) e os de
+  runtime `alert.http_status`/`alert.http_unreachable`/`alert.syslog_unavailable`;
 
 ---
 

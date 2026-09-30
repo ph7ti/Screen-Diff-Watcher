@@ -429,3 +429,169 @@ def test_v2_nested_section_error_branches():
         config_from_dict(raw(schedule={"windows": ["10:00"]}))
     with pytest.raises(ConfigError):
         config_from_dict(_v2_dict(defaults={"humanize": 3}))
+
+
+# -- canais novos (webhook/http_post/syslog) -------------------------------
+
+
+def _parse_one(alert: dict):
+    from screen_watch.config.loader import parse_alerts
+
+    return parse_alerts([alert], "alerts")[0]
+
+
+def test_webhook_parses_and_round_trips():
+    from screen_watch.config.loader import _alert_to_dict
+
+    alert = _parse_one(
+        {
+            "type": "webhook",
+            "id": "teams",
+            "severity_min": 2,
+            "options": {
+                "url_env": "TEAMS_WEBHOOK",
+                "method": "PUT",
+                "headers": {"Content-Type": "application/json"},
+                "payload": {"text": "Mudanca em ${target} sev=${severity}"},
+                "timeout_s": 7,
+                "verify_tls": False,
+            },
+        }
+    )
+    assert alert.id == "teams"
+    assert alert.options.url_env == "TEAMS_WEBHOOK"
+    assert alert.options.method == "PUT"
+    assert alert.options.verify_tls is False
+    assert alert.options.timeout_s == 7.0
+    assert alert.options.headers == (("Content-Type", "application/json"),)
+
+    again = _parse_one(_alert_to_dict(alert))
+    assert again == alert
+
+
+def test_http_post_parses_host_and_port():
+    from screen_watch.config.loader import _alert_to_dict
+
+    alert = _parse_one(
+        {
+            "type": "http_post",
+            "options": {"host": "10.0.0.20", "port": 8080, "path": "/alerta"},
+        }
+    )
+    assert alert.options.host == "10.0.0.20"
+    assert alert.options.port == 8080
+    assert alert.options.path == "/alerta"
+    assert alert.options.scheme == "http"
+
+    again = _parse_one(_alert_to_dict(alert))
+    assert again == alert
+
+
+def test_syslog_parses_defaults_and_round_trips():
+    from screen_watch.config.loader import _alert_to_dict
+
+    alert = _parse_one(
+        {
+            "type": "syslog",
+            "options": {
+                "host": "10.0.0.9",
+                "severity_map": {3: "error"},
+                "payload_raw": "${timestamp} ${target}",
+            },
+        }
+    )
+    assert alert.options.port == 514
+    assert alert.options.protocol == "udp"
+    assert alert.options.facility == "local0"
+    assert alert.options.app_name == "screen-diff-watcher"
+    assert alert.options.severity_map == ((3, "error"),)
+
+    again = _parse_one(_alert_to_dict(alert))
+    assert again == alert
+
+
+def test_alert_id_defaults_and_suffix_on_repeat():
+    from screen_watch.config.loader import parse_alerts
+
+    alerts = parse_alerts(
+        [
+            {"type": "log"},
+            {"type": "webhook", "options": {"url": "https://a"}},
+            {"type": "webhook", "options": {"url": "https://b"}},
+        ],
+        "alerts",
+    )
+    assert [a.id for a in alerts] == ["log", "webhook", "webhook#2"]
+
+
+def test_alert_id_suffix_reserves_explicit_ids_regardless_of_order():
+    from screen_watch.config.loader import parse_alerts
+
+    alerts = parse_alerts(
+        [
+            {"type": "log"},
+            {"type": "log"},
+            {"type": "log", "id": "log#2"},
+        ],
+        "alerts",
+    )
+    assert [a.id for a in alerts] == ["log", "log#3", "log#2"]
+
+
+def test_duplicate_explicit_id_raises():
+    from screen_watch.config.loader import parse_alerts
+
+    with pytest.raises(ConfigError) as excinfo:
+        parse_alerts([{"type": "log", "id": "x"}, {"type": "popup", "id": "x"}], "alerts")
+    assert excinfo.value.code == "config.alert_duplicate_id"
+
+
+def test_alert_error_branches_by_code():
+    from screen_watch.config.loader import parse_alerts
+
+    cases = [
+        ({"type": "carrier-pigeon"}, "config.alert_unknown_type"),
+        ({"type": "webhook"}, "config.alert_options_not_mapping"),
+        ({"type": "webhook", "options": {}}, "config.alert_missing_url"),
+        ({"type": "webhook", "options": {"url": "ftp://x"}}, "config.alert_invalid_url"),
+        (
+            {"type": "webhook", "options": {"url": "http://host:80x/hook"}},
+            "config.alert_invalid_url",
+        ),
+        (
+            {"type": "webhook", "options": {"url": "https://x", "method": "DELETE"}},
+            "config.alert_invalid_method",
+        ),
+        (
+            {
+                "type": "webhook",
+                "options": {"url": "https://x", "payload": {}, "payload_raw": "y"},
+            },
+            "config.alert_payload_conflict",
+        ),
+        (
+            {"type": "webhook", "options": {"url": "https://x", "payload": {"a": "${nope}"}}},
+            "config.alert_unknown_placeholder",
+        ),
+        (
+            {"type": "http_post", "options": {"host": "h", "port": 0}},
+            "config.alert_invalid_port",
+        ),
+        (
+            {"type": "syslog", "options": {"host": "h", "protocol": "sctp"}},
+            "config.alert_invalid_protocol",
+        ),
+        ({"type": "syslog", "options": {}}, "config.alert_missing_host"),
+        (
+            {"type": "syslog", "options": {"host": "h", "facility": "nope"}},
+            "config.alert_invalid_facility",
+        ),
+        (
+            {"type": "syslog", "options": {"host": "h", "severity_map": {9: "error"}}},
+            "config.alert_invalid_severity_map",
+        ),
+    ]
+    for alert, code in cases:
+        with pytest.raises(ConfigError) as excinfo:
+            parse_alerts([alert], "alerts")
+        assert excinfo.value.code == code, (alert, excinfo.value.code)

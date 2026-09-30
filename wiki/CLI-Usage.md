@@ -85,7 +85,7 @@ During execution, each trigger prints a line `[action] rehearsal|armed <name> ->
 
 | Command | What it does |
 |---|---|
-| `test-alert --selection S` | fires a **synthetic** alert (severity 3) with the current ROI, to check sound/popup/Telegram/log |
+| `test-alert --selection S [--list] [--only ID]` | fires a **synthetic** alert (severity 3); `--list` prints id/type/state/destination; `--only ID` sends to one destination (text mode, ignores `enabled`) |
 | `test-evidence --selection S` | writes an example baseline+change pair and prints the paths |
 | `test-action --selection S [--armed] [--actions ...] [--no-countdown]` | rehearses (default) or runs the actions; `--armed` shows the 3 s countdown |
 | `list-actions --selection S` | lists the resolved actions and the saved subset, without starting a session |
@@ -97,6 +97,8 @@ During execution, each trigger prints a line `[action] rehearsal|armed <name> ->
 
 ```powershell
 python -m screen_watch test-alert --selection painel
+python -m screen_watch test-alert --selection painel --list
+python -m screen_watch test-alert --selection painel --only siem
 python -m screen_watch test-action --selection painel            # rehearsal
 python -m screen_watch test-action --selection painel --armed    # actually executes
 python -m screen_watch compare-modes --selection painel --delay 5

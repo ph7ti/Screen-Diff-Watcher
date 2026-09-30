@@ -15,17 +15,25 @@ import os
 import re
 import shutil
 import tempfile
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import yaml
 
 from screen_watch.actions.plan import ActionError
 from screen_watch.actions.plan import parse_actions as _parse_actions_raw
+from screen_watch.alerts.template import validate_placeholders
 from screen_watch.config.coerce import as_bool, as_float, as_int, as_str
 from screen_watch.config.schema import (
+    VALID_ALERT_METHODS,
+    VALID_ALERT_TYPES,
     VALID_DAYS,
     VALID_MODES,
+    VALID_SYSLOG_FACILITIES,
+    VALID_SYSLOG_LEVELS,
+    VALID_SYSLOG_PROTOCOLS,
     AdvancedOptions,
     AlertOptions,
     AppConfig,
@@ -33,12 +41,15 @@ from screen_watch.config.schema import (
     DefaultOptions,
     EvidenceOptions,
     GlobalDefaults,
+    HttpPostOptions,
     HumanizeOptions,
     LightOptions,
     ProfileOptions,
     ScheduleOptions,
+    SyslogOptions,
     TargetConfig,
     UiOptions,
+    WebhookOptions,
 )
 from screen_watch.errors import ConfigError
 
@@ -117,7 +128,257 @@ def parse_alerts(raw: Any, field_name: str = "alerts") -> tuple[AlertOptions, ..
         return ()
     if not isinstance(raw, (list, tuple)):
         raise ConfigError(code="config.alerts_not_list", params={"field": field_name})
-    return tuple(_parse_alert(item, i, field_name) for i, item in enumerate(raw))
+    alerts = [_parse_alert(item, i, field_name) for i, item in enumerate(raw)]
+    return _finalize_alert_ids(alerts, field_name)
+
+
+def _finalize_alert_ids(alerts: list[AlertOptions], field_name: str) -> tuple[AlertOptions, ...]:
+    """Atribui `id` (default = tipo; `tipo#n` se repetido) e rejeita `id` explicitamente duplicado.
+
+    Os `id` explicitos sao reservados antes da geracao dos sufixos `tipo#n`, para a
+    ordem da lista nao mudar o resultado (um `tipo#n` explicito nao colide por engano).
+    """
+    explicit = [alert.id for alert in alerts if alert.id]
+    duplicates = sorted({value for value in explicit if explicit.count(value) > 1})
+    if duplicates:
+        raise ConfigError(
+            code="config.alert_duplicate_id",
+            params={"id": duplicates[0], "field": field_name},
+        )
+    assigned: set[str] = set(explicit)
+    counters: dict[str, int] = {}
+    result: list[AlertOptions] = []
+    for alert in alerts:
+        base = alert.id or alert.type
+        uid = base
+        if uid in assigned and not alert.id:
+            counters[base] = counters.get(base, 1)
+            while uid in assigned:
+                counters[base] += 1
+                uid = f"{base}#{counters[base]}"
+        assigned.add(uid)
+        result.append(replace(alert, id=uid))
+    return tuple(result)
+
+
+def _as_headers(raw: Any, field_name: str) -> tuple[tuple[str, str], ...]:
+    if raw is None:
+        return ()
+    if not isinstance(raw, dict):
+        raise ConfigError(code="config.alert_not_mapping", params={"field": field_name})
+    return tuple(
+        (_as_str(key, field_name), _as_str(value, f"{field_name}.{key}"))
+        for key, value in raw.items()
+    )
+
+
+def _as_payload(raw: Any, field_name: str) -> dict[str, Any] | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise ConfigError(code="config.alert_not_mapping", params={"field": field_name})
+    return dict(raw)
+
+
+def _as_port(value: Any, field_name: str, default: int) -> int:
+    port = _as_int(value, field_name) if value is not None else default
+    if not 1 <= port <= 65535:
+        raise ConfigError(
+            code="config.alert_invalid_port", params={"field": field_name, "value": port}
+        )
+    return port
+
+
+def _as_timeout(value: Any, field_name: str) -> float:
+    return _as_float(value, field_name) if value is not None else 5.0
+
+
+def _as_url(raw: Any, field_name: str) -> str:
+    url = _as_str(raw, field_name)
+    if not url:
+        return url
+    if not url.startswith(("http://", "https://")):
+        raise ConfigError(code="config.alert_invalid_url", params={"field": field_name})
+    try:
+        urlsplit(url).port  # valida a porta (ex.: "http://host:80x" levanta ValueError)
+    except ValueError:
+        raise ConfigError(
+            code="config.alert_invalid_url", params={"field": field_name}
+        ) from None
+    return url
+
+
+def _validate_payload_options(options_raw: dict[str, Any], field: str) -> None:
+    payload = options_raw.get("payload")
+    payload_raw = options_raw.get("payload_raw")
+    if payload is not None and payload_raw is not None:
+        raise ConfigError(code="config.alert_payload_conflict", params={"field": field})
+    if payload is not None:
+        validate_placeholders(payload, f"{field}.payload")
+    if payload_raw is not None:
+        validate_placeholders(_as_str(payload_raw, f"{field}.payload_raw"), f"{field}.payload_raw")
+    headers = options_raw.get("headers")
+    if isinstance(headers, dict):
+        validate_placeholders({str(k): v for k, v in headers.items()}, f"{field}.headers")
+
+
+def _as_method(raw: Any, field: str) -> str:
+    method = (_as_str(raw, f"{field}.method") or "POST").upper()
+    if method not in VALID_ALERT_METHODS:
+        raise ConfigError(
+            code="config.alert_invalid_method",
+            params={"field": field, "value": method, "valid": VALID_ALERT_METHODS},
+        )
+    return method
+
+
+def _parse_webhook_options(raw: Any, field: str) -> WebhookOptions:
+    if not isinstance(raw, dict):
+        raise ConfigError(code="config.alert_options_not_mapping", params={"field": field})
+    url = _as_url(raw.get("url"), f"{field}.url")
+    url_env = _as_str(raw.get("url_env", ""), f"{field}.url_env")
+    if not url and not url_env:
+        raise ConfigError(code="config.alert_missing_url", params={"field": field})
+    _validate_payload_options(raw, field)
+    return WebhookOptions(
+        url=url,
+        url_env=url_env,
+        method=_as_method(raw.get("method", "POST"), field),
+        headers=_as_headers(raw.get("headers"), f"{field}.headers"),
+        payload=_as_payload(raw.get("payload"), f"{field}.payload"),
+        payload_raw=_as_str(raw.get("payload_raw", ""), f"{field}.payload_raw"),
+        timeout_s=_as_timeout(raw.get("timeout_s"), f"{field}.timeout_s"),
+        verify_tls=_as_bool(raw.get("verify_tls", True), f"{field}.verify_tls"),
+    )
+
+
+def _parse_http_post_options(raw: Any, field: str) -> HttpPostOptions:
+    if not isinstance(raw, dict):
+        raise ConfigError(code="config.alert_options_not_mapping", params={"field": field})
+    url = _as_url(raw.get("url"), f"{field}.url")
+    url_env = _as_str(raw.get("url_env", ""), f"{field}.url_env")
+    host = _as_str(raw.get("host", ""), f"{field}.host")
+    port_raw = raw.get("port")
+    if not url and not url_env and not host:
+        raise ConfigError(code="config.alert_missing_url", params={"field": field})
+    if host and port_raw is None:
+        raise ConfigError(
+            code="config.alert_invalid_port", params={"field": f"{field}.port", "value": None}
+        )
+    port = _as_port(port_raw, f"{field}.port", 0) if port_raw is not None else 0
+    _validate_payload_options(raw, field)
+    return HttpPostOptions(
+        url=url,
+        url_env=url_env,
+        scheme=(_as_str(raw.get("scheme", "http"), f"{field}.scheme") or "http").lower(),
+        host=host,
+        port=port,
+        path=_as_str(raw.get("path", ""), f"{field}.path"),
+        method=_as_method(raw.get("method", "POST"), field),
+        headers=_as_headers(raw.get("headers"), f"{field}.headers"),
+        payload=_as_payload(raw.get("payload"), f"{field}.payload"),
+        payload_raw=_as_str(raw.get("payload_raw", ""), f"{field}.payload_raw"),
+        timeout_s=_as_timeout(raw.get("timeout_s"), f"{field}.timeout_s"),
+        verify_tls=_as_bool(raw.get("verify_tls", True), f"{field}.verify_tls"),
+    )
+
+
+def _as_severity_map(raw: Any, field: str) -> tuple[tuple[int, str], ...]:
+    if raw is None:
+        return ()
+    if not isinstance(raw, dict):
+        raise ConfigError(
+            code="config.alert_invalid_severity_map",
+            params={"field": field, "value": raw, "valid": VALID_SYSLOG_LEVELS},
+        )
+    items: list[tuple[int, str]] = []
+    for key, value in raw.items():
+        level = str(_as_str(value, f"{field}.severity_map[{key}]")).lower()
+        try:
+            severity = int(key)
+        except (TypeError, ValueError):
+            severity = -1
+        if severity not in (0, 1, 2, 3) or level not in VALID_SYSLOG_LEVELS:
+            raise ConfigError(
+                code="config.alert_invalid_severity_map",
+                params={"field": field, "value": raw, "valid": VALID_SYSLOG_LEVELS},
+            )
+        items.append((severity, level))
+    return tuple(sorted(items))
+
+
+def _parse_syslog_options(raw: Any, field: str) -> SyslogOptions:
+    if not isinstance(raw, dict):
+        raise ConfigError(code="config.alert_options_not_mapping", params={"field": field})
+    host = _as_str(raw.get("host", ""), f"{field}.host")
+    if not host:
+        raise ConfigError(code="config.alert_missing_host", params={"field": field})
+    protocol = (_as_str(raw.get("protocol", "udp"), f"{field}.protocol") or "udp").lower()
+    if protocol not in VALID_SYSLOG_PROTOCOLS:
+        raise ConfigError(
+            code="config.alert_invalid_protocol",
+            params={"field": field, "value": protocol, "valid": VALID_SYSLOG_PROTOCOLS},
+        )
+    facility = (_as_str(raw.get("facility", "local0"), f"{field}.facility") or "local0").lower()
+    if facility not in VALID_SYSLOG_FACILITIES:
+        raise ConfigError(
+            code="config.alert_invalid_facility",
+            params={"field": field, "value": facility, "valid": VALID_SYSLOG_FACILITIES},
+        )
+    payload_raw = raw.get("payload_raw")
+    if payload_raw is not None:
+        validate_placeholders(_as_str(payload_raw, f"{field}.payload_raw"), f"{field}.payload_raw")
+    return SyslogOptions(
+        host=host,
+        port=_as_port(raw.get("port"), f"{field}.port", 514),
+        protocol=protocol,
+        facility=facility,
+        app_name=_as_str(raw.get("app_name", "screen-diff-watcher"), f"{field}.app_name")
+        or "screen-diff-watcher",
+        payload_raw=_as_str(payload_raw, f"{field}.payload_raw"),
+        severity_map=_as_severity_map(raw.get("severity_map"), f"{field}.severity_map"),
+        timeout_s=_as_timeout(raw.get("timeout_s"), f"{field}.timeout_s"),
+        append_nul=_as_bool(raw.get("append_nul", False), f"{field}.append_nul"),
+    )
+
+
+def _parse_channel_options(alert_type: str, raw: Any, field: str):
+    if alert_type == "webhook":
+        return _parse_webhook_options(raw, field)
+    if alert_type == "http_post":
+        return _parse_http_post_options(raw, field)
+    if alert_type == "syslog":
+        return _parse_syslog_options(raw, field)
+    return None
+
+
+def _parse_alert(raw: Any, index: int, prefix: str = "alerts") -> AlertOptions:
+    field = f"{prefix}[{index}]"
+    if not isinstance(raw, dict):
+        raise ConfigError(code="config.alert_not_mapping", params={"field": field})
+    if "type" not in raw:
+        raise ConfigError(code="config.alert_missing_type", params={"field": field})
+    alert_type = _as_str(raw["type"], f"{field}.type")
+    if alert_type not in VALID_ALERT_TYPES:
+        raise ConfigError(
+            code="config.alert_unknown_type",
+            params={"field": field, "value": alert_type, "valid": VALID_ALERT_TYPES},
+        )
+    return AlertOptions(
+        type=alert_type,
+        enabled=_as_bool(raw.get("enabled", True), f"{field}.enabled"),
+        severity_min=_as_int(raw.get("severity_min", 1), f"{field}.severity_min"),
+        cooldown_s=_as_float(raw.get("cooldown_s", 30.0), f"{field}.cooldown_s"),
+        file=_as_str(raw.get("file", "alert.wav"), f"{field}.file"),
+        bot_token_env=_as_str(
+            raw.get("bot_token_env", "TELEGRAM_BOT_TOKEN"), f"{field}.bot_token_env"
+        ),
+        chat_id=_as_str(raw.get("chat_id", ""), f"{field}.chat_id"),
+        attach_roi=_as_bool(raw.get("attach_roi", True), f"{field}.attach_roi"),
+        path=_as_str(raw.get("path", ""), f"{field}.path"),
+        id=_as_str(raw.get("id", ""), f"{field}.id"),
+        options=_parse_channel_options(alert_type, raw.get("options"), field),
+    )
 
 
 def parse_actions(raw: Any, prefix: str = "actions", mode: str | None = None):
@@ -199,27 +460,6 @@ def _parse_compare_options(raw: Any) -> CompareOptions:
                 else None
             ),
         ),
-    )
-
-
-def _parse_alert(raw: Any, index: int, prefix: str = "alerts") -> AlertOptions:
-    field = f"{prefix}[{index}]"
-    if not isinstance(raw, dict):
-        raise ConfigError(code="config.alert_not_mapping", params={"field": field})
-    if "type" not in raw:
-        raise ConfigError(code="config.alert_missing_type", params={"field": field})
-    return AlertOptions(
-        type=_as_str(raw["type"], f"{field}.type"),
-        enabled=_as_bool(raw.get("enabled", True), f"{field}.enabled"),
-        severity_min=_as_int(raw.get("severity_min", 1), f"{field}.severity_min"),
-        cooldown_s=_as_float(raw.get("cooldown_s", 30.0), f"{field}.cooldown_s"),
-        file=_as_str(raw.get("file", "alert.wav"), f"{field}.file"),
-        bot_token_env=_as_str(
-            raw.get("bot_token_env", "TELEGRAM_BOT_TOKEN"), f"{field}.bot_token_env"
-        ),
-        chat_id=_as_str(raw.get("chat_id", ""), f"{field}.chat_id"),
-        attach_roi=_as_bool(raw.get("attach_roi", True), f"{field}.attach_roi"),
-        path=_as_str(raw.get("path", ""), f"{field}.path"),
     )
 
 
@@ -475,6 +715,63 @@ def remove_target_from_config(path: str | Path, name: str) -> bool:
     return True
 
 
+def _webhook_options_to_dict(options: WebhookOptions) -> dict[str, Any]:
+    data: dict[str, Any] = {"method": options.method}
+    if options.url:
+        data["url"] = options.url
+    if options.url_env:
+        data["url_env"] = options.url_env
+    if options.headers:
+        data["headers"] = dict(options.headers)
+    if options.payload is not None:
+        data["payload"] = options.payload
+    if options.payload_raw:
+        data["payload_raw"] = options.payload_raw
+    data["timeout_s"] = options.timeout_s
+    data["verify_tls"] = options.verify_tls
+    return data
+
+
+def _http_post_options_to_dict(options: HttpPostOptions) -> dict[str, Any]:
+    data: dict[str, Any] = {"method": options.method}
+    if options.url:
+        data["url"] = options.url
+    if options.url_env:
+        data["url_env"] = options.url_env
+    if options.host:
+        data["scheme"] = options.scheme
+        data["host"] = options.host
+        data["port"] = options.port
+    if options.path:
+        data["path"] = options.path
+    if options.headers:
+        data["headers"] = dict(options.headers)
+    if options.payload is not None:
+        data["payload"] = options.payload
+    if options.payload_raw:
+        data["payload_raw"] = options.payload_raw
+    data["timeout_s"] = options.timeout_s
+    data["verify_tls"] = options.verify_tls
+    return data
+
+
+def _syslog_options_to_dict(options: SyslogOptions) -> dict[str, Any]:
+    data: dict[str, Any] = {
+        "host": options.host,
+        "port": options.port,
+        "protocol": options.protocol,
+        "facility": options.facility,
+        "app_name": options.app_name,
+        "timeout_s": options.timeout_s,
+        "append_nul": options.append_nul,
+    }
+    if options.payload_raw:
+        data["payload_raw"] = options.payload_raw
+    if options.severity_map:
+        data["severity_map"] = {severity: level for severity, level in options.severity_map}
+    return data
+
+
 def _alert_to_dict(alert: AlertOptions) -> dict[str, Any]:
     data: dict[str, Any] = {
         "type": alert.type,
@@ -482,6 +779,8 @@ def _alert_to_dict(alert: AlertOptions) -> dict[str, Any]:
         "severity_min": alert.severity_min,
         "cooldown_s": alert.cooldown_s,
     }
+    if alert.id and alert.id != alert.type:
+        data["id"] = alert.id
     if alert.type == "sound":
         data["file"] = alert.file
     elif alert.type == "telegram":
@@ -494,6 +793,12 @@ def _alert_to_dict(alert: AlertOptions) -> dict[str, Any]:
         )
     elif alert.type == "log" and alert.path:
         data["path"] = alert.path
+    elif alert.type == "webhook" and isinstance(alert.options, WebhookOptions):
+        data["options"] = _webhook_options_to_dict(alert.options)
+    elif alert.type == "http_post" and isinstance(alert.options, HttpPostOptions):
+        data["options"] = _http_post_options_to_dict(alert.options)
+    elif alert.type == "syslog" and isinstance(alert.options, SyslogOptions):
+        data["options"] = _syslog_options_to_dict(alert.options)
     return data
 
 

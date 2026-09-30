@@ -45,18 +45,19 @@ class AlertChain:
         fired = False
         failed = False
         for notifier in eligible:
-            last = self._last_attempt.get(notifier.name, 0.0)
+            key = getattr(notifier, "uid", notifier.name)
+            last = self._last_attempt.get(key, 0.0)
             if now - last < notifier.cooldown_s:
                 continue
             try:
                 notifier.notify(result, frame)
-                self._last_attempt[notifier.name] = now
+                self._last_attempt[key] = now
                 fired = True
             except Exception as exc:
                 log.error("notifier %s failed: %s", notifier.name, exc)
                 # Backoff: registra a tentativa para nao martelar a cada tick
                 # enquanto a falha persistir (ex.: token/rede fora).
-                self._last_attempt[notifier.name] = now
+                self._last_attempt[key] = now
                 failed = True
 
         if fired:

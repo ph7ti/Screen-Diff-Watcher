@@ -23,8 +23,8 @@ Runs on **Windows and Linux**, capturing pixels only (it never touches the watch
   doc §3.3).
 - **Detects visual changes** in three modes: `light` (mean color), `default` (perceptual hash) and
   `advanced` (OCR + text diff; requires Tesseract).
-- **Alerts** through sound, popup, Telegram and/or a JSONL log, with per-channel minimum severity
-  and cooldown.
+- **Alerts** through sound, popup, Telegram, a JSONL log, a **webhook**, an **HTTP POST** and
+  **syslog**, with per-channel minimum severity and cooldown.
 - **Masks** to ignore areas that change on their own (clock, spinner, cursor).
 - **Evidence**: prints of the baseline and of each change — opt-in.
 - **Pseudo-human actions** (click, keys, text) when armed — rehearsal by default, audited in
@@ -75,10 +75,14 @@ its own `severity_min` and `cooldown_s`:
 | `popup` | local notification | [wiki/Alerts.md](wiki/Alerts.md) |
 | `telegram` | message + ROI image via bot | **[Telegram setup — step by step](wiki/Telegram-Setup.md)** |
 | `log` | one JSON line per alert (`logs/alerts.jsonl`) | [wiki/Alerts.md](wiki/Alerts.md) |
+| `webhook` | JSON POST/PUT/PATCH to a webhook URL (Teams **Workflows**, Slack, Discord, Mattermost) | [wiki/Alerts.md](wiki/Alerts.md) |
+| `http_post` | JSON POST to a host/IP + port (or a full URL) | [wiki/Alerts.md](wiki/Alerts.md) |
+| `syslog` | informational syslog message (`udp`/`tcp`) — no image | [wiki/Alerts.md](wiki/Alerts.md) |
 
-The alerts are configured per profile in `config.yaml` (the `alerts:` list). Secrets never go in the
-YAML — the Telegram token is read from an environment variable. More channels are planned (e.g. a
-generic webhook); the channel map is extensible by `type`.
+The alerts are configured per profile in `config.yaml` (the `alerts:` list), each with an optional stable
+`id`. Secrets never go in the YAML — the Telegram token is read from an environment variable, and the new
+channels accept `url_env`/`${env:VAR}`. Test a single channel with `test-alert --list`/`--only ID` or the
+window's **Test alert…** button. The channel map is extensible by `type`.
 
 ## What problems it solves
 
@@ -127,6 +131,8 @@ python -m screen_watch select-manual --handle 12345 --roi 120 340 400 80 --name 
 python -m screen_watch list-selections
 python -m screen_watch migrate-config --dry-run               # convert v1 YAML -> v2
 python -m screen_watch test-alert --selection panel           # synthetic alert
+python -m screen_watch test-alert --selection panel --list    # id/type/state/destination
+python -m screen_watch test-alert --selection panel --only ID # single channel (text mode)
 python -m screen_watch test-evidence --selection panel        # sample prints
 python -m screen_watch test-action --selection panel          # actions rehearsal (--armed executes)
 python -m screen_watch list-actions --selection panel
@@ -246,8 +252,9 @@ ruff check .
 python -m pytest -q -m "not integration"
 ```
 
-Integration tests are opt-in (`TEST_REAL_CAPTURE`, `TEST_REAL_TELEGRAM`) — details, script ladder
-and CI in [wiki/Development-Tests-and-CI.md](wiki/Development-Tests-and-CI.md).
+Integration tests are opt-in (`TEST_REAL_CAPTURE`, `TEST_REAL_TELEGRAM`,
+`TEST_REAL_WEBHOOK_URL`, `TEST_REAL_HTTP_URL`) — details, script ladder and CI in
+[wiki/Development-Tests-and-CI.md](wiki/Development-Tests-and-CI.md).
 
 ## Documentation
 
@@ -256,6 +263,7 @@ and CI in [wiki/Development-Tests-and-CI.md](wiki/Development-Tests-and-CI.md).
 | [**Wiki**](wiki/Home.md) | usage and feature details: CLI, GUI, config, actions, alerts, evidence, languages, DPI, build |
 | [`doc/00-Architecture_and_Specification.md`](doc/00-Architecture_and_Specification.md) | architecture and specification — **single source of truth for the design** |
 | [`doc/01-Build_and_Release.md`](doc/01-Build_and_Release.md) | installer build and release pipeline |
+| [`doc/releases/`](doc/releases/v0.5.0.md) | per-version release notes (detail file) |
 | [`CHANGELOG.md`](CHANGELOG.md) | changes per version (semantic) |
 | [`README.pt-BR.md`](README.pt-BR.md) | este guia em português |
 

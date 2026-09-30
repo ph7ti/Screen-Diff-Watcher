@@ -31,10 +31,13 @@ during collection.
 $env:TEST_REAL_CAPTURE="1"; python -m pytest -m integration
 $env:TEST_REAL_TELEGRAM="1"; $env:TELEGRAM_BOT_TOKEN="..."; `
   $env:TELEGRAM_TEST_CHAT_ID="..."; python -m pytest -m integration
+$env:TEST_REAL_WEBHOOK_URL="https://..."; python -m pytest -m integration
+$env:TEST_REAL_HTTP_URL="https://..."; python -m pytest -m integration
 ```
 
 `TEST_REAL_CAPTURE` really captures from the primary monitor; `TEST_REAL_TELEGRAM` sends a synthetic
-photo and fails if the HTTP is not 2xx.
+photo and fails if the HTTP is not 2xx; `TEST_REAL_WEBHOOK_URL`/`TEST_REAL_HTTP_URL` send a synthetic
+JSON payload to the given URL.
 
 ## Validation ladder (capture/DPI diagnostics)
 

@@ -84,7 +84,7 @@ Durante a execução, cada gatilho imprime uma linha `[action] rehearsal|armed <
 
 | Comando | O que faz |
 |---|---|
-| `test-alert --selection S` | dispara um alerta **sintético** (severidade 3) com a ROI atual, para conferir som/popup/Telegram/log |
+| `test-alert --selection S [--list] [--only ID]` | dispara um alerta **sintético** (severidade 3); `--list` imprime id/tipo/estado/destino; `--only ID` envia a um destino (modo texto, ignora `enabled`) |
 | `test-evidence --selection S` | grava um par baseline+change de exemplo e imprime os caminhos |
 | `test-action --selection S [--armed] [--actions ...] [--no-countdown]` | ensaia (default) ou executa as ações; `--armed` mostra a contagem de 3 s |
 | `list-actions --selection S` | lista as ações resolvidas e o subconjunto salvo, sem iniciar sessão |
@@ -96,6 +96,8 @@ Durante a execução, cada gatilho imprime uma linha `[action] rehearsal|armed <
 
 ```powershell
 python -m screen_watch test-alert --selection painel
+python -m screen_watch test-alert --selection painel --list
+python -m screen_watch test-alert --selection painel --only siem
 python -m screen_watch test-action --selection painel            # ensaio
 python -m screen_watch test-action --selection painel --armed    # executa de verdade
 python -m screen_watch compare-modes --selection painel --delay 5

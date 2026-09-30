@@ -3,6 +3,43 @@
 Todas as mudanças relevantes deste projeto. Formato inspirado em "Keep a Changelog";
 versionamento semântico. Versão: `screen_watch.__version__` (fonte única).
 
+## [0.5.0] — 2026-09-30
+
+Detalhes e exemplos: [`doc/releases/v0.5.0.md`](doc/releases/v0.5.0.md)
+([PT](doc/releases/v0.5.0.pt-BR.md)).
+
+### Adicionado
+
+- **Canais de alerta `webhook`, `http_post` e `syslog`** (bloco aninhado `options:`; os quatro canais
+  atuais mantêm os campos planos, **sem migração**): POST JSON para webhook (Teams **Workflows**,
+  Slack, Discord, Mattermost), POST JSON para host/IP + porta e envio syslog informacional
+  (`udp`/`tcp`, `facility`, `severity_map`), todos com **modelo de payload** (`payload:` mapping ou
+  `payload_raw:`) e placeholders `${campo}`/`${env:VAR}`.
+- **`id` estável por alerta** (default `type`; `type#n` quando repetido), usado como **chave de cooldown**
+  — corrige dois webhooks compartilhando o mesmo cooldown — e para selecionar o destino no teste.
+- **Teste de envio**: `test-alert --list` e `test-alert --only <id>` no CLI e botão **Testar alerta…** na
+  GUI (envio em thread de trabalho, com modo texto quando não há ROI).
+- `verify_tls` (default `true`) nos canais HTTP, com aviso em log **a cada envio** quando `false`.
+- `doc/releases/` (EN/PT): notas detalhadas de release, linkadas no `CHANGELOG`.
+
+### Mudado
+
+- **Tipo de alerta desconhecido passa a ser erro de config** (`config.alert_unknown_type`) em vez de
+  aviso silencioso — um canal "mudo" deixa de passar batido (o CLI avisa quando o config existente é
+  inválido e cai para os alertas padrão).
+- **Cooldown por `id`**: a chave deixou de ser o nome da classe. Um perfil com **dois alertas do mesmo
+  tipo** passa a disparar os dois por janela de cooldown (antes compartilhavam a chave).
+
+### Notas
+
+- **Segredos**: `url` literal ou `url_env: VAR`; `${env:VAR}` também em `headers`/`payload`. Erros e logs
+  nunca expõem a URL resolvida nem os valores das variáveis.
+- **Limitações**: sem imagem/ROI nos canais novos (Telegram continua o único com `attach_roi`); syslog
+  por **UDP não confirma entrega** (use `tcp` quando precisar); Incoming Webhooks do **Teams** sendo
+  descontinuados (prazo 31/03/2026; desligamento maio/2026 — use **Workflows**).
+- 12 códigos de erro novos (`config.alert_*` + `alert.http_*`/`alert.syslog_unavailable`) nos dois
+  catálogos i18n.
+
 ## [0.4.1] — 2026-09-30
 
 ### Removido

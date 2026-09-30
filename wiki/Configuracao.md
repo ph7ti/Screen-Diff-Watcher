@@ -69,6 +69,43 @@ evidence: { enabled: false, dir: null, keep_per_target: 50, max_total_mb: 200,
 - O app regrava o YAML **sem preservar comentários**; a escrita é atômica (temp + `os.replace`) e
   deixa um backup `config.yaml.bak`.
 
+## Canais de alerta
+
+Cada item de `alerts:` aceita `type`, `enabled`, `severity_min`, `cooldown_s` e um **`id`** opcional
+(default `type`; `type#n` quando repetido). O `id` é a **chave de cooldown** e o nome usado na seleção do
+teste de envio. Os quatro tipos originais (`sound`/`popup`/`telegram`/`log`) usam **campos planos**; os
+novos usam um bloco aninhado **`options:`**:
+
+```yaml
+alerts:
+  - type: webhook
+    id: teams
+    severity_min: 2
+    cooldown_s: 60
+    options:
+      url_env: TEAMS_WEBHOOK             # ou url: "https://..."
+      method: POST                       # POST | PUT | PATCH
+      headers: { Content-Type: "application/json" }
+      payload: { text: "Mudança em ${target}: ${strategy} sev=${severity}" }   # ou payload_raw: "..."
+      timeout_s: 5
+      verify_tls: true
+  - type: http_post
+    id: erp-api
+    options: { scheme: http, host: 10.0.0.20, port: 8080, path: /alerta }
+  - type: syslog
+    id: siem
+    options: { host: 10.0.0.9, port: 514, protocol: udp, facility: local0 }
+```
+
+Regras (validadas com código estável `config.alert_*`):
+
+- `webhook`/`http_post` exigem `url` ou `url_env`; a URL deve começar com `http://`/`https://`.
+- `payload` e `payload_raw` são mutuamente exclusivos; placeholder `${...}` desconhecido é erro.
+- `port` deve ser 1..65535; `protocol` é `udp`/`tcp`; `facility` precisa ser uma facility syslog
+  conhecida; `method` é `POST`/`PUT`/`PATCH`.
+- `type` desconhecido é erro (um canal "mudo" deixa de passar batido).
+- Detalhes e a lista completa de placeholders: [Alertas](Alertas.md).
+
 ## Perfis
 
 Perfis nomeados (`profiles.<nome>.defaults` + `.alerts` + `.actions`) permitem alternar conjuntos de

@@ -172,6 +172,7 @@ class MainWindow(QMainWindow):
         self.btn_reload = QPushButton(tr("main.btn_reload"))
         self.btn_open = QPushButton(tr("main.btn_open_yaml"))
         self.btn_open_captures = QPushButton(tr("main.btn_captures"))
+        self.btn_test_alert = QPushButton(tr("main.btn_test_alert"))
         self.chk_evidence = QCheckBox(tr("main.chk_evidence"))
         for widget in (
             self.btn_new,
@@ -179,6 +180,7 @@ class MainWindow(QMainWindow):
             self.btn_reload,
             self.btn_open,
             self.btn_open_captures,
+            self.btn_test_alert,
             self.chk_evidence,
         ):
             buttons.addWidget(widget)
@@ -263,6 +265,7 @@ class MainWindow(QMainWindow):
         self.btn_reload.clicked.connect(self._reload)
         self.btn_open.clicked.connect(self._open_yaml)
         self.btn_open_captures.clicked.connect(self._open_captures)
+        self.btn_test_alert.clicked.connect(self._test_alert)
         self.chk_evidence.toggled.connect(self._toggle_evidence)
 
         # ajuda no hover (>2 s)
@@ -283,6 +286,7 @@ class MainWindow(QMainWindow):
         self._help(self.btn_reload, "window.reload")
         self._help(self.btn_open, "window.open_yaml")
         self._help(self.btn_open_captures, "window.captures")
+        self._help(self.btn_test_alert, "window.test_alert")
         self._help(self.chk_evidence, "window.evidence")
         self._help(self.action_list, "window.actions_list")
         self._help(self.btn_action_new, "window.action_new")
@@ -984,6 +988,24 @@ class MainWindow(QMainWindow):
 
         if not open_path(path):
             self._append(f"open manually: {path}")
+
+    def _test_alert(self) -> None:
+        try:
+            target = self._resolve_target(self.mode_combo.currentText())
+        except Exception as exc:
+            QMessageBox.warning(
+                self, tr("main.title"), tr("dialog.load_failed", error=render_error(exc))
+            )
+            return
+        if target is None:
+            QMessageBox.information(self, tr("main.title"), tr("dialog.select_selection"))
+            return
+        if not target.alerts:
+            QMessageBox.information(self, tr("main.title"), tr("main.no_alerts"))
+            return
+        from screen_watch.gui.alert_dialog import AlertTestDialog
+
+        AlertTestDialog(self, target).exec()
 
     def _sync_evidence_toggle(self) -> None:
         from screen_watch.app import effective_evidence_options

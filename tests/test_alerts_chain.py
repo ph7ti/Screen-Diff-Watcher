@@ -7,13 +7,24 @@ from screen_watch.compare.protocol import ComparisonResult
 
 
 class FakeNotifier:
-    def __init__(self, name="n", *, enabled=True, severity_min=1, cooldown_s=0.0, boom=False):
+    def __init__(
+        self,
+        name="n",
+        *,
+        enabled=True,
+        severity_min=1,
+        cooldown_s=0.0,
+        boom=False,
+        uid=None,
+    ):
         self.name = name
         self.enabled = enabled
         self.severity_min = severity_min
         self.cooldown_s = cooldown_s
         self.calls = 0
         self.boom = boom
+        if uid is not None:
+            self.uid = uid
 
     def notify(self, result, frame):
         self.calls += 1
@@ -86,3 +97,18 @@ def test_reset_clears_cooldown(make_frame):
     chain.reset()
     assert chain.dispatch(_result(make_frame), _frame(make_frame)) is DispatchOutcome.FIRED
     assert notifier.calls == 2
+
+
+def test_two_webhooks_with_distinct_ids_are_independent(make_frame):
+    fast = FakeNotifier(name="webhook", uid="teams", cooldown_s=0.0)
+    slow = FakeNotifier(name="webhook", uid="erp", cooldown_s=60.0)
+    chain = AlertChain([fast, slow])
+
+    assert chain.dispatch(_result(make_frame), _frame(make_frame)) is DispatchOutcome.FIRED
+    assert fast.calls == 1
+    assert slow.calls == 1
+
+    # O cooldown do `slow` nao pode ser compartilhado com o `fast` (mesmo `name`).
+    assert chain.dispatch(_result(make_frame), _frame(make_frame)) is DispatchOutcome.FIRED
+    assert fast.calls == 2
+    assert slow.calls == 1

@@ -8,6 +8,7 @@ ele a partir de uma selecao (`persistence.selection.build_target`).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 from screen_watch.actions.protocol import ActionSpec
 
@@ -16,6 +17,53 @@ Point = tuple[int, int]
 
 VALID_MODES = ("light", "default", "advanced")
 VALID_DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+VALID_ALERT_TYPES = (
+    "sound",
+    "popup",
+    "telegram",
+    "log",
+    "webhook",
+    "http_post",
+    "syslog",
+)
+VALID_ALERT_METHODS = ("POST", "PUT", "PATCH")
+VALID_SYSLOG_PROTOCOLS = ("udp", "tcp")
+VALID_SYSLOG_FACILITIES = (
+    "kern",
+    "user",
+    "mail",
+    "daemon",
+    "auth",
+    "syslog",
+    "lpr",
+    "news",
+    "uucp",
+    "cron",
+    "authpriv",
+    "ftp",
+    "ntp",
+    "security",
+    "console",
+    "solaris-cron",
+    "local0",
+    "local1",
+    "local2",
+    "local3",
+    "local4",
+    "local5",
+    "local6",
+    "local7",
+)
+VALID_SYSLOG_LEVELS = (
+    "emergency",
+    "alert",
+    "critical",
+    "error",
+    "warning",
+    "notice",
+    "informational",
+    "debug",
+)
 
 
 @dataclass(frozen=True)
@@ -47,6 +95,56 @@ class CompareOptions:
 
 
 @dataclass(frozen=True)
+class WebhookOptions:
+    """Opcoes do canal `webhook` (POST JSON para uma URL de webhook)."""
+
+    url: str = ""
+    url_env: str = ""
+    method: str = "POST"
+    headers: tuple[tuple[str, str], ...] = ()
+    payload: dict[str, Any] | None = None
+    payload_raw: str = ""
+    timeout_s: float = 5.0
+    verify_tls: bool = True
+
+
+@dataclass(frozen=True)
+class HttpPostOptions:
+    """Opcoes do canal `http_post` (URL completa ou host/port/path/scheme)."""
+
+    url: str = ""
+    url_env: str = ""
+    scheme: str = "http"
+    host: str = ""
+    port: int = 0
+    path: str = ""
+    method: str = "POST"
+    headers: tuple[tuple[str, str], ...] = ()
+    payload: dict[str, Any] | None = None
+    payload_raw: str = ""
+    timeout_s: float = 5.0
+    verify_tls: bool = True
+
+
+@dataclass(frozen=True)
+class SyslogOptions:
+    """Opcoes do canal `syslog` (informativo; sem imagem)."""
+
+    host: str = ""
+    port: int = 514
+    protocol: str = "udp"
+    facility: str = "local0"
+    app_name: str = "screen-diff-watcher"
+    payload_raw: str = ""
+    severity_map: tuple[tuple[int, str], ...] = ()
+    timeout_s: float = 5.0
+    append_nul: bool = False
+
+
+AlertChannelOptions = WebhookOptions | HttpPostOptions | SyslogOptions
+
+
+@dataclass(frozen=True)
 class AlertOptions:
     type: str
     enabled: bool = True
@@ -58,6 +156,10 @@ class AlertOptions:
     attach_roi: bool = True
     # Usado apenas pelo notificador `log` (jsonl); vazio = app-data/logs/alerts.jsonl.
     path: str = ""
+    # Identificador estavel do alerta (chave de cooldown e selecao do teste de envio).
+    id: str = ""
+    # Opcoes aninhadas dos canais novos (webhook/http_post/syslog).
+    options: AlertChannelOptions | None = None
 
 
 @dataclass(frozen=True)

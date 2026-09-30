@@ -72,7 +72,16 @@ def build_pipeline(mode: str, options: CompareOptions) -> ComparePipeline:
     return ComparePipeline(stages)
 
 
-def build_notifier(options: AlertOptions) -> Notifier | None:
+def build_notifier(options: AlertOptions, target_name: str = "") -> Notifier | None:
+    notifier = _build_notifier(options, target_name)
+    if notifier is not None:
+        # Chave de cooldown estavel e selecao do teste de envio (dois webhooks com
+        # ids diferentes nao compartilham cooldown).
+        notifier.uid = options.id or options.type
+    return notifier
+
+
+def _build_notifier(options: AlertOptions, target_name: str) -> Notifier | None:
     if options.type == "sound":
         from screen_watch.alerts.sound import SoundNotifier  # noqa: PLC0415
 
@@ -110,12 +119,50 @@ def build_notifier(options: AlertOptions) -> Notifier | None:
             severity_min=options.severity_min,
             cooldown_s=options.cooldown_s,
         )
+    if options.type == "webhook":
+        from screen_watch.alerts.http import WebhookNotifier  # noqa: PLC0415
+        from screen_watch.config.schema import WebhookOptions  # noqa: PLC0415
+
+        channel = options.options if isinstance(options.options, WebhookOptions) else WebhookOptions()
+        return WebhookNotifier(
+            channel,
+            enabled=options.enabled,
+            severity_min=options.severity_min,
+            cooldown_s=options.cooldown_s,
+            target_name=target_name,
+        )
+    if options.type == "http_post":
+        from screen_watch.alerts.http import HttpPostNotifier  # noqa: PLC0415
+        from screen_watch.config.schema import HttpPostOptions  # noqa: PLC0415
+
+        channel = options.options if isinstance(options.options, HttpPostOptions) else HttpPostOptions()
+        return HttpPostNotifier(
+            channel,
+            enabled=options.enabled,
+            severity_min=options.severity_min,
+            cooldown_s=options.cooldown_s,
+            target_name=target_name,
+        )
+    if options.type == "syslog":
+        from screen_watch.alerts.syslog import SyslogNotifier  # noqa: PLC0415
+        from screen_watch.config.schema import SyslogOptions  # noqa: PLC0415
+
+        channel = options.options if isinstance(options.options, SyslogOptions) else SyslogOptions()
+        return SyslogNotifier(
+            channel,
+            enabled=options.enabled,
+            severity_min=options.severity_min,
+            cooldown_s=options.cooldown_s,
+            target_name=target_name,
+        )
     log.warning("unknown alert type ignored: %s", options.type)
     return None
 
 
-def build_alert_chain(alerts: tuple[AlertOptions, ...]) -> AlertChain:
-    notifiers = [n for n in (build_notifier(a) for a in alerts) if n is not None]
+def build_alert_chain(alerts: tuple[AlertOptions, ...], target_name: str = "") -> AlertChain:
+    notifiers = [
+        n for n in (build_notifier(a, target_name) for a in alerts) if n is not None
+    ]
     return AlertChain(notifiers)
 
 
@@ -214,7 +261,7 @@ class MonitorSession:
     ) -> None:
         self.target = target
         self.pipeline = build_pipeline(target.mode, target.compare_options)
-        self.chain = build_alert_chain(target.alerts)
+        self.chain = build_alert_chain(target.alerts, target.name)
         self.rearm = bool(target.rearm)
         self._on_result = on_result
         self._recorder = recorder

@@ -457,6 +457,78 @@ def test_test_alert_invalid_profile_reports_error(monkeypatch, tmp_path, capsys)
     assert "unknown profile" in capsys.readouterr().out
 
 
+def _alert_config(tmp_path, alerts):
+    config_path = tmp_path / "config.yaml"
+    save_config(
+        config_path,
+        {
+            "version": 2,
+            "profile": "default",
+            "profiles": {"default": {"defaults": {}, "alerts": alerts}},
+        },
+    )
+    return config_path
+
+
+def test_test_alert_list(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    (tmp_path / "selections").mkdir()
+    _write_selection(tmp_path / "selections" / "demo.json")
+    config_path = _alert_config(tmp_path, [{"type": "log"}, {"type": "popup", "enabled": False}])
+
+    args = argparse.Namespace(
+        config=str(config_path), selection="demo", profile=None, list=True, only=None
+    )
+    assert cli._cmd_test_alert(args) == 0
+    out = capsys.readouterr().out
+    assert "type=log" in out
+    assert "type=popup" in out
+    assert "disabled" in out
+
+
+def test_test_alert_only_writes_jsonl(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    (tmp_path / "selections").mkdir()
+    _write_selection(tmp_path / "selections" / "demo.json")
+    config_path = _alert_config(tmp_path, [{"type": "log"}])
+
+    args = argparse.Namespace(
+        config=str(config_path), selection="demo", profile=None, list=False, only="log"
+    )
+    assert cli._cmd_test_alert(args) == 0
+    assert (tmp_path / "logs" / "alerts.jsonl").exists()
+    assert "sent" in capsys.readouterr().out
+
+
+def test_test_alert_only_unknown_id_reports_available(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    (tmp_path / "selections").mkdir()
+    _write_selection(tmp_path / "selections" / "demo.json")
+    config_path = _alert_config(tmp_path, [{"type": "log"}])
+
+    args = argparse.Namespace(
+        config=str(config_path), selection="demo", profile=None, list=False, only="nope"
+    )
+    assert cli._cmd_test_alert(args) == 1
+    assert "not found" in capsys.readouterr().out
+
+
+def test_test_alert_only_missing_url_reports_failure(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    (tmp_path / "selections").mkdir()
+    _write_selection(tmp_path / "selections" / "demo.json")
+    monkeypatch.delenv("ABSENT_HOOK", raising=False)
+    config_path = _alert_config(
+        tmp_path, [{"type": "webhook", "options": {"url_env": "ABSENT_HOOK"}}]
+    )
+
+    args = argparse.Namespace(
+        config=str(config_path), selection="demo", profile=None, list=False, only="webhook"
+    )
+    assert cli._cmd_test_alert(args) == 1
+    assert "no url resolved" in capsys.readouterr().out
+
+
 def test_validate_selections_rejects_bad_override_action(monkeypatch, tmp_path, capsys):
     monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
     (tmp_path / "selections").mkdir()

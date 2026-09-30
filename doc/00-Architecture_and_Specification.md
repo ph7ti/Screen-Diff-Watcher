@@ -294,7 +294,11 @@ ScreenDiffWatcher/
 │       │   ├── popup.py           # PopupNotifier (plyer)
 │       │   ├── telegram.py        # TelegramNotifier (httpx; token via env)
 │       │   ├── log.py             # JsonlNotifier (logs/alerts.jsonl)
-│       │   └── chain.py           # AlertChain + DispatchOutcome
+│       │   ├── template.py        # ${campo}/${env:VAR} template (string.Template)
+│       │   ├── http.py            # WebhookNotifier + HttpPostNotifier (httpx; payload template)
+│       │   ├── syslog.py          # SyslogNotifier (SysLogHandler; udp/tcp; severity_map)
+│       │   ├── test_send.py       # list_alert_targets + send_test (CLI/GUI send test)
+│       │   └── chain.py           # AlertChain + DispatchOutcome (cooldown key = uid)
 │       │
 │       ├── actions/               # pseudo-human actions (opt-in)
 │       │   ├── protocol.py        # ActionSpec/ActionStep (pure)
@@ -336,6 +340,7 @@ ScreenDiffWatcher/
 │       │   ├── countdown.py       # 3 s countdown (focusless overlay)
 │       │   ├── locator.py         # mouse position locator
 │       │   ├── action_editor.py   # selection action editor
+│       │   ├── alert_dialog.py    # "Test alert…" dialog + send worker
 │       │   ├── hotkeys.py         # global hotkeys (pynput, lazy)
 │       │   ├── help.py            # help texts (pure)
 │       │   ├── hover_help.py      # 2 s tooltip
@@ -911,7 +916,8 @@ class Notifier(Protocol):
 **Rules**:
 - `severity_min`: the notifier only fires if the change severity is >= this value.
 - `cooldown_s`: after **attempting** to fire, the notifier is silenced for N seconds,
-  regardless of new changes (including on failure — backoff, see §11.3).
+  regardless of new changes (including on failure — backoff, see §11.3). The key is the alert **`id`**
+  (`uid`), not the notifier class name (§11.2).
 - `frame` is passed complete to allow attaching the ROI image (Telegram) or logging context.
 
 ### 11.2 Prototype notifiers
@@ -945,7 +951,35 @@ class Notifier(Protocol):
 - `JsonlNotifier`: one JSON line per firing in `app-data/logs/alerts.jsonl` (or the path
   configured in `path`).
 
-**Rule**: an unknown type is ignored with `log.warning` (`build_notifier` returns `None`).
+**Webhook / HTTP POST (`http.py`)**:
+- `post_json` does `POST`/`PUT`/`PATCH` JSON via `httpx`, redirects **not** followed, success = 2xx
+  (non-2xx → `alert.http_status`; network failure → `alert.http_unreachable`).
+- `WebhookNotifier` uses `url` or `url_env`; `HttpPostNotifier` also accepts `scheme`/`host`/`port`/
+  `path`. Default payload `{"text": "${message}"}`; `payload_raw` sends a non-object body.
+- **Payload template** (`alerts/template.py`): `string.Template` with `idpattern` extended for
+  `${env:VAR}` (resolved from `os.environ` **at send time**); placeholders `message`, `strategy`,
+  `score`, `threshold`, `severity`, `target`, `timestamp`, `window_handle`, `changed`, `roi`. An unknown
+  placeholder is a config error (`config.alert_unknown_placeholder`).
+- **Secrets**: the resolved URL is redacted (`scheme://host/…`) in errors/logs; `verify_tls: false`
+  warns **on every send**.
+- **No image/ROI** (attaching a print stays exclusive to Telegram).
+
+**Syslog (`syslog.py`)**:
+- `logging.handlers.SysLogHandler` to `(host, port)`; `socktype=SOCK_DGRAM` (udp, default) or
+  `SOCK_STREAM` (tcp); `facility` default `local0`; `app_name` becomes the `ident`/tag; `append_nul=False`.
+- `timeout=` on `SysLogHandler` only exists in Python 3.14, so `createSocket` is overridden to call
+  `settimeout`; on Windows, use **UDP**.
+- **Informational by default** (the real severity goes in the text via `${severity}`), with an optional
+  `severity_map` (keys 0..3). UDP is *fire-and-forget* (it does not confirm delivery) → prefer TCP when
+  delivery must be confirmed.
+
+**`id` and cooldown key**:
+- Every alert has an optional `id` (default `type`; `type#n` when repeated in the same profile,
+  validated). `build_notifier` assigns `notifier.uid = id or type`; `AlertChain` uses
+  `getattr(n, "uid", n.name)` as the cooldown key, so two webhooks do not share the cooldown.
+
+**Rule**: an unknown `type` is a **config error** (`config.alert_unknown_type`) — `build_notifier` also
+keeps a defensive `log.warning` + `None`.
 
 ### 11.3 Chaining, outcomes and re-arm
 
@@ -1093,6 +1127,17 @@ profiles:
       - { type: "telegram", enabled: true, severity_min: 2, cooldown_s: 60,
           bot_token_env: "TELEGRAM_BOT_TOKEN", chat_id: "123456789", attach_roi: true }
       - { type: "log",      enabled: true, severity_min: 1, cooldown_s: 0 }   # optional
+      - type: webhook                    # Teams Workflows / Slack / Discord / Mattermost…
+        id: teams
+        severity_min: 2
+        cooldown_s: 60
+        options: { url_env: TEAMS_WEBHOOK, payload: { text: "Change on ${target} sev=${severity}" } }
+      - type: http_post
+        id: erp-api
+        options: { scheme: http, host: "10.0.0.20", port: 8080, path: "/alerta" }
+      - type: syslog
+        id: siem
+        options: { host: "10.0.0.9", port: 514, protocol: udp, facility: local0 }
     actions: []                  # see §11.4
   trabalho:
     defaults: { mode: "default", poll_interval_s: 1.0 }
@@ -1107,7 +1152,12 @@ evidence: { enabled: false, dir: null, keep_per_target: 50, max_total_mb: 200,
 ```
 
 **Rules**:
-- Tokens and secrets **never** in the YAML. Use environment variables (`bot_token_env`).
+- Tokens and secrets **never** in the YAML. Use environment variables (`bot_token_env`, `url_env`,
+  `${env:VAR}` in `headers`/`payload`); errors/logs never expose the resolved URL or the variable values.
+- Alert `type`: `sound`/`popup`/`telegram`/`log` keep **flat fields**; `webhook`/`http_post`/`syslog`
+  use a nested **`options:`** block. An unknown `type` is `ConfigError` (`config.alert_unknown_type`).
+- Every alert has an optional **`id`** (default `type`; `type#n` when repeated) used as the **cooldown
+  key** and for the send test. `payload` XOR `payload_raw`; unknown `${...}` → `ConfigError`.
 - `version` accepts 1 or 2 (any other value is `ConfigError`); v2 **requires** `profiles`; a
   nonexistent `profile` is `ConfigError` (`config.profile_unknown`).
 - `version` absent with `targets:` is the legacy v1: it loads for one version, with a warning, and is
@@ -1223,6 +1273,9 @@ also works with config v1 (§11.5).
 - The GUI calls `render_error(exc)`, which translates `error.<code>` through the active catalog and
   falls back to `str(exc)` when there is no code/translation.
 - Codes are **stable** (contract with the catalogs): renaming a code breaks the translation.
+- Alert channels add `config.alert_*` codes (unknown type, options/URL/port/protocol/facility/method,
+  payload conflict, unknown placeholder, severity map, duplicate id) and the runtime
+  `alert.http_status`/`alert.http_unreachable`/`alert.syslog_unavailable`;
 
 ---
 

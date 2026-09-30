@@ -30,10 +30,13 @@ na coleta.
 $env:TEST_REAL_CAPTURE="1"; python -m pytest -m integration
 $env:TEST_REAL_TELEGRAM="1"; $env:TELEGRAM_BOT_TOKEN="..."; `
   $env:TELEGRAM_TEST_CHAT_ID="..."; python -m pytest -m integration
+$env:TEST_REAL_WEBHOOK_URL="https://..."; python -m pytest -m integration
+$env:TEST_REAL_HTTP_URL="https://..."; python -m pytest -m integration
 ```
 
 `TEST_REAL_CAPTURE` captura de verdade do monitor primário; `TEST_REAL_TELEGRAM` envia uma foto
-sintética e falha se o HTTP não for 2xx.
+sintética e falha se o HTTP não for 2xx; `TEST_REAL_WEBHOOK_URL`/`TEST_REAL_HTTP_URL` enviam um payload
+JSON sintético para a URL informada.
 
 ## Escada de validação (diagnóstico de captura/DPI)
 

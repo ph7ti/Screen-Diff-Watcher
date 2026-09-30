@@ -269,7 +269,11 @@ def _load_config_or_none(config_path):
 
     try:
         return load_config(config_path)
-    except ConfigError:
+    except ConfigError as exc:
+        # Um config existente porem invalido cai para os defaults; avisar evita
+        # "perder" o perfil em silencio (ex.: um `type` de alerta desconhecido).
+        if Path(config_path).exists():
+            print(f"warning: invalid config, using defaults: {exc}", file=sys.stderr)
         return None
 
 
@@ -369,6 +373,7 @@ def _capture_frame(target, sequence: int):
 def _cmd_test_alert(args: argparse.Namespace) -> int:
     from screen_watch.alerts.chain import DispatchOutcome
     from screen_watch.alerts.log import JsonlNotifier
+    from screen_watch.alerts.test_send import list_alert_targets, send_test
     from screen_watch.app import build_alert_chain
     from screen_watch.compare.protocol import ComparisonResult
     from screen_watch.config.loader import ConfigError
@@ -382,6 +387,18 @@ def _cmd_test_alert(args: argparse.Namespace) -> int:
     if not target.alerts:
         print(f"selection {target.name!r} has no alerts configured")
         return 1
+
+    if getattr(args, "list", False):
+        for uid, alert_type, enabled, severity_min, destination in list_alert_targets(target):
+            state = "enabled" if enabled else "disabled"
+            print(f"{uid}  type={alert_type}  {state}  severity_min={severity_min}  -> {destination}")
+        return 0
+
+    only = getattr(args, "only", None)
+    if only is not None:
+        outcome = send_test(target, only)
+        print(outcome.message)
+        return 0 if outcome.ok else 1
 
     try:
         frame, abs_rect, info = _capture_frame(target, 1)
@@ -397,7 +414,7 @@ def _cmd_test_alert(args: argparse.Namespace) -> int:
         severity=3,
         detail={"synthetic": True},
     )
-    chain = build_alert_chain(target.alerts)
+    chain = build_alert_chain(target.alerts, target.name)
     outcome = chain.dispatch(result, frame)
     log_path = alerts_log_path()
     # So grava a linha extra se a config nao tiver um notificador `log` (evita duplicar).

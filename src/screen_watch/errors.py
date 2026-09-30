@@ -64,6 +64,35 @@ _EN: dict[str, str] = {
     "config.action_text_needs_advanced": (
         "action {name!r}: text_* filters require mode 'advanced' (OCR); selection is {mode!r}"
     ),
+    "config.alert_unknown_type": (
+        "invalid {field}.type: {value!r}; use one of {valid}"
+    ),
+    "config.alert_options_not_mapping": "{field}.options must be a mapping",
+    "config.alert_missing_url": "{field} requires 'url' or 'url_env'",
+    "config.alert_missing_host": "{field} requires 'host'",
+    "config.alert_invalid_url": "{field}.url must start with http:// or https://",
+    "config.alert_invalid_port": "{field}.port must be between 1 and 65535 (got {value!r})",
+    "config.alert_invalid_protocol": (
+        "invalid {field}.protocol: {value!r}; use one of {valid}"
+    ),
+    "config.alert_invalid_facility": (
+        "invalid {field}.facility: {value!r}; use one of {valid}"
+    ),
+    "config.alert_invalid_method": "invalid {field}.method: {value!r}; use one of {valid}",
+    "config.alert_payload_conflict": "{field}: use either 'payload' or 'payload_raw', not both",
+    "config.alert_unknown_placeholder": (
+        "unknown placeholder {value!r} in {field}; known: {valid}"
+    ),
+    "config.alert_invalid_severity_map": (
+        "invalid {field}.severity_map: {value!r}; use keys 0..3 and levels {valid}"
+    ),
+    "config.alert_duplicate_id": "duplicate alert id {id!r} in {field}",
+    # -- alerts (runtime) -----------------------------------------------------
+    "alert.http_status": "http request failed: status {status} ({url})",
+    "alert.http_unreachable": "could not reach {url}",
+    "alert.syslog_unavailable": (
+        "syslog unavailable at {host}:{port} (check host/port/protocol)"
+    ),
     # -- actions --------------------------------------------------------------
     "action.not_integer": "{field} must be an integer (got {value!r})",
     "action.not_number": "{field} must be a number (got {value!r})",

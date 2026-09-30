@@ -1,8 +1,8 @@
 # Screen Diff Watcher — Wiki
 [English](Home.md) · **Português (Brasil)**
 
-Vigia uma **região retangular (ROI) de uma janela** e avisa quando ela muda — som, popup, Telegram
-ou log — no **Windows e no Linux**, sem tocar no aplicativo vigiado.
+Vigia uma **região retangular (ROI) de uma janela** e avisa quando ela muda — som, popup, Telegram,
+webhook/HTTP POST, syslog ou log — no **Windows e no Linux**, sem tocar no aplicativo vigiado.
 
 Esta wiki reúne os **detalhes de uso e recursos**. A visão geral (o que faz e o que não faz,
 plataformas, pré-requisitos, quick start e build) fica no [README](../README.pt-BR.md).
@@ -16,7 +16,7 @@ plataformas, pré-requisitos, quick start e build) fica no [README](../README.pt
 | [GUI e tray](GUI-e-Tray.md) | a janela, os botões, arming, ajuda no hover, prints, tray |
 | [Configuração](Configuracao.md) | `config.yaml` v2 (perfis, overrides), `state.json`, migração v1→v2 |
 | [Ações pseudo-humanas](Acoes-Pseudo-Humanas.md) | passos, gatilhos, arming/ensaio, limites, editor da GUI, gravador, auditoria |
-| [Alertas](Alertas.md) | som/popup/Telegram/log, severidade, cooldown, re-arm, `test-alert` |
+| [Alertas](Alertas.md) | som/popup/Telegram/log + webhook/HTTP POST/syslog, severidade, cooldown, re-arm, `test-alert --list/--only` |
 | [Configuração do Telegram](Configuracao-Telegram.md) | passo a passo: criar o bot, obter o chat id, definir o token, editar o YAML e testar |
 | [Evidências](Evidencias.md) | prints de baseline/mudança, retenção, pastas, toggle |
 | [Idiomas (i18n)](Idiomas.md) | catálogos, precedência, como adicionar um idioma |

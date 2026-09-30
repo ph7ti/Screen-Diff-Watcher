@@ -2,8 +2,8 @@
 
 **English** · [Português (Brasil)](Home-pt-BR.md)
 
-Watches a **rectangular region (ROI) of a window** and notifies you when it changes — sound, popup, Telegram
-or log — on **Windows and Linux**, without touching the watched application.
+Watches a **rectangular region (ROI) of a window** and notifies you when it changes — sound, popup, Telegram,
+webhook/HTTP POST, syslog or log — on **Windows and Linux**, without touching the watched application.
 
 This wiki gathers the **usage and feature details**. The overview (what it does and does not do,
 platforms, prerequisites, quick start and build) is in the [README](../README.md).
@@ -17,7 +17,7 @@ platforms, prerequisites, quick start and build) is in the [README](../README.md
 | [GUI and tray](GUI-and-Tray.md) | the window, the buttons, arming, hover help, prints, tray |
 | [Configuration](Configuration.md) | `config.yaml` v2 (profiles, overrides), `state.json`, v1→v2 migration |
 | [Pseudo-human actions](Pseudo-Human-Actions.md) | steps, triggers, arming/rehearsal, limits, GUI editor, recorder, audit |
-| [Alerts](Alerts.md) | sound/popup/Telegram/log, severity, cooldown, re-arm, `test-alert` |
+| [Alerts](Alerts.md) | sound/popup/Telegram/log + webhook/HTTP POST/syslog, severity, cooldown, re-arm, `test-alert --list/--only` |
 | [Telegram setup](Telegram-Setup.md) | step by step: create the bot, get the chat id, set the token, edit the YAML and test |
 | [Evidence](Evidence.md) | baseline/change prints, retention, folders, toggle |
 | [Languages (i18n)](Languages.md) | catalogs, precedence, how to add a language |

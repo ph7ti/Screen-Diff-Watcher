@@ -5,6 +5,8 @@ Marcados com `integration`; por padrao sao pulados. Para rodar:
     $env:TEST_REAL_CAPTURE="1"; python -m pytest -m integration
     $env:TEST_REAL_TELEGRAM="1"; $env:TELEGRAM_BOT_TOKEN="...";
     $env:TELEGRAM_TEST_CHAT_ID="..."; python -m pytest -m integration
+    $env:TEST_REAL_WEBHOOK_URL="https://..."; python -m pytest -m integration
+    $env:TEST_REAL_HTTP_URL="https://..."; python -m pytest -m integration
 """
 
 from __future__ import annotations
@@ -151,3 +153,58 @@ def test_real_telegram_from_app_config():
         notifier.notify(result, frame)
     except TelegramAPIError as exc:
         pytest.fail(f"envio falhou para chat_id={alert.chat_id}: {exc}")
+
+
+def _synthetic_result():
+    from screen_watch.compare.protocol import ComparisonResult
+
+    return ComparisonResult(
+        changed=True,
+        score=1.0,
+        threshold=0.1,
+        strategy="integration",
+        severity=3,
+        detail={"synthetic": True},
+    )
+
+
+def _synthetic_frame():
+    from screen_watch.capture.frame import Frame
+
+    rgb = np.full((20, 20, 3), 120, dtype=np.uint8)
+    return Frame(
+        rgb=rgb,
+        timestamp=time.time(),
+        absolute_rect=(0, 0, 20, 20),
+        window_rect=(0, 0, 20, 20),
+        window_handle=0,
+        sequence=1,
+    )
+
+
+@pytest.mark.skipif(
+    not os.environ.get("TEST_REAL_WEBHOOK_URL"),
+    reason="defina TEST_REAL_WEBHOOK_URL para rodar",
+)
+def test_real_webhook_post():
+    from screen_watch.alerts.http import WebhookNotifier
+    from screen_watch.config.schema import WebhookOptions
+
+    options = WebhookOptions(url=os.environ["TEST_REAL_WEBHOOK_URL"])
+    notifier = WebhookNotifier(options, target_name="integration")
+    notifier.notify(_synthetic_result(), _synthetic_frame())
+
+
+@pytest.mark.skipif(
+    not os.environ.get("TEST_REAL_HTTP_URL"),
+    reason="defina TEST_REAL_HTTP_URL para rodar",
+)
+def test_real_http_post():
+    from screen_watch.alerts.http import HttpPostNotifier
+    from screen_watch.config.schema import HttpPostOptions
+
+    options = HttpPostOptions(
+        url=os.environ["TEST_REAL_HTTP_URL"], payload={"text": "${message}"}
+    )
+    notifier = HttpPostNotifier(options, target_name="integration")
+    notifier.notify(_synthetic_result(), _synthetic_frame())

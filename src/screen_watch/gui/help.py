@@ -26,6 +26,7 @@ HELP_KEYS: tuple[str, ...] = (
     "window.reload",
     "window.open_yaml",
     "window.captures",
+    "window.test_alert",
     "window.evidence",
     "window.actions_list",
     "window.action_new",
@@ -55,6 +56,8 @@ HELP_KEYS: tuple[str, ...] = (
     "editor.step_edit",
     "editor.step_duplicate",
     "editor.step_locate",
+    # teste de alerta
+    "test_alert",
 )
 
 HEADER_KEYS = ("titulo", "proposito", "exemplo")

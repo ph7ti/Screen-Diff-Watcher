@@ -100,6 +100,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_test = sub.add_parser(
         "test-alert", help="fire a synthetic alert with the current ROI", parents=[selection_args]
     )
+    p_test.add_argument(
+        "--list", action="store_true", help="list the configured alerts (id/type/state/destination)"
+    )
+    p_test.add_argument(
+        "--only", default=None, metavar="ID", help="send the test to a single alert id"
+    )
     p_test.set_defaults(func=_cmd_test_alert)
 
     p_ev = sub.add_parser(
