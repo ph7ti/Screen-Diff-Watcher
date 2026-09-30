@@ -3,11 +3,12 @@ from __future__ import annotations
 import argparse
 import json
 
-from screen_watch import __main__ as cli
+from screen_watch.cli import commands as cli
+from screen_watch.cli.parser import build_parser
 
 
 def test_parser_accepts_features():
-    args = cli.build_parser().parse_args(["features", "--json"])
+    args = build_parser().parse_args(["features", "--json"])
     assert args.func is cli._cmd_features
     assert args.json is True
 

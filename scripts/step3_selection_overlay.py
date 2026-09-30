@@ -23,7 +23,7 @@ def main() -> int:
     # Antes de qualquer backend de captura/janela/Qt (doc 5.1).
     set_dpi_awareness()
 
-    from screen_watch.__main__ import _cmd_select
+    from screen_watch.cli.commands import _cmd_select
 
     return _cmd_select(args)
 

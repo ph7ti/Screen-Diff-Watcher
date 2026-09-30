@@ -5,7 +5,8 @@ import argparse
 import numpy as np
 import pytest
 
-from screen_watch import __main__ as cli
+from screen_watch.cli import commands as cli
+from screen_watch.cli.parser import build_parser
 from screen_watch.config.loader import ConfigError, load_config, save_config
 from screen_watch.persistence.selection import Selection, dump_selection, load_selection
 
@@ -204,13 +205,13 @@ def test_resolve_run_target_uses_v2_profile(monkeypatch, tmp_path):
 
 
 def test_parser_accepts_compare_modes():
-    args = cli.build_parser().parse_args(["compare-modes", "--selection", "x"])
+    args = build_parser().parse_args(["compare-modes", "--selection", "x"])
     assert args.func is cli._cmd_compare_modes
     assert args.modes == "light,default,advanced"
 
 
 def test_parser_accepts_gui_and_show_paths():
-    parser = cli.build_parser()
+    parser = build_parser()
     assert parser.parse_args(["gui"]).func is cli._cmd_gui
     assert parser.parse_args(["show-paths"]).func is cli._cmd_show_paths
 
@@ -223,7 +224,7 @@ def test_show_paths_includes_captures(monkeypatch, tmp_path, capsys):
 
 
 def test_parser_accepts_list_selections_and_migrate():
-    parser = cli.build_parser()
+    parser = build_parser()
     assert parser.parse_args(["list-selections"]).func is cli._cmd_list_selections
     assert parser.parse_args(["migrate-config", "--dry-run"]).func is cli._cmd_migrate_config
 
@@ -639,7 +640,7 @@ def test_record_actions_writes_snippet(monkeypatch, tmp_path):
 
 
 def test_parser_accepts_actions_and_list_actions():
-    parser = cli.build_parser()
+    parser = build_parser()
     assert parser.parse_args(["run", "--actions", "a,b"]).actions == "a,b"
     assert parser.parse_args(["test-action", "--actions", "none"]).actions == "none"
     assert parser.parse_args(["list-actions", "--selection", "demo"]).func is cli._cmd_list_actions
@@ -758,7 +759,7 @@ def test_list_actions_without_actions(monkeypatch, tmp_path, capsys):
 
 
 def test_parser_accepts_no_countdown():
-    parser = cli.build_parser()
+    parser = build_parser()
     assert parser.parse_args(["test-action", "--no-countdown"]).no_countdown is True
     assert parser.parse_args(["record-actions", "--no-countdown"]).no_countdown is True
 

@@ -807,10 +807,10 @@ class MainWindow(QMainWindow):
 
         import time
 
-        from screen_watch.__main__ import _capture_target_roi
         from screen_watch.actions.once import run_actions
         from screen_watch.app import evidence_recorder
         from screen_watch.capture.frame import Frame
+        from screen_watch.cli.commands import _capture_target_roi
         from screen_watch.gui.countdown import run_countdown
 
         try:
@@ -959,7 +959,7 @@ class MainWindow(QMainWindow):
             return
         info = windows[labels.index(choice)]
 
-        from screen_watch.__main__ import capture_selection_for_window
+        from screen_watch.cli.commands import capture_selection_for_window
 
         try:
             captured = capture_selection_for_window(

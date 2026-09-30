@@ -33,7 +33,7 @@ def main(argv: list[str] | None = None) -> int:
     if is_wayland():
         print("Wayland detected: the Qt GUI is not supported in this prototype.")
         return 2
-    from screen_watch.__main__ import _resolve_language  # noqa: PLC0415
+    from screen_watch.cli.commands import _resolve_language  # noqa: PLC0415
     from screen_watch.gui.main_window import run_gui  # noqa: PLC0415
 
     _resolve_language(args)
