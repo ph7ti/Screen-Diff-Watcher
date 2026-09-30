@@ -3,6 +3,19 @@
 Todas as mudanças relevantes deste projeto. Formato inspirado em "Keep a Changelog";
 versionamento semântico. Versão: `screen_watch.__version__` (fonte única).
 
+## [0.4.1] — 2026-09-30
+
+### Removido
+
+- Flag `--dry-run` do `test-action` (redundante: o ensaio já é o comportamento padrão sem `--armed`).
+
+### Mudado
+
+- Refatoração interna sem mudança de comportamento: particionamento do CLI em `cli/` (`commands` +
+  `parser`, deixando `__main__.py` só com `main()`), centralização dos caminhos de log/auditoria
+  em `platform.paths`, remoção da herança de `ValueError` em `ConfigError`/`ActionError` e limpeza
+  dos testes.
+
 ## [0.4.0] — 2026-09-30
 
 ### Removido
