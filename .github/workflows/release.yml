@@ -153,8 +153,17 @@ jobs:
           TAG: ${{ github.ref_name }}
         shell: bash
         run: |
-          # Notas do release = mensagem da tag anotada (melhorias/correcoes da versao).
-          NOTES="$(git tag -l --format='%(contents)' "$TAG" 2>/dev/null || true)"
+          # Notas do release = secao da versao no CHANGELOG.md (presente no checkout).
+          VERSION="${TAG#v}"
+          NOTES="$(awk -v ver="$VERSION" '
+            BEGIN { header = "## [" ver "]" }
+            index($0, header) == 1 { found = 1 }
+            found && /^## \[/ && index($0, header) != 1 { found = 0 }
+            found { print }
+          ' CHANGELOG.md)"
+          if [ -z "$NOTES" ]; then
+            NOTES="$(git tag -l --format='%(contents)' "$TAG" 2>/dev/null || true)"
+          fi
           if [ -z "$NOTES" ]; then
             NOTES="Release $TAG. Instaladores: Windows (setup.exe) e Linux (.deb). Checksums em SHA256SUMS.txt."
           fi
