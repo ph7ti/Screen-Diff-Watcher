@@ -21,8 +21,16 @@ def _fake_pynput() -> types.ModuleType:
         def stop(self) -> None:
             self.stopped = True
 
+    class HotKey:
+        @staticmethod
+        def parse(combo):
+            # Reproduz o comportamento real do pynput: `space` nu e invalido.
+            if combo == "<ctrl>+<alt>+space":
+                raise ValueError("space")
+            return None
+
     pkg = types.ModuleType("pynput")
-    pkg.keyboard = types.SimpleNamespace(GlobalHotKeys=Listener)
+    pkg.keyboard = types.SimpleNamespace(GlobalHotKeys=Listener, HotKey=HotKey)
     return pkg
 
 
@@ -35,6 +43,24 @@ def test_hotkeys_register_publish_and_stop(monkeypatch):
     assert listener is not None and listener.started is True
     listener.mapping["<ctrl>+<alt>+a"]()
     assert events.get_nowait() == {"kind": "action", "action": "arm"}
+
+
+def test_hotkeys_skip_invalid_combo(monkeypatch):
+    monkeypatch.setitem(sys.modules, "pynput", _fake_pynput())
+    events: queue.Queue = queue.Queue()
+
+    listener = start_hotkeys(
+        events, {"arm": "<ctrl>+<alt>+a", "toggle": "<ctrl>+<alt>+space"}
+    )
+
+    assert listener is not None
+    assert "<ctrl>+<alt>+a" in listener.mapping
+    assert "<ctrl>+<alt>+space" not in listener.mapping
+
+
+def test_hotkeys_all_invalid_returns_none(monkeypatch):
+    monkeypatch.setitem(sys.modules, "pynput", _fake_pynput())
+    assert start_hotkeys(queue.Queue(), {"toggle": "<ctrl>+<alt>+space"}) is None
 
 
 def test_hotkeys_empty_and_without_pynput(monkeypatch):

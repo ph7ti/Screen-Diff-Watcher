@@ -28,7 +28,20 @@ def start_hotkeys(events, hotkeys: dict[str, str]) -> object | None:
 
         return _callback
 
-    mapping = {combo: callback(name) for name, combo in hotkeys.items() if combo}
+    # Valida combo a combo: um combo invalido (ex.: `space` sem `<...>`) nao pode
+    # derrubar a registracao das demais hotkeys.
+    hot_key = getattr(keyboard, "HotKey", None)
+    mapping: dict[str, object] = {}
+    for name, combo in hotkeys.items():
+        if not combo:
+            continue
+        if hot_key is not None:
+            try:
+                hot_key.parse(combo)
+            except Exception as exc:  # noqa: BLE001 - pynput levanta tipos variados
+                log.warning("hotkey invalida ignorada (%s=%r): %s", name, combo, exc)
+                continue
+        mapping[combo] = callback(name)
     if not mapping:
         return None
     try:

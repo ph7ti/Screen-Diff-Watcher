@@ -522,7 +522,7 @@ def _default_ui_dict() -> dict[str, Any]:
         "hotkeys": {
             "arm": "<ctrl>+<alt>+a",
             "disarm": "<ctrl>+<alt>+d",
-            "toggle": "<ctrl>+<alt>+space",
+            "toggle": "<ctrl>+<alt>+<space>",
             "rearm": "<ctrl>+<alt>+r",
             "abort": "<esc>",
         },

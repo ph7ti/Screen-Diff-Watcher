@@ -792,7 +792,7 @@ profiles:
   trabalho:
     defaults: { mode: "default", poll_interval_s: 1.0 }
 ui:
-  hotkeys: { arm: "<ctrl>+<alt>+a", disarm: "<ctrl>+<alt>+d", toggle: "<ctrl>+<alt>+space",
+  hotkeys: { arm: "<ctrl>+<alt>+a", disarm: "<ctrl>+<alt>+d", toggle: "<ctrl>+<alt>+<space>",
              rearm: "<ctrl>+<alt>+r", abort: "<esc>" }
   arm_durations_min: [1, 5, 15, 30]
 schedule: { enabled: false, days: [mon, tue, wed, thu, fri], windows: ["08:00-12:00"], timezone: local }
