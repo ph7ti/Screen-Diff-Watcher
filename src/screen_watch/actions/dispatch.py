@@ -13,6 +13,7 @@ import time
 from collections.abc import Callable
 
 from screen_watch.actions.arming import ArmingController
+from screen_watch.actions.execute import run_armed_action
 from screen_watch.actions.protocol import ActionSpec
 from screen_watch.actions.runner import ActionRunner, describe_step
 from screen_watch.capture.frame import Frame
@@ -104,17 +105,14 @@ class ActionDispatcher:
             )
             return False
 
-        evidence: list[str] = []
-        hook = None
-        if self._recorder is not None and getattr(self._recorder, "per_step", False):
-            hook = lambda index: evidence.append(  # noqa: E731
-                str(self._recorder.record_action(frame, self._target_name, index))
-            )
-        run = self._runner.run(action, frame, arming=self._arming, evidence_hook=hook)
-        if self._recorder is not None and not getattr(self._recorder, "per_step", False):
-            path = self._recorder.record_action(frame, self._target_name)
-            if path:
-                evidence.append(str(path))
+        run, evidence = run_armed_action(
+            action,
+            frame,
+            runner=self._runner,
+            arming=self._arming,
+            recorder=self._recorder,
+            target_name=self._target_name,
+        )
 
         payload = {
             "mode": "armed",

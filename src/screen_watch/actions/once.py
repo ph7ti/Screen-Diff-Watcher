@@ -24,6 +24,7 @@ def run_actions(
     """Ensaia (`armed=False`) ou executa (`armed=True`) as acoes de `target`."""
     from screen_watch.actions.arming import ArmingController  # noqa: PLC0415
     from screen_watch.actions.audit import ActionAudit  # noqa: PLC0415
+    from screen_watch.actions.execute import run_armed_action  # noqa: PLC0415
     from screen_watch.actions.runner import ActionRunner, describe_step  # noqa: PLC0415
 
     if not target.actions:
@@ -61,17 +62,14 @@ def run_actions(
             )
             lines.append(f"[rehearsal] {action.name}: {', '.join(descriptions) or '(no steps)'}")
             continue
-        evidence: list[str] = []
-        hook = None
-        if recorder is not None and getattr(recorder, "per_step", False):
-            hook = lambda index: evidence.append(  # noqa: E731
-                str(recorder.record_action(frame, target.name, index))
-            )
-        run = runner.run(action, frame, arming=arming, evidence_hook=hook)
-        if recorder is not None and not getattr(recorder, "per_step", False):
-            path = recorder.record_action(frame, target.name)
-            if path:
-                evidence.append(str(path))
+        run, evidence = run_armed_action(
+            action,
+            frame,
+            runner=runner,
+            arming=arming,
+            recorder=recorder,
+            target_name=target.name,
+        )
         payload = {
             "mode": "armed",
             "action": action.name,
