@@ -41,7 +41,7 @@ sudo apt install ./screen-watch_<version>_amd64.deb
 
 - Requires **X11** (Wayland is not supported for capture).
 - The `.deb` declares `tesseract-ocr` + `tesseract-ocr-por` and the Qt6/X11 libs as dependencies;
-  `pulseaudio-utils`/`alsa-utils` come as `Recommends` (sound uses an external player).
+  `pulseaudio-utils`/`alsa-utils` come as `Recommends` (legacy fallback players).
 - Installed commands: `screen-watch` (CLI) and `screen-diff-watcher-gui` (GUI, also in the
   menu shortcut).
 - **Autostart**: the `.deb` does not configure it. To start with the session, create
@@ -109,5 +109,7 @@ first command to diagnose an environment (e.g.: missing Tesseract, `pynput` unav
 
 - **Wayland**: capture via `mss` does not work; run on X11. The app warns and ends the `run`.
 - **Tray on GNOME**: may not appear without a tray extension; the window keeps working.
-- **Sound on Linux**: depends on `paplay`/`aplay`/`ffplay`; without a player, it stays silent.
+- **Sound on Linux**: the CLI/`run` uses the bundled `miniaudio` (WAV/MP3/OGG/FLAC); the GUI depends
+  on the GStreamer plugins, and **M4A/AAC** in the CLI needs an external player (`ffplay`), otherwise
+  it falls back to `beep`.
 - **Architecture**: only `amd64`/`x86_64`. ARM out of scope.

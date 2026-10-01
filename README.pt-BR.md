@@ -7,7 +7,7 @@
 </p>
 
 Vigia uma **região retangular (ROI) de uma janela** e avisa quando ela muda — som, popup,
-Telegram ou log — para você não precisar ficar olhando para a tela.
+Telegram, webhook/HTTP POST, syslog ou log — para você não precisar ficar olhando para a tela.
 
 Roda no **Windows e no Linux**, capturando apenas pixels (não toca no aplicativo vigiado).
 
@@ -66,7 +66,8 @@ Roda no **Windows e no Linux**, capturando apenas pixels (não toca no aplicativ
 janela-alvo ──► ROI ──► captura ──► máscara ──► comparação (light/default/advanced)
                                                       │ mudou?
                                                       ▼
-                                    alertas (som/popup/Telegram/log) + ações (se armadas)
+                                    alertas (som/popup/Telegram/log + webhook/HTTP POST/syslog)
+                                    + ações (se armadas)
 ```
 
 ## Recursos de alerta

@@ -53,6 +53,8 @@ python -m screen_watch list-selections
 - The default mode of selections is `advanced`; you can change it later in the GUI selector or through the
   JSON `overrides`.
 - The minimum accepted area is 10×10 logical pixels.
+- In the overlay (`select` and the GUI's New Target/re-edit), the ROI must fit **entirely inside the
+  window**; a region that extrapolates it is rejected (`runtime.roi_outside_window`).
 
 ### Execution
 

@@ -28,8 +28,9 @@ target estiver num monitor com escala. `probe-dpi` e `scripts/probe_dpi.py` most
 - **macOS e ARM fora do build**: não há instalador nem validação; o build é Windows x64 + Linux
   amd64.
 - **Tray no GNOME**: pode não aparecer sem extensão de tray; a janela continua funcional.
-- **Som no Linux**: depende de `paplay`/`aplay`/`ffplay`; sem player, fica silencioso (o alerta nunca
-  quebra).
+- **Som no Linux**: o CLI/`run` toca WAV/MP3/OGG/FLAC pelo `miniaudio` empacotado; a GUI depende dos
+  plugins do GStreamer; formatos sem decoder (M4A/AAC no CLI) caem para um player externo
+  (`paplay`/`aplay`/`ffplay`) e, sem ele, para o `beep` (o alerta nunca quebra).
 - **SmartScreen**: os instaladores não são assinados; o Windows vai avisar (assinatura fora de
   escopo).
 - **Elevação (UAC)**: as ações não contornam elevação; para interagir com apps elevados, rode o app

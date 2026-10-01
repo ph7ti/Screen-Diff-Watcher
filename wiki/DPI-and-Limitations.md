@@ -29,8 +29,9 @@ target window is on a monitor with scaling. `probe-dpi` and `scripts/probe_dpi.p
 - **macOS and ARM out of the build**: there is no installer or validation; the build is Windows x64 + Linux
   amd64.
 - **Tray on GNOME**: may not appear without a tray extension; the window keeps working.
-- **Sound on Linux**: depends on `paplay`/`aplay`/`ffplay`; without a player, it stays silent (the alert never
-  breaks).
+- **Sound on Linux**: the CLI/`run` plays WAV/MP3/OGG/FLAC through the bundled `miniaudio`; the GUI
+  depends on the GStreamer plugins; formats without a decoder (M4A/AAC in the CLI) fall back to an
+  external player (`paplay`/`aplay`/`ffplay`) and, without one, to `beep` (the alert never breaks).
 - **SmartScreen**: the installers are not signed; Windows will warn (signing out of
   scope).
 - **Elevation (UAC)**: the actions do not bypass elevation; to interact with elevated apps, run the app

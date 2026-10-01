@@ -7,7 +7,7 @@
 </p>
 
 Watches a **rectangular region (ROI) of a window** and alerts you when it changes — sound, popup,
-Telegram or log — so you don't have to keep an eye on the screen.
+Telegram, webhook/HTTP POST, syslog or log — so you don't have to keep an eye on the screen.
 
 Runs on **Windows and Linux**, capturing pixels only (it never touches the watched application).
 
@@ -70,7 +70,8 @@ Runs on **Windows and Linux**, capturing pixels only (it never touches the watch
 target window ──► ROI ──► capture ──► mask ──► compare (light/default/advanced)
                                                      │ changed?
                                                      ▼
-                                   alerts (sound/popup/Telegram/log) + actions (if armed)
+                                   alerts (sound/popup/Telegram/log + webhook/HTTP POST/syslog)
+                                   + actions (if armed)
 ```
 
 ## Alert channels

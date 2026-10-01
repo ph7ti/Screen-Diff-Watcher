@@ -234,7 +234,8 @@ ldd dist/screen-watch/screen-watch-gui | awk '{print $1}' | sort -u
 ```
 
 Keep in `Depends` only what Ubuntu 22.04/24.04 does not ship by default (Qt6/X11/Tesseract/
-`xdg-utils`). Sound uses an external player: `Recommends: pulseaudio-utils, alsa-utils`.
+`xdg-utils`). The legacy sound fallback uses an external player: `Recommends: pulseaudio-utils,
+alsa-utils`.
 
 ---
 
