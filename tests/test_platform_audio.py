@@ -249,6 +249,34 @@ def test_resolve_sound_path_keeps_absolute(monkeypatch, tmp_path):
     assert audio.resolve_sound_path(absolute) == str(absolute)
 
 
+def test_resolve_sound_path_user_dir_wins_over_bundled(monkeypatch, tmp_path):
+    home = tmp_path / "home"
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(home))
+    sounds = home / "sounds"
+    sounds.mkdir(parents=True)
+    (sounds / "alert.mp3").write_bytes(b"user")
+    bundled = tmp_path / "bundled"
+    bundled.mkdir()
+    (bundled / "alert.mp3").write_bytes(b"bundled")
+    monkeypatch.setattr(audio, "bundled_sounds_dir", lambda: bundled)
+
+    assert audio.resolve_sound_path("alert.mp3") == str(sounds / "alert.mp3")
+
+
+def test_resolve_sound_path_bundled_wins_over_cwd(monkeypatch, tmp_path):
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path / "home"))
+    bundled = tmp_path / "bundled"
+    bundled.mkdir()
+    (bundled / "alerta.mp3").write_bytes(b"bundled")
+    monkeypatch.setattr(audio, "bundled_sounds_dir", lambda: bundled)
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    (cwd / "alerta.mp3").write_bytes(b"cwd")
+    monkeypatch.chdir(cwd)
+
+    assert audio.resolve_sound_path("alerta.mp3") == str(bundled / "alerta.mp3")
+
+
 def test_play_file_resolves_relative_in_sounds_dir(monkeypatch, tmp_path):
     home = tmp_path / "home"
     monkeypatch.setenv("SCREEN_WATCH_HOME", str(home))

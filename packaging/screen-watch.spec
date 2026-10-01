@@ -49,6 +49,7 @@ else:
 
 datas = [
     (str(PACKAGE / "assets" / "icons"), "screen_watch/assets/icons"),
+    (str(PACKAGE / "assets" / "sounds"), "screen_watch/assets/sounds"),
     (str(PACKAGE / "i18n"), "screen_watch/i18n"),
 ]
 

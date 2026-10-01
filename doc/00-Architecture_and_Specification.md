@@ -4,7 +4,7 @@
 
 > **Purpose of this document**: to serve as the **single source of truth for the design** so that
 > another AI (or developer) can continue the project without having to reconstruct decisions, and to
-> record **what is implemented** (reference: v0.7.0). Every decision recorded here was made
+> record **what is implemented** (reference: v0.7.1). Every decision recorded here was made
 > deliberately; where there are alternatives, they are listed as "rejected" with the reason.
 >
 > **Maintenance rule**: do not replace a recorded decision with a "more modern" alternative
@@ -56,7 +56,7 @@ alert the user when that panel undergoes a visual change, without requiring the 
 looking at the screen. Natural extension: react to the change with a simple action (e.g., click
 "Refresh") when that is explicitly armed.
 
-### 1.4 Implementation status (v0.7.0)
+### 1.4 Implementation status (v0.7.1)
 
 Implemented and covered by tests: platform boundary, capture/anchoring (Model B), the three
 comparison modes, pipeline with short-circuit (`advanced` gated by phash and bypassed by
@@ -69,8 +69,11 @@ actions (arming, rehearsal, limits, auditing, GUI editor, recorder), scheduler (
 only), profiles + v1→v2 migration, selection JSON v2 with overrides and the **selection
 `name`/rename** (`selections/<slug>.json`), CLI (`init-config` … `validate-i18n`), GUI + tray with
 i18n and hover help — including **"Highlight"** (transient ROI outline that never paints inside the
-ROI) and **double-click to re-edit the region / Enter to start-stop** — packaging (PyInstaller; Inno
-Setup on Windows; `.deb` on Linux) and tag-based release pipeline.
+ROI), **double-click to re-edit the region / Enter to start-stop**, the **2×2 grid window layout**
+(Selections and Session actions on the left; Monitoring and Detection and alerts on the right;
+Status+Log footer with the buttons on the right), the **bundled default sound `alert.mp3`** (resolver
+order `app_home()/sounds` → `assets/sounds` → CWD) and the **sound-choice popup** that points to the
+YAML — packaging (PyInstaller; Inno Setup on Windows; `.deb` on Linux) and tag-based release pipeline.
 
 Pending **manual validation** items (not automatable in CI):
 
@@ -209,13 +212,19 @@ Each item below is a closed decision. Format: **Decision → Reason → Rejected
 - **Reason**: native multi-monitor (`QGuiApplication.screens()`), real transparency, high DPI
   correctly resolved, `CompositionMode_Clear` available for the selection "hole".
 - **Implementation details**:
-  - **Layout**: the window follows the `UI.txt` mockup (**Monitoring** column with
-    Start/Stop/Re-arm/Minimize **and Highlight in a two-column grid**, Mode/Profile/Language and
-    arming; **Selections** group with the list and the
-    **Selection name** field (`name` + Rename); row of
-    New Target/Remove/Reload/Open YAML/Prints + evidence; **Session actions** group with
-    checklist and buttons; Status/Last and **Log** in the footer in a `QSplitter`). Step editing with
+  - **Layout**: the window follows the `UI.txt` mockup (upper panel in a **2×2 grid**: on the left the
+    **Selections** group — New Target/Remove/Reload/**Highlight selection** button row, legend, list and
+    the **Selection name** field (`name` + Rename) — and the **Session actions** group — checklist,
+    counter and the New action…/Edit…/Remove Action/Run action row; on the right **Monitoring** — a
+    two-column grid Start/Language, Stop/Re-arm baseline, Mode/Profile, Arm actions/Disarm actions,
+    Arm for…/Minimize to tray, plus **Record captures (evidence)** and the arming status — and
+    **Detection and alerts** — the text watch first and then the sound, with **Choose…/Play/Copy path**;
+    in the footer, in a `QSplitter`, the **Status** group with Status/Last/**Log** and the right column
+    with **Captures/Test alert…/Open YAML**). Step editing with
     Move Up/Move Down/drag&drop/Edit/Duplicate.
+  - **Sound popup**: after choosing a sound, the GUI shows a modal hint to paste the `file:` snippet
+    into the `type: "sound"` alert of `config.yaml` (it mentions the active profile), with the buttons
+    **Copy path and open YAML** (default), **Open YAML only** and **Close** (`dialog.sound_*`).
   - **Selection interactions**: **double-click re-edits the region** (overlay again, same window,
     preserving `name`/`mode`/`overrides` and clearing `masks`); **Enter starts/stops** the session
     (`QShortcut` with `WidgetShortcut`; `itemActivated` is not used because it also fires on the
@@ -991,8 +1000,14 @@ class Notifier(Protocol):
 - Format matrix by context: GUI on Windows/macOS (Media Foundation/AVFoundation) plays M4A/AAC; on
   Linux the GUI depends on the GStreamer plugins; the CLI relies on miniaudio (M4A/AAC only through
   an external player, otherwise `beep`).
-- A relative `file` is resolved by `platform/audio.py::resolve_sound_path` (`app_home()/sounds` first,
-  then the CWD). Missing file or unsupported format → `beep()` + log warning (never silence/exception).
+- A relative `file` is resolved by `platform/audio.py::resolve_sound_path` in this order:
+  **`app_home()/sounds`** (user) → **`resources.bundled_sounds_dir()`** (`screen_watch/assets/sounds`,
+  where the default `alert.mp3` lives) → **CWD**. An absolute `file` is used as-is; a user file always
+  wins over the bundled one. Missing file or unsupported format → `beep()` + log warning (never
+  silence/exception).
+- **Default `"alert.mp3"`** (bundled): `AlertOptions.file`, the `loader.py` parse and `SoundNotifier`
+  all default to `"alert.mp3"`. Existing configs with `alert.wav` (or any other path) are unchanged;
+  the new default only applies to new configs or when the user edits the line.
 - Optional `simpleaudio` extra (`pip install -e ".[sound]"`); it does **not** go into the installers
   (no reliable wheel for Python 3.13) and is only tried for WAV.
 - **Do not use** `playsound` (abandoned).
@@ -1067,7 +1082,7 @@ class AlertChain:
   every tick.
 - A failure in one notifier records the attempt (`_last_attempt`) and does not prevent the others;
   each has its own `try`.
-- Manual re-arm: tray/"Re-arm" button/hotkey `rearm`, via `MonitorSession.request_rebaseline()`
+- Manual re-arm: tray/"Re-arm baseline" button/hotkey `rearm`, via `MonitorSession.request_rebaseline()`
   (thread-safe) or `rebaseline_now(frame)`.
 
 ### 11.4 Pseudo-human actions (opt-in, `actions/`)
@@ -1186,7 +1201,7 @@ profiles:
         advanced: { similarity_threshold: 0.92, psm: 6, lang: "por+eng", upscale: 2,
                     tesseract_cmd: null }
     alerts:
-      - { type: "sound",    enabled: true, severity_min: 1, cooldown_s: 30, file: "alert.wav" }
+      - { type: "sound",    enabled: true, severity_min: 1, cooldown_s: 30, file: "alert.mp3" }
       - { type: "popup",    enabled: true, severity_min: 1, cooldown_s: 30 }
       - { type: "telegram", enabled: true, severity_min: 2, cooldown_s: 60,
           bot_token_env: "TELEGRAM_BOT_TOKEN", chat_id: "123456789", attach_roi: true }
@@ -1285,6 +1300,8 @@ they are relative to the old ROI.
 
 `platform/paths.py` centralizes `app_home()`, `config_path()`, `selections_dir()`, `logs_dir()`,
 `sounds_dir()` (user sound files: relative `file` is looked up there first) and `state_path()`.
+Bundled sounds live in `resources.bundled_sounds_dir()` (`screen_watch/assets/sounds`, the default
+`alert.mp3`); the resolution order is user → package → CWD (§11.2).
 Base: `%APPDATA%\screen_watch` on Windows, `~/.config/screen_watch` on Linux,
 `~/Library/Application Support/screen_watch` on macOS, or the `SCREEN_WATCH_HOME` override.
 

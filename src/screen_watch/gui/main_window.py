@@ -109,74 +109,25 @@ class MainWindow(QMainWindow):
         root = QVBoxLayout(central)
 
         splitter = QSplitter(Qt.Orientation.Vertical)
+
         upper = QWidget()
-        upper_layout = QVBoxLayout(upper)
+        upper_layout = QGridLayout(upper)
         upper_layout.setContentsMargins(0, 0, 0, 0)
-
-        columns = QHBoxLayout()
-
-        monitoring = QGroupBox(tr("main.monitoring"))
-        mon = QVBoxLayout(monitoring)
-        self.btn_start = QPushButton(tr("main.btn_start"))
-        self.btn_stop = QPushButton(tr("main.btn_stop"))
-        self.btn_stop.setEnabled(False)
-        self.btn_rearm = QPushButton(tr("main.btn_rearm"))
-        self.btn_rearm.setEnabled(False)
-        self.btn_minimize = QPushButton(tr("main.btn_minimize"))
-        self.btn_show_roi = QPushButton(tr("main.btn_show_roi"))
-        self.btn_show_roi.setEnabled(False)
-        monitor_buttons = QGridLayout()
-        monitor_buttons.addWidget(self.btn_start, 0, 0)
-        monitor_buttons.addWidget(self.btn_stop, 1, 0)
-        monitor_buttons.addWidget(self.btn_rearm, 2, 0)
-        monitor_buttons.addWidget(self.btn_minimize, 0, 1)
-        monitor_buttons.addWidget(self.btn_show_roi, 1, 1)
-        mon.addLayout(monitor_buttons)
-
-        mode_row = QHBoxLayout()
-        mode_row.addWidget(QLabel(tr("main.mode_label")))
-        self.mode_combo = QComboBox()
-        self.mode_combo.addItems(MODES)
-        mode_row.addWidget(self.mode_combo)
-        mode_row.addStretch(1)
-        mon.addLayout(mode_row)
-
-        profile_row = QHBoxLayout()
-        profile_row.addWidget(QLabel(tr("main.profile_label")))
-        self.profile_combo = QComboBox()
-        profile_row.addWidget(self.profile_combo)
-        self.profile_note = QLabel("")
-        profile_row.addWidget(self.profile_note)
-        profile_row.addStretch(1)
-        mon.addLayout(profile_row)
-
-        language_row = QHBoxLayout()
-        language_row.addWidget(QLabel(tr("main.language_label")))
-        self.language_combo = QComboBox()
-        language_row.addWidget(self.language_combo)
-        language_row.addStretch(1)
-        mon.addLayout(language_row)
-
-        arm_row = QHBoxLayout()
-        self.btn_arm = QPushButton(tr("main.btn_arm"))
-        self.btn_disarm = QPushButton(tr("main.btn_disarm"))
-        self.btn_arm_for = QPushButton(tr("main.btn_arm_for"))
-        self._arm_menu = QMenu(self.btn_arm_for)
-        self.btn_arm_for.setMenu(self._arm_menu)
-        for button in (self.btn_arm, self.btn_disarm, self.btn_arm_for):
-            arm_row.addWidget(button)
-        arm_row.addStretch(1)
-        mon.addLayout(arm_row)
-
-        self.arming_label = QLabel("")
-        self.arming_label.setWordWrap(True)
-        mon.addWidget(self.arming_label)
-        mon.addStretch(1)
-
-        columns.addWidget(monitoring, 1)
+        upper_layout.setColumnStretch(0, 3)
+        upper_layout.setColumnStretch(1, 2)
 
         selections = QGroupBox(tr("main.selections"))
         sel = QVBoxLayout(selections)
+        selection_buttons = QHBoxLayout()
+        self.btn_new = QPushButton(tr("main.btn_new"))
+        self.btn_remove = QPushButton(tr("main.btn_remove"))
+        self.btn_reload = QPushButton(tr("main.btn_reload"))
+        self.btn_show_roi = QPushButton(tr("main.btn_show_roi"))
+        self.btn_show_roi.setEnabled(False)
+        for widget in (self.btn_new, self.btn_remove, self.btn_reload, self.btn_show_roi):
+            selection_buttons.addWidget(widget)
+        selection_buttons.addStretch(1)
+        sel.addLayout(selection_buttons)
         sel.addWidget(QLabel(tr("main.selections_legend")))
         self.list = QListWidget()
         self.list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
@@ -191,123 +142,157 @@ class MainWindow(QMainWindow):
         self.btn_rename.setEnabled(False)
         name_row.addWidget(self.btn_rename)
         sel.addLayout(name_row)
-        columns.addWidget(selections, 2)
+        upper_layout.addWidget(selections, 0, 0)
 
-        upper_layout.addLayout(columns)
+        monitoring = QGroupBox(tr("main.monitoring"))
+        mon = QGridLayout(monitoring)
+        mon.setColumnStretch(0, 1)
+        mon.setColumnStretch(1, 1)
+        self.btn_start = QPushButton(tr("main.btn_start"))
+        self.btn_stop = QPushButton(tr("main.btn_stop"))
+        self.btn_stop.setEnabled(False)
+        self.btn_rearm = QPushButton(tr("main.btn_rearm"))
+        self.btn_rearm.setEnabled(False)
+        self.btn_minimize = QPushButton(tr("main.btn_minimize"))
+        mon.addWidget(self.btn_start, 0, 0)
 
-        buttons = QHBoxLayout()
-        self.btn_new = QPushButton(tr("main.btn_new"))
-        self.btn_remove = QPushButton(tr("main.btn_remove"))
-        self.btn_reload = QPushButton(tr("main.btn_reload"))
-        self.btn_open = QPushButton(tr("main.btn_open_yaml"))
-        self.btn_open_captures = QPushButton(tr("main.btn_captures"))
-        self.btn_test_alert = QPushButton(tr("main.btn_test_alert"))
+        language_row = QHBoxLayout()
+        language_row.addWidget(QLabel(tr("main.language_label")))
+        self.language_combo = QComboBox()
+        language_row.addWidget(self.language_combo, 1)
+        mon.addLayout(language_row, 0, 1)
+
+        mon.addWidget(self.btn_stop, 1, 0)
+        mon.addWidget(self.btn_rearm, 1, 1)
+
+        mode_row = QHBoxLayout()
+        mode_row.addWidget(QLabel(tr("main.mode_label")))
+        self.mode_combo = QComboBox()
+        self.mode_combo.addItems(MODES)
+        mode_row.addWidget(self.mode_combo, 1)
+        mon.addLayout(mode_row, 2, 0)
+
+        profile_row = QHBoxLayout()
+        profile_row.addWidget(QLabel(tr("main.profile_label")))
+        self.profile_combo = QComboBox()
+        profile_row.addWidget(self.profile_combo, 1)
+        self.profile_note = QLabel("")
+        profile_row.addWidget(self.profile_note)
+        mon.addLayout(profile_row, 2, 1)
+
+        self.btn_arm = QPushButton(tr("main.btn_arm"))
+        self.btn_disarm = QPushButton(tr("main.btn_disarm"))
+        mon.addWidget(self.btn_arm, 3, 0)
+        mon.addWidget(self.btn_disarm, 3, 1)
+
+        self.btn_arm_for = QPushButton(tr("main.btn_arm_for"))
+        self._arm_menu = QMenu(self.btn_arm_for)
+        self.btn_arm_for.setMenu(self._arm_menu)
+        mon.addWidget(self.btn_arm_for, 4, 0)
+        mon.addWidget(self.btn_minimize, 4, 1)
+
         self.chk_evidence = QCheckBox(tr("main.chk_evidence"))
-        for widget in (
-            self.btn_new,
-            self.btn_remove,
-            self.btn_reload,
-            self.btn_open,
-            self.btn_open_captures,
-            self.btn_test_alert,
-            self.chk_evidence,
-        ):
-            buttons.addWidget(widget)
-        buttons.addStretch(1)
-        upper_layout.addLayout(buttons)
+        mon.addWidget(self.chk_evidence, 5, 0, 1, 2)
 
-        alerts_group = QGroupBox(tr("main.alerts_group"))
-        alerts_layout = QVBoxLayout(alerts_group)
-
-        sound_row = QHBoxLayout()
-        sound_row.addWidget(QLabel(tr("main.sound_label")))
-        self.sound_path = QLineEdit()
-        self.sound_path.setReadOnly(True)
-        sound_row.addWidget(self.sound_path, 3)
-        self.btn_sound_choose = QPushButton(tr("main.sound_choose"))
-        self.btn_sound_play = QPushButton(tr("main.sound_play"))
-        self.btn_sound_copy = QPushButton(tr("main.sound_copy"))
-        sound_row.addWidget(self.btn_sound_choose)
-        sound_row.addWidget(self.btn_sound_play)
-        sound_row.addWidget(self.btn_sound_copy)
-        alerts_layout.addLayout(sound_row)
-
-        sound_bottom = QHBoxLayout()
-        self.sound_snippet = QLabel("")
-        self.sound_snippet.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        sound_bottom.addWidget(self.sound_snippet, 1)
-        sound_bottom.addWidget(QLabel(tr("main.sound_note")))
-        alerts_layout.addLayout(sound_bottom)
-
-        watch_row = QHBoxLayout()
-        watch_row.addWidget(QLabel(tr("main.text_watch_label")))
-        watch_row.addWidget(QLabel(tr("main.text_watch_text")))
-        self.text_watch_edit = QLineEdit()
-        watch_row.addWidget(self.text_watch_edit, 3)
-        watch_row.addWidget(QLabel(tr("main.text_watch_action")))
-        self.expect_combo = QComboBox()
-        self.expect_combo.addItem(tr("main.text_watch_appears"), "appears")
-        self.expect_combo.addItem(tr("main.text_watch_disappears"), "disappears")
-        watch_row.addWidget(self.expect_combo)
-        self.case_check = QCheckBox(tr("main.text_watch_case"))
-        self.accents_check = QCheckBox(tr("main.text_watch_accents"))
-        self.accents_check.setChecked(True)
-        watch_row.addWidget(self.case_check)
-        watch_row.addWidget(self.accents_check)
-        watch_row.addWidget(QLabel(tr("main.text_watch_note")))
-        watch_row.addStretch(1)
-        alerts_layout.addLayout(watch_row)
-
-        upper_layout.addWidget(alerts_group)
+        self.arming_label = QLabel("")
+        self.arming_label.setWordWrap(True)
+        mon.addWidget(self.arming_label, 6, 0, 1, 2)
+        mon.setRowStretch(7, 1)
+        upper_layout.addWidget(monitoring, 0, 1)
 
         actions_group = QGroupBox(tr("main.actions_session"))
-        actions_layout = QHBoxLayout(actions_group)
-        actions_left = QVBoxLayout()
+        actions_layout = QVBoxLayout(actions_group)
         self.action_list = QListWidget()
         self.action_list.setMaximumHeight(160)
-        actions_left.addWidget(self.action_list)
+        actions_layout.addWidget(self.action_list)
         self.action_count = QLabel("")
-        actions_left.addWidget(self.action_count)
-        actions_layout.addLayout(actions_left, 3)
+        actions_layout.addWidget(self.action_count)
 
-        actions_right = QVBoxLayout()
+        action_buttons = QHBoxLayout()
         self.btn_action_new = QPushButton(tr("main.btn_action_new"))
         self.btn_action_edit = QPushButton(tr("main.btn_action_edit"))
         self.btn_action_remove = QPushButton(tr("main.btn_action_remove"))
-        self.btn_action_arm = QPushButton(tr("main.btn_action_arm"))
         self.btn_run_action = QPushButton(tr("main.btn_action_run"))
         for button in (
             self.btn_action_new,
             self.btn_action_edit,
             self.btn_action_remove,
-            self.btn_action_arm,
             self.btn_run_action,
         ):
-            actions_right.addWidget(button)
-        actions_right.addStretch(1)
-        actions_layout.addLayout(actions_right, 2)
-        upper_layout.addWidget(actions_group)
-        upper_layout.addStretch(1)
+            action_buttons.addWidget(button)
+        action_buttons.addStretch(1)
+        actions_layout.addLayout(action_buttons)
+        upper_layout.addWidget(actions_group, 1, 0)
 
-        lower = QWidget()
-        lower_layout = QVBoxLayout(lower)
-        lower_layout.setContentsMargins(0, 0, 0, 0)
+        alerts_group = QGroupBox(tr("main.alerts_group"))
+        alerts_layout = QVBoxLayout(alerts_group)
+
+        watch_row = QHBoxLayout()
+        watch_row.addWidget(QLabel(tr("main.text_watch_label")))
+        self.text_watch_edit = QLineEdit()
+        watch_row.addWidget(self.text_watch_edit, 1)
+        alerts_layout.addLayout(watch_row)
+
+        watch_flags = QHBoxLayout()
+        self.case_check = QCheckBox(tr("main.text_watch_case"))
+        self.accents_check = QCheckBox(tr("main.text_watch_accents"))
+        self.accents_check.setChecked(True)
+        watch_flags.addWidget(self.case_check)
+        watch_flags.addWidget(self.accents_check)
+        watch_flags.addWidget(QLabel(tr("main.text_watch_action")))
+        self.expect_combo = QComboBox()
+        self.expect_combo.addItem(tr("main.text_watch_appears"), "appears")
+        self.expect_combo.addItem(tr("main.text_watch_disappears"), "disappears")
+        watch_flags.addWidget(self.expect_combo)
+        watch_flags.addWidget(QLabel(tr("main.text_watch_note")))
+        watch_flags.addStretch(1)
+        alerts_layout.addLayout(watch_flags)
+
+        sound_row = QHBoxLayout()
+        sound_row.addWidget(QLabel(tr("main.sound_label")))
+        self.sound_path = QLineEdit()
+        self.sound_path.setReadOnly(True)
+        sound_row.addWidget(self.sound_path, 1)
+        alerts_layout.addLayout(sound_row)
+
+        sound_buttons = QHBoxLayout()
+        self.btn_sound_choose = QPushButton(tr("main.sound_choose"))
+        self.btn_sound_play = QPushButton(tr("main.sound_play"))
+        self.btn_sound_copy = QPushButton(tr("main.sound_copy"))
+        for button in (self.btn_sound_choose, self.btn_sound_play, self.btn_sound_copy):
+            sound_buttons.addWidget(button)
+        sound_buttons.addStretch(1)
+        alerts_layout.addLayout(sound_buttons)
+        alerts_layout.addWidget(QLabel(tr("main.sound_note")))
+        upper_layout.addWidget(alerts_group, 1, 1)
+
+        lower = QGroupBox(tr("main.status_label"))
+        lower_layout = QHBoxLayout(lower)
+        status_column = QVBoxLayout()
         status_row = QHBoxLayout()
-        status_row.addWidget(QLabel(tr("main.status_label")))
         self.status = QLabel(tr("status.stopped"))
-        status_row.addWidget(self.status, 1)
-        lower_layout.addLayout(status_row)
-
-        last_row = QHBoxLayout()
-        last_row.addWidget(QLabel(tr("main.last_label")))
+        status_row.addWidget(self.status)
+        status_row.addStretch(1)
+        status_row.addWidget(QLabel(tr("main.last_label")))
         self.last = QLabel(tr("status.last_none"))
-        last_row.addWidget(self.last, 1)
-        lower_layout.addLayout(last_row)
+        status_row.addWidget(self.last)
+        status_column.addLayout(status_row)
 
-        lower_layout.addWidget(QLabel(tr("main.log_label")))
+        status_column.addWidget(QLabel(tr("main.log_label")))
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
-        lower_layout.addWidget(self.log)
+        status_column.addWidget(self.log)
+
+        side_buttons = QVBoxLayout()
+        self.btn_open_captures = QPushButton(tr("main.btn_captures"))
+        self.btn_test_alert = QPushButton(tr("main.btn_test_alert"))
+        self.btn_open = QPushButton(tr("main.btn_open_yaml"))
+        for button in (self.btn_open_captures, self.btn_test_alert, self.btn_open):
+            side_buttons.addWidget(button)
+        side_buttons.addStretch(1)
+
+        lower_layout.addLayout(status_column, 3)
+        lower_layout.addLayout(side_buttons, 1)
 
         splitter.addWidget(upper)
         splitter.addWidget(lower)
@@ -340,7 +325,6 @@ class MainWindow(QMainWindow):
         self.btn_arm.clicked.connect(lambda: self._handle_action({"action": "arm"}))
         self.btn_disarm.clicked.connect(lambda: self._handle_action({"action": "disarm"}))
         self.btn_run_action.clicked.connect(self._run_action_once)
-        self.btn_action_arm.clicked.connect(lambda: self._handle_action({"action": "arm"}))
         self.btn_action_new.clicked.connect(self._action_new)
         self.btn_action_edit.clicked.connect(self._action_edit)
         self.btn_action_remove.clicked.connect(self._action_remove)
@@ -375,7 +359,6 @@ class MainWindow(QMainWindow):
         self._help(self.btn_disarm, "window.disarm")
         self._help(self.btn_arm_for, "window.arm_for")
         self._help(self.btn_run_action, "window.run_action")
-        self._help(self.btn_action_arm, "window.arm")
         self._help(self.btn_new, "window.new_target")
         self._help(self.btn_remove, "window.remove")
         self._help(self.btn_reload, "window.reload")
@@ -1125,11 +1108,12 @@ class MainWindow(QMainWindow):
         return self._first_sound_file(profile.alerts)
 
     def _populate_sound(self) -> None:
-        effective = self._effective_sound_file()
-        self.sound_path.setText(effective or tr("main.sound_none"))
-        value = self._sound_choice or effective
-        self.sound_snippet.setText(tr("main.sound_snippet", path=value) if value else "")
+        value = self._sound_choice or self._effective_sound_file()
+        self.sound_path.setText(
+            tr("main.sound_snippet", path=value) if value else tr("main.sound_none")
+        )
         self.btn_sound_play.setEnabled(bool(value))
+        self.btn_sound_copy.setEnabled(bool(value))
 
     def _choose_sound(self) -> None:
         from screen_watch.platform.paths import app_home, sounds_dir
@@ -1141,9 +1125,31 @@ class MainWindow(QMainWindow):
         if not path:
             return
         self._sound_choice = path
-        self.sound_snippet.setText(tr("main.sound_snippet", path=path))
+        self.sound_path.setText(tr("main.sound_snippet", path=path))
         self.btn_sound_play.setEnabled(True)
+        self.btn_sound_copy.setEnabled(True)
         self._append(f"sound chosen for preview (not saved): {path}")
+        self._sound_yaml_help()
+
+    def _sound_yaml_help(self) -> None:
+        box = QMessageBox(self)
+        box.setWindowTitle(tr("dialog.sound_title"))
+        box.setText(tr("dialog.sound_help", profile=self._profile or "default"))
+        copy_open = box.addButton(
+            tr("dialog.sound_copy_open"), QMessageBox.ButtonRole.AcceptRole
+        )
+        open_only = box.addButton(
+            tr("dialog.sound_open_only"), QMessageBox.ButtonRole.ActionRole
+        )
+        box.addButton(tr("dialog.sound_close"), QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(copy_open)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is copy_open:
+            self._copy_sound_snippet()
+            self._open_yaml()
+        elif clicked is open_only:
+            self._open_yaml()
 
     def _play_sound(self) -> None:
         from screen_watch.platform.audio import play_file, resolve_sound_path
@@ -1159,9 +1165,10 @@ class MainWindow(QMainWindow):
             self._append(f"could not play: {resolved}")
 
     def _copy_sound_snippet(self) -> None:
-        text = self.sound_snippet.text()
-        if not text:
+        value = self._sound_choice or self._effective_sound_file()
+        if not value:
             return
+        text = tr("main.sound_snippet", path=value)
         QApplication.clipboard().setText(text)
         self._append(f"copied: {text}")
 
@@ -1520,7 +1527,7 @@ class MainWindow(QMainWindow):
 
     def _update_arming_buttons(self) -> None:
         active = self._controller.running and self._controller.actions is not None
-        for button in (self.btn_arm, self.btn_disarm, self.btn_arm_for, self.btn_action_arm):
+        for button in (self.btn_arm, self.btn_disarm, self.btn_arm_for):
             button.setEnabled(active)
 
     def _set_running(self, running: bool) -> None:

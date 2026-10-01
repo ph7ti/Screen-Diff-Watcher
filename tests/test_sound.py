@@ -136,6 +136,23 @@ def test_relative_missing_file_uses_beep(monkeypatch, make_frame, tmp_path):
     assert winsound.played == []
 
 
+def test_default_file_resolves_to_bundled_alert_mp3(monkeypatch, make_frame, tmp_path):
+    from screen_watch.platform import audio as audio_module
+    from screen_watch.resources import bundled_sounds_dir
+
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path / "home"))
+    monkeypatch.setitem(sys.modules, "simpleaudio", None)
+    played: list[str] = []
+    monkeypatch.setattr(
+        audio_module, "_play_miniaudio", lambda path: played.append(path) or True
+    )
+    monkeypatch.setattr(audio_module, "_miniaudio_available", lambda: True)
+    monkeypatch.setattr(audio_module, "_miniaudio_supported", lambda path: True)
+
+    SoundNotifier().notify(_result(), _frame(make_frame))
+    assert played == [str(bundled_sounds_dir() / "alert.mp3")]
+
+
 def test_non_wav_skips_simpleaudio(monkeypatch, make_frame, tmp_path):
     from screen_watch.platform import audio as audio_module
 

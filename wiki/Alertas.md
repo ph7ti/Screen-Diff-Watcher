@@ -8,7 +8,7 @@ Um alerta é disparado quando a comparação confirma uma **mudança** (`changed
 
 | Tipo (`type`) | O que faz | Campos específicos |
 |---|---|---|
-| `sound` | toca um som local | `file` (WAV/MP3/M4A/AAC/OGG/FLAC…; default `alert.wav`) |
+| `sound` | toca um som local | `file` (WAV/MP3/M4A/AAC/OGG/FLAC…; default `alert.mp3`, empacotado) |
 | `popup` | notificação local (`plyer`) | — |
 | `telegram` | envia mensagem (e a imagem do ROI) via bot | `bot_token_env`, `chat_id`, `attach_roi` |
 | `log` | grava uma linha JSON em `logs/alerts.jsonl` | `path` (opcional; vazio = default) |
@@ -25,7 +25,7 @@ cooldown. Exemplo de perfil:
 profiles:
   default:
     alerts:
-      - { type: "sound",    enabled: true, severity_min: 1, cooldown_s: 30, file: "alert.wav" }
+      - { type: "sound",    enabled: true, severity_min: 1, cooldown_s: 30, file: "alert.mp3" }
       - { type: "popup",    enabled: true, severity_min: 1, cooldown_s: 30 }
       - { type: "telegram", enabled: true, severity_min: 2, cooldown_s: 60,
           bot_token_env: "TELEGRAM_BOT_TOKEN", chat_id: "123456789", attach_roi: true }
@@ -57,14 +57,16 @@ log** (Telegram exige `chat_id`, então não entra no default).
 - **Fallback legado**: `winsound` (stdlib; só WAV) no Windows; no Linux/macOS, player externo em
   ordem de preferência — `paplay`, `aplay -q`, `ffplay -nodisp -autoexit -loglevel quiet`; no macOS,
   `afplay`.
-- `file` pode ser **absoluto** ou **relativo**: relativo procura em **`app-data/sounds/`** primeiro
-  e depois no CWD. Arquivo ausente — ou formato sem decoder — cai no `beep()` com aviso no log
+- `file` pode ser **absoluto** ou **relativo**: relativo procura em **`app-data/sounds/`** primeiro,
+  depois nos **sons empacotados** (`screen_watch/assets/sounds`, onde mora o `alert.mp3` default) e por
+  fim no CWD. Arquivo ausente — ou formato sem decoder — cai no `beep()` com aviso no log
   (nunca silêncio nem exceção).
 - O extra `simpleaudio` (`pip install -e ".[sound]"`) segue opcional e **não** entra nos instaladores
   (sem wheel confiável para Python 3.13); ele só é tentado para `.wav`.
 - **Seletor da GUI**: a linha **Som do alerta** pré-visualiza qualquer arquivo com **Reproduzir** e
   mostra o trecho `file: "<caminho>"` para colar no YAML — **não persiste** nada (o YAML é lido ao
-  iniciar).
+  iniciar). Depois de **Escolher…**, um popup aponta para o `config.yaml` e o perfil ativo, com
+  **Copiar caminho e abrir YAML** / **Só abrir o YAML** / **Fechar**.
 - Matriz completa de formatos por contexto: [notas da v0.6.0](../doc/releases/v0.6.0.pt-BR.md).
 
 ### Popup
@@ -128,7 +130,7 @@ severidade 2+).
 - Com `rearm: true` (default), o baseline avança após um alerta efetivo (ou inútil) — uma mudança
   sustentada alarma uma vez. Em cooldown ou falha, o baseline é mantido: a mudança pendente alarma
   quando o cooldown expirar.
-- Re-arm manual: tray, botão **Re-armar** da janela ou hotkey `rearm` (`<ctrl>+<alt>+r`).
+- Re-arm manual: tray, botão **Re-armar baseline** da janela ou hotkey `rearm` (`<ctrl>+<alt>+r`).
 
 ## Testar
 

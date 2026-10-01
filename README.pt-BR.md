@@ -26,7 +26,8 @@ Roda no **Windows e no Linux**, capturando apenas pixels (não toca no aplicativ
 - **Alerta** por som, popup, Telegram, log JSONL, **webhook**, **HTTP POST** e **syslog**, com severidade
   mínima e cooldown por canal. O som toca **WAV/MP3/M4A/AAC/OGG/FLAC/WMA** conforme o contexto (GUI
   via Qt Multimedia; CLI via `miniaudio`), e a GUI tem um seletor que pré-visualiza e entrega o trecho
-  `file: "..."` para o YAML.
+  `file: "..."` para o YAML. O som default é um **`alert.mp3` empacotado** que vai junto com o app;
+  um `file` relativo é resolvido como `app-data/sounds/` → `assets/sounds/` empacotado → CWD.
 - **Máscaras** para ignorar áreas que mudam sozinhas (relógio, spinner, cursor).
 - **Evidências**: prints do baseline e de cada mudança — opt-in.
 - **Ações pseudo-humanas** (clique, teclas, texto) quando armadas — ensaio por padrão e auditoria
@@ -230,11 +231,11 @@ GitHub Release. `workflow_dispatch` gera só os artefatos (sem release).
 **Implementado:** captura e ancoragem (Modelo B), modos de comparação (`light`/`default`/`advanced`)
 com pipeline e curto-circuito (`advanced` com gate de phash, bypassado pelo `text_watch`), alertas
 (som/popup/Telegram/log + webhook/HTTP POST/syslog) com cooldown/rearm e teste de envio, **som
-selecionável (MP3/M4A/OGG/FLAC…)** e o filtro **`text_watch`** (aparece/desaparece), **nome da
-seleção** (renomeia o arquivo pelo slug), **Ver local** (realce da ROI sem tocar nos pixels) e
-**reedição da região por duplo clique** (Enter inicia/para), evidências,
-ações pseudo-humanas (com editor na GUI e gravador), agendador, perfis, CLI completa, GUI + tray com
-i18n (pt-BR/en-US), empacotamento (Inno Setup e `.deb`) e CI/release por tag.
+selecionável (MP3/M4A/OGG/FLAC…)** com **default empacotado `alert.mp3`** e o filtro **`text_watch`**
+(aparece/desaparece), **nome da seleção** (renomeia o arquivo pelo slug), **Ver local** (realce da ROI
+sem tocar nos pixels), **reedição da região por duplo clique** (Enter inicia/para) e a **janela em
+grid 2×2**, evidências, ações pseudo-humanas (com editor na GUI e gravador), agendador, perfis, CLI
+completa, GUI + tray com i18n (pt-BR/en-US), empacotamento (Inno Setup e `.deb`) e CI/release por tag.
 
 **Validação manual pendente:** GUI/tray/overlay em 100/125/150% (doc §5.1, §9.5) e detalhes do
 bundle em máquina limpa (ícone, `StartupWMClass`, tamanho do pacote, aviso do SmartScreen) —
@@ -274,7 +275,7 @@ escada de scripts e CI em [wiki/Desenvolvimento-Testes-e-CI.md](wiki/Desenvolvim
 | [**Wiki**](wiki/Home-pt-BR.md) | detalhes de uso e recursos: CLI, GUI, config, ações, alertas, evidências, idiomas, DPI, build |
 | [`doc/00-Documento_de_Arquitetura_e_Especificação.md`](doc/00-Documento_de_Arquitetura_e_Especificação.md) | arquitetura e especificação — **fonte única de verdade do design** |
 | [`doc/01-Build_e_Release.md`](doc/01-Build_e_Release.md) | pipeline de build e release dos instaladores |
-| [`doc/releases/`](doc/releases/v0.7.0.pt-BR.md) | notas de release por versão (arquivo de detalhe) |
+| [`doc/releases/`](doc/releases/v0.7.1.pt-BR.md) | notas de release por versão (arquivo de detalhe) |
 | [`CHANGELOG.md`](CHANGELOG.md) | mudanças por versão (semântico) |
 | [`README.md`](README.md) | este guia em inglês |
 

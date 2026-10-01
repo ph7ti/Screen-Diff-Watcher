@@ -7,28 +7,32 @@
 
 ## The window
 
-- **Monitoring column** (left): **Start** / **Stop** / **Re-arm** and **Minimize to tray** /
-  **Highlight** in a **two-column grid**, the **Mode** (`light`/`default`/`advanced`), **Profile**
-  and **Language** selectors, and the arming controls — **Arm actions**, **Disarm**, **Arm for…** —
-  with the visible state.
-- **Selections group** (right): list of `app-data/selections/*.json` and the ROI legend. Each item
-  shows the **application name**, the **monitored region** and the **mode** (e.g.:
-  `Selection WhatsApp — Region 120,340 400x80 — advanced`); a selection with a **name** shows it as a
-  prefix (`verificando download - Selection …`). **Double-click re-edits the region** (overlay);
-  **Enter starts/stops**. Below the list, the **Selection name** field + **Rename** confirm the
-  display name and rename the file to its slug.
-- **File actions row**: **New Target** / **Remove** / **Reload** / **Open YAML** /
-  **Captures**, plus the **Record captures (evidence)** checkbox.
-- **Detection and alerts**: **Alert sound** row (effective path; **Choose…** to preview, **Play** and
-  **Copy path** with the `file: "..."` snippet — the selector **does not persist**) and **Watch
-  text** row (text, **Appears**/**Disappears**, **Match case**, **Ignore accents**; enabled **only in
-  `advanced`** and written to `overrides.text_watch` of the **current selection**). Switching the
-  mode away from `advanced` clears the override. Details in [Alerts](Alerts.md) and the
+The upper panel is a **2×2 grid** (Selections and Session actions on the left; Monitoring and
+Detection and alerts on the right), with the Status + Log footer in a `QSplitter`:
+
+- **Selections** (top-left): **New Target** / **Remove** / **Reload** / **Highlight selection** button
+  row, the ROI legend, the list of `app-data/selections/*.json`, and the **Selection name** field +
+  **Rename**. Each list item shows the **application name**, the **monitored region** and the **mode**
+  (e.g. `Selection WhatsApp — Region 120,340 400x80 — advanced`); a selection with a **name** shows it
+  as a prefix (`verificando download - Selection …`). **Double-click re-edits the region** (overlay);
+  **Enter starts/stops**.
+- **Monitoring** (top-right): a **two-column grid** — **Start**/Language, **Stop**/**Re-arm baseline**,
+  Mode/Profile, **Arm actions**/**Disarm actions**, **Arm for…**/**Minimize to tray** — plus the
+  **Record captures (evidence)** checkbox and the arming status. **Highlight selection** ("Ver local")
+  lives in the Selections row above (it moved out of Monitoring).
+- **Session actions (apply on next start)** (bottom-left): checklist with the resolved actions, the
+  "N of M selected" counter and a horizontal button row (**New action…**, **Edit…**, **Remove Action**,
+  **Run action**).
+- **Detection and alerts** (bottom-right): the **Watch text** row (text, **Appears**/**Disappears**,
+  **Match case**, **Ignore accents**; enabled **only in `advanced`** and written to
+  `overrides.text_watch` of the **current selection**) and the **Alert sound** row (read-only
+  `file: "..."` snippet; **Choose…** to preview, **Play** and **Copy path** — the selector **does not
+  persist**). After **Choose…** a popup points to `config.yaml` and the active profile, with
+  **Copy path and open YAML** / **Open YAML only** / **Close**. Switching the mode away from
+  `advanced` clears the text-watch override. Details in [Alerts](Alerts.md) and the
   [v0.6.0 release notes](../doc/releases/v0.6.0.md).
-- **Session actions (apply on next start)**: checklist with the resolved actions, counter
-  "N of M selected" and the button column (`New action…`, `Edit…`, `Remove Action`, `Arm Action`,
-  `Run action`).
-- **Footer**: status/last result and the **Log**, in a resizable `QSplitter`.
+- **Footer** (`QSplitter`): the **Status** group with status/last result and the **Log**, and the
+  right column with **Captures** / **Test alert…** / **Open YAML**.
 
 ## Mode, profile and language
 
@@ -41,9 +45,10 @@
 ## Arming/disarming
 
 Actions run in **rehearsal** by default (they only record what they would do). **Arm actions** actually runs them; **Arm for…** limits it by time and disarms by itself; **Disarm** goes back to rehearsal. The arming
-buttons are only enabled with a running session (arming is per session and starts disarmed).
-`Esc` (hotkey `abort`) interrupts an action in progress. Details in
-[Pseudo-human actions](Pseudo-Human-Actions.md).
+buttons are only enabled with a running session (arming is per session and starts disarmed). Do not
+confuse arming with **Re-arm baseline** (same column): that button only resets the comparison
+baseline and has nothing to do with executing actions. `Esc` (hotkey `abort`) interrupts an action
+in progress. Details in [Pseudo-human actions](Pseudo-Human-Actions.md).
 
 ## Hover help
 
@@ -80,9 +85,10 @@ Details in [Evidence](Evidence.md).
   nothing changes) and renaming is blocked while the session runs. Scripts that use
   `--selection <name>` must be updated to the new file name after a rename; `list-selections` and
   `state.json:last_selection` follow the new name.
-- **Highlight** ("Ver local"): draws the selection ROI on screen for ~2 s. It **never paints inside
-  the ROI** (dim layer only outside, border just outside the hole), never takes clicks/focus and
-  auto-closes — so it can be used **while monitoring** to confirm what is being watched.
+- **Highlight** ("Ver local" / **Highlight selection**): draws the selection ROI on screen for ~2 s.
+  It **never paints inside the ROI** (dim layer only outside, border just outside the hole), never
+  takes clicks/focus and auto-closes — so it can be used **while monitoring** to confirm what is
+  being watched. The button lives in the **Selections** row.
 
 ## Actions editor
 

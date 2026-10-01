@@ -5,8 +5,9 @@ ele, delega a `platform/audio.py`, que concentra a fronteira de plataforma
 (player Qt na GUI; `miniaudio` no CLI; `winsound`/player externo no legado).
 `alerts/` nao conhece `sys.platform`, `winsound`, Qt nem miniaudio.
 
-O `file` relativo e resolvido por `platform/audio.py` (``app_home()/sounds`` e
-depois o CWD), de modo que o caminho vale para o app instalado.
+O `file` relativo e resolvido por `platform/audio.py` (``app_home()/sounds``,
+depois os sons empacotados e o CWD), de modo que o caminho vale para o app
+instalado. Sem `file` explicito vale o `alert.mp3` empacotado.
 """
 
 from __future__ import annotations
@@ -25,7 +26,7 @@ class SoundNotifier:
 
     def __init__(
         self,
-        file: str = "alert.wav",
+        file: str = "alert.mp3",
         *,
         enabled: bool = True,
         severity_min: int = 1,

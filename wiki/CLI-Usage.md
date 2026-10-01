@@ -123,7 +123,7 @@ which it was made (doc/00 §18, item 8).
 
 With `rearm: true` (default), a sustained change alarms **once**; a new change re-arms. If
 an alert fails (e.g.: Telegram down), it is retried respecting `cooldown_s` (backoff),
-without hammering on every tick. Manual re-arm is in the tray, in the window's **Re-arm** button and in the
+without hammering on every tick. Manual re-arm is in the tray, in the window's **Re-arm baseline** button and in the
 `rearm` hotkey.
 
 ## Robustness (loop events)

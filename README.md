@@ -27,7 +27,9 @@ Runs on **Windows and Linux**, capturing pixels only (it never touches the watch
 - **Alerts** through sound, popup, Telegram, a JSONL log, a **webhook**, an **HTTP POST** and
   **syslog**, with per-channel minimum severity and cooldown. The sound plays **WAV/MP3/M4A/AAC/OGG/
   FLAC/WMA** depending on the context (GUI via Qt Multimedia; CLI via `miniaudio`), and the GUI has a
-  picker that previews the file and hands you the `file: "..."` snippet for the YAML.
+  picker that previews the file and hands you the `file: "..."` snippet for the YAML. The default
+  sound is a **bundled `alert.mp3`** shipped with the app; a relative `file` is resolved as
+  `app-data/sounds/` → bundled `assets/sounds/` → CWD.
 - **Masks** to ignore areas that change on their own (clock, spinner, cursor).
 - **Evidence**: prints of the baseline and of each change — opt-in.
 - **Pseudo-human actions** (click, keys, text) when armed — rehearsal by default, audited in
@@ -233,9 +235,10 @@ creates the GitHub Release. `workflow_dispatch` generates artifacts only (no rel
 **Implemented:** capture and anchoring (Model B), comparison modes (`light`/`default`/`advanced`)
 with pipeline and short-circuit (`advanced` gated by phash, bypassed by `text_watch`), alerts
 (sound/popup/Telegram/log + webhook/HTTP POST/syslog) with cooldown/re-arm and send test,
-**selectable sound (MP3/M4A/OGG/FLAC…)** and the **`text_watch`** filter (appears/disappears),
+**selectable sound (MP3/M4A/OGG/FLAC…)** with a **bundled `alert.mp3` default**, the
+**`text_watch`** filter (appears/disappears),
 **selection name** (renames the file to its slug), **Highlight** (ROI outline that never touches the
-ROI pixels) and **double-click region re-edit** (Enter starts/stops),
+ROI pixels), **double-click region re-edit** (Enter starts/stops) and the **2×2 window layout**,
 evidence, pseudo-human actions (with GUI editor and recorder), scheduler, profiles, full CLI,
 GUI + tray with i18n (pt-BR/en-US), packaging (Inno Setup and `.deb`) and tag-driven CI/release.
 
@@ -278,7 +281,7 @@ Integration tests are opt-in (`TEST_REAL_CAPTURE`, `TEST_REAL_TELEGRAM`,
 | [**Wiki**](wiki/Home.md) | usage and feature details: CLI, GUI, config, actions, alerts, evidence, languages, DPI, build |
 | [`doc/00-Architecture_and_Specification.md`](doc/00-Architecture_and_Specification.md) | architecture and specification — **single source of truth for the design** |
 | [`doc/01-Build_and_Release.md`](doc/01-Build_and_Release.md) | installer build and release pipeline |
-| [`doc/releases/`](doc/releases/v0.7.0.md) | per-version release notes (detail file) |
+| [`doc/releases/`](doc/releases/v0.7.1.md) | per-version release notes (detail file) |
 | [`CHANGELOG.md`](CHANGELOG.md) | changes per version (semantic) |
 | [`README.pt-BR.md`](README.pt-BR.md) | este guia em português |
 

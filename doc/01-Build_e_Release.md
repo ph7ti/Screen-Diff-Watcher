@@ -66,7 +66,7 @@ A versão vive **apenas** em `src/screen_watch/__init__.py`; o `pyproject.toml` 
 
 ```python
 # src/screen_watch/__init__.py
-__version__ = "0.7.0"   # <- unica fonte de verdade
+__version__ = "0.7.1"   # <- unica fonte de verdade
 ```
 
 Confirme que metadados e atributo batem:
@@ -181,12 +181,12 @@ Repositório: `https://github.com/ph7ti/Screen-Diff-Watcher`.
 - **PR / `workflow_dispatch` do CI**: o job `package` do `ci.yml` monta os instaladores **sem
   publicar** (artefatos `installer-Windows` / `installer-Linux`) — pega quebra de empacotamento.
 - **Release de teste**: `workflow_dispatch` em `release.yml` com `version` = valor de `__version__`
-  (ex.: `0.7.0-rc1`) gera **só artefatos de workflow**, sem release.
+  (ex.: `0.7.1-rc1`) gera **só artefatos de workflow**, sem release.
 - **Release final**: crie a tag e faça push:
 
 ```powershell
-git tag v0.7.0          # tag sem 'v' deve ser IGUAL a __version__
-git push origin v0.7.0
+git tag v0.7.1          # tag sem 'v' deve ser IGUAL a __version__
+git push origin v0.7.1
 ```
 
 O `release.yml` builda Windows (`windows-latest` + `choco install innosetup -y`) e Linux
@@ -217,7 +217,7 @@ Validação manual (não automatizada):
 - **Windows, máquina limpa sem Tesseract**: instalar → Tesseract baixado/instalado; `features` mostra
   `eng`+`por`; GUI abre; atalhos criados; opção "iniciar com o Windows" funciona; desinstalar remove
   o app e **preserva** Tesseract e app-data.
-- **Linux, container limpo**: `apt install ./screen-watch_0.7.0_amd64.deb` resolve as dependências
+- **Linux, container limpo**: `apt install ./screen-watch_0.7.1_amd64.deb` resolve as dependências
   (Tesseract junto); `screen-watch features --json` ok; `xvfb-run -a screen-diff-watcher-gui` abre.
 - Ícone da janela/tray no bundle, `StartupWMClass` do `.desktop`, tamanho do pacote e aviso do
   SmartScreen (`.exe` sem assinatura — fora de escopo assinar).

@@ -3,7 +3,7 @@
 
 > **Propósito deste documento**: servir como **fonte única de verdade do design** para que outra IA
 > (ou desenvolvedor) continue o projeto sem precisar reconstruir decisões, e registrar **o que está
-> implementado** (referência: v0.7.0). Toda decisão aqui registrada foi tomada deliberadamente; onde
+> implementado** (referência: v0.7.1). Toda decisão aqui registrada foi tomada deliberadamente; onde
 > houver alternativas, elas estão listadas como "rejeitadas" com o motivo.
 >
 > **Regra de manutenção**: não substitua uma decisão registrada por uma alternativa "mais moderna"
@@ -55,7 +55,7 @@ alertar o usuário quando aquele painel sofrer alteração visual, sem exigir qu
 olhando para a tela. Extensão natural: reagir à mudança com uma ação simples (ex.: clicar em
 "Atualizar") quando isso for explicitamente armado.
 
-### 1.4 Estado da implementação (v0.7.0)
+### 1.4 Estado da implementação (v0.7.1)
 
 Implementado e coberto por testes: fronteira de plataforma, captura/ancoragem (Modelo B), os três
 modos de comparação, pipeline com curto-circuito (`advanced` com gate de phash e bypass pelo
@@ -68,9 +68,12 @@ pseudo-humanas (arming, ensaio, limites, auditoria, editor na GUI, gravador), ag
 apenas ações), perfis + migração v1→v2, seleção JSON v2 com overrides e o **nome da seleção**
 (`name`/renomeação para `selections/<slug>.json`), CLI (`init-config` …
 `validate-i18n`), GUI + tray com i18n e ajuda no hover — incluindo **"Ver local"** (realce
-transitório da ROI que nunca pinta dentro dela) e **duplo clique para reeditar a região / Enter para
-iniciar-parar** — empacotamento (PyInstaller; Inno Setup no
-Windows; `.deb` no Linux) e pipeline de release por tag.
+transitório da ROI que nunca pinta dentro dela), **duplo clique para reeditar a região / Enter para
+iniciar-parar**, a **repaginação da janela em grid 2×2** (Seleções e Ações da sessão à esquerda;
+Monitoramento e Detecção e alertas à direita; Status+Log no rodapé com os botões à direita), o **som
+default empacotado `alert.mp3`** (resolver em `app_home()/sounds` → `assets/sounds` → CWD) e o
+**popup ao escolher o som** que orienta a colar o caminho no YAML — empacotamento (PyInstaller;
+Inno Setup no Windows; `.deb` no Linux) e pipeline de release por tag.
 
 Pendências de **validação manual** (não automatizável no CI):
 
@@ -209,12 +212,19 @@ Cada item abaixo é uma decisão fechada. Formato: **Decisão → Motivo → Alt
 - **Motivo**: multi-monitor nativo (`QGuiApplication.screens()`), transparência real, alta DPI
   resolvida corretamente, `CompositionMode_Clear` disponível para o "buraco" da seleção.
 - **Detalhes da implementação**:
-  - **Layout**: a janela segue o mockup `UI.txt` (coluna **Monitoramento** com
-    Iniciar/Parar/Re-armar/Minimizar **e Ver local num grid de duas colunas**, Modo/Perfil/Idioma e
-    arming; grupo **Seleções** com a lista e a linha **Nome da seleção** (`name` + Renomear); linha de
-    Novo Target/Remover/Recarregar/Abrir YAML/Prints + evidências; grupo **Ações da sessão** com
-    checklist e botões; Status/Último e **Log** no rodapé num `QSplitter`). Edição de passos com
+  - **Layout**: a janela segue o mockup `UI.txt` (painel superior num **grid 2×2**: à esquerda os
+    grupos **Seleções** — fileira de botões Novo Target/Remover/Recarregar/**Ver local da seleção**,
+    legenda, lista e a linha **Nome da seleção** (`name` + Renomear) — e **Ações da sessão** — checklist,
+    contador e a fileira Nova ação…/Editar…/Remover Ação/Executar ação; à direita **Monitoramento** —
+    grid de duas colunas Iniciar/Idioma, Parar/Re-armar baseline, Modo/Perfil, Armar Ações/Desarmar
+    Ações, Armar por…/Minimizar para o tray, mais **Gravar prints (evidências)** e o status de arming —
+    e **Detecção e alertas** — texto primeiro (`text_watch`) e depois o som, com **Escolher…/Reproduzir/
+    Copiar caminho**; no rodapé, num `QSplitter`, o grupo **Status** com Status/Último/**Log** e a
+    coluna direita com **Prints/Testar alerta…/Abrir YAML**). Edição de passos com
     Subir/Descer/drag&drop/Editar/Duplicar.
+  - **Popup do som**: ao escolher um som, a GUI mostra um aviso (modal) orientando a colar o trecho
+    `file:` no alerta `type: "sound"` do `config.yaml` (cita o perfil ativo), com os botões **Copiar
+    caminho e abrir YAML** (padrão), **Só abrir o YAML** e **Fechar** (`dialog.sound_*`).
   - **Interações da seleção**: **duplo clique reedita a região** (overlay de novo, mesma janela,
     preservando `name`/`mode`/`overrides` e limpando `masks`); **Enter inicia/para** a sessão
     (`QShortcut` com `WidgetShortcut`; `itemActivated` não é usado porque também dispara no duplo
@@ -985,9 +995,14 @@ class Notifier(Protocol):
 - Matriz de formatos por contexto: a GUI no Windows/macOS (Media Foundation/AVFoundation) toca
   M4A/AAC; no Linux a GUI depende dos plugins do GStreamer; o CLI depende do miniaudio (M4A/AAC só
   com player externo, senão `beep`).
-- `file` relativo é resolvido por `platform/audio.py::resolve_sound_path` (`app_home()/sounds`
-  primeiro, depois o CWD). Arquivo ausente ou formato sem decoder → `beep()` + aviso no log (nunca
-  silêncio/exceção).
+- `file` relativo é resolvido por `platform/audio.py::resolve_sound_path` nesta ordem:
+  **`app_home()/sounds`** (usuário) → **`resources.bundled_sounds_dir()`** (`screen_watch/assets/sounds`,
+  onde mora o `alert.mp3` default) → **CWD**. Um `file` absoluto é usado como está; um arquivo do
+  usuário sempre vence o empacotado. Arquivo ausente ou formato sem decoder → `beep()` + aviso no log
+  (nunca silêncio/exceção).
+- **Default `"alert.mp3"`** (empacotado): `AlertOptions.file`, o `parse` de `loader.py` e o
+  `SoundNotifier` usam `"alert.mp3"`. Configs antigas com `alert.wav` (ou outro caminho) não mudam;
+  o default novo só vale para configs novas ou quando o usuário trocar a linha.
 - Extra opcional `simpleaudio` (`pip install -e ".[sound]"`); **não** entra nos instaladores (sem
   wheel confiável para Python 3.13) e só é tentado para WAV.
 - **Não usar** `playsound` (abandonado).
@@ -1062,7 +1077,7 @@ class AlertChain:
   tick.
 - Falha em um notificador registra a tentativa (`_last_attempt`) e não impede os demais; cada um tem
   seu próprio `try`.
-- Re-arm manual: tray/botão "Re-armar"/hotkey `rearm`, via `MonitorSession.request_rebaseline()`
+- Re-arm manual: tray/botão "Re-armar baseline"/hotkey `rearm`, via `MonitorSession.request_rebaseline()`
   (thread-safe) ou `rebaseline_now(frame)`.
 
 ### 11.4 Ações pseudo-humanas (opt-in, `actions/`)
@@ -1180,7 +1195,7 @@ profiles:
         advanced: { similarity_threshold: 0.92, psm: 6, lang: "por+eng", upscale: 2,
                     tesseract_cmd: null }
     alerts:
-      - { type: "sound",    enabled: true, severity_min: 1, cooldown_s: 30, file: "alert.wav" }
+      - { type: "sound",    enabled: true, severity_min: 1, cooldown_s: 30, file: "alert.mp3" }
       - { type: "popup",    enabled: true, severity_min: 1, cooldown_s: 30 }
       - { type: "telegram", enabled: true, severity_min: 2, cooldown_s: 60,
           bot_token_env: "TELEGRAM_BOT_TOKEN", chat_id: "123456789", attach_roi: true }
@@ -1281,6 +1296,8 @@ por serem relativas à ROI antiga.
 
 `platform/paths.py` centraliza `app_home()`, `config_path()`, `selections_dir()`, `logs_dir()`,
 `sounds_dir()` (sons do usuário: `file` relativo procura lá primeiro) e `state_path()`.
+Os sons empacotados ficam em `resources.bundled_sounds_dir()` (`screen_watch/assets/sounds`, o
+`alert.mp3` default); a ordem de resolução é usuário → pacote → CWD (§11.2).
 Base: `%APPDATA%\screen_watch` no Windows, `~/.config/screen_watch` no Linux,
 `~/Library/Application Support/screen_watch` no macOS, ou o override `SCREEN_WATCH_HOME`.
 

@@ -371,7 +371,7 @@ def _parse_alert(raw: Any, index: int, prefix: str = "alerts") -> AlertOptions:
         enabled=_as_bool(raw.get("enabled", True), f"{field}.enabled"),
         severity_min=_as_int(raw.get("severity_min", 1), f"{field}.severity_min"),
         cooldown_s=_as_float(raw.get("cooldown_s", 30.0), f"{field}.cooldown_s"),
-        file=_as_str(raw.get("file", "alert.wav"), f"{field}.file"),
+        file=_as_str(raw.get("file", "alert.mp3"), f"{field}.file"),
         bot_token_env=_as_str(
             raw.get("bot_token_env", "TELEGRAM_BOT_TOKEN"), f"{field}.bot_token_env"
         ),
@@ -884,7 +884,7 @@ def _compare_options_to_dict(options: CompareOptions) -> dict[str, Any]:
 
 def _default_alert_dicts() -> list[dict[str, Any]]:
     return [
-        {"type": "sound", "enabled": True, "severity_min": 1, "cooldown_s": 30, "file": "alert.wav"},
+        {"type": "sound", "enabled": True, "severity_min": 1, "cooldown_s": 30, "file": "alert.mp3"},
         {"type": "popup", "enabled": True, "severity_min": 1, "cooldown_s": 30},
         {
             "type": "telegram",

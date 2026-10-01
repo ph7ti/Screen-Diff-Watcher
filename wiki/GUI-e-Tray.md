@@ -6,29 +6,33 @@
 
 ## A janela
 
-- **Coluna Monitoramento** (esquerda): **Iniciar** / **Parar** / **Re-armar** e **Minimizar para o
-  tray** / **Ver local** num **grid de duas colunas**, os seletores de **Modo**
-  (`light`/`default`/`advanced`), **Perfil** e **Idioma**, e os
-  controles de arming — **Armar ações**, **Desarmar**, **Armar por…** — com o estado visível.
-- **Grupo Seleções** (direita): lista de `app-data/selections/*.json` e a legenda da ROI. Cada item
-  mostra o **nome do aplicativo**, a **região monitorada** e o **modo** (ex.:
+O painel superior é um **grid 2×2** (Seleções e Ações da sessão à esquerda; Monitoramento e
+Detecção e alertas à direita), com o rodapé Status + Log num `QSplitter`:
+
+- **Seleções** (canto superior esquerdo): fileira de botões **Novo Target** / **Remover** /
+  **Recarregar** / **Ver local da seleção**, a legenda da ROI, a lista de
+  `app-data/selections/*.json` e o campo **Nome da seleção** + **Renomear**. Cada item mostra o
+  **nome do aplicativo**, a **região monitorada** e o **modo** (ex.:
   `Seleção WhatsApp — Região 120,340 400x80 — advanced`); uma seleção com **nome** o exibe como
   prefixo (`verificando download - Seleção …`). **Duplo clique reedita a região** (overlay);
-  **Enter inicia/para**. Abaixo da lista, o campo **Nome da seleção** + **Renomear** confirmam o
-  nome de exibição e renomeiam o arquivo para o slug.
-- **Linha de ações de arquivo**: **Novo Target** / **Remover** / **Recarregar** / **Abrir YAML** /
-  **Prints**, mais o checkbox **Gravar prints (evidências)**.
-- **Detecção e alertas**: linha **Som do alerta** (caminho efetivo; **Escolher…** para
-  pré-visualizar, **Reproduzir** e **Copiar caminho** com o trecho `file: "..."` — o seletor **não
-  persiste**) e linha **Verificar texto** (texto, **Aparece**/**Desaparece**, **Diferenciar
-  maiúsculas**, **Ignorar acentos**; habilitada **somente no `advanced`** e gravada em
-  `overrides.text_watch` da **seleção atual**). Trocar o modo para fora do `advanced` limpa o
-  override. Detalhes em [Alertas](Alertas.md) e nas
-  [notas da v0.6.0](../doc/releases/v0.6.0.pt-BR.md).
-- **Ações da sessão (aplicam no próximo start)**: checklist com as ações resolvidas, contador
-  "N de M selecionadas" e a coluna de botões (`Nova ação…`, `Editar…`, `Remover Ação`, `Armar Ação`,
-  `Executar ação`).
-- **Rodapé**: status/último resultado e o **Log**, num `QSplitter` redimensionável.
+  **Enter inicia/para**.
+- **Monitoramento** (canto superior direito): **grid de duas colunas** — **Iniciar**/Idioma,
+  **Parar**/**Re-armar baseline**, Modo/Perfil, **Armar Ações**/**Desarmar Ações**, **Armar por…**/
+  **Minimizar para o tray** — mais o checkbox **Gravar prints (evidências)** e o status de arming.
+  **Ver local** agora fica na fileira das **Seleções** (saiu do Monitoramento).
+- **Ações da sessão (aplicam no próximo start)** (canto inferior esquerdo): checklist com as ações
+  resolvidas, contador "N de M selecionadas" e a fileira horizontal de botões (**Nova ação…**,
+  **Editar…**, **Remover Ação**, **Executar ação**).
+- **Detecção e alertas** (canto inferior direito): a linha **Verificar texto** (texto,
+  **Aparece**/**Desaparece**, **Diferenciar maiúsculas**, **Ignorar acentos**; habilitada **somente
+  no `advanced`** e gravada em `overrides.text_watch` da **seleção atual**) e a linha **Som do
+  alerta** (campo read-only com o trecho `file: "..."`; **Escolher…** para pré-visualizar,
+  **Reproduzir** e **Copiar caminho** — o seletor **não persiste**). Depois de **Escolher…**, um
+  popup aponta para o `config.yaml` e o perfil ativo, com **Copiar caminho e abrir YAML** /
+  **Só abrir o YAML** / **Fechar**. Trocar o modo para fora do `advanced` limpa o override.
+  Detalhes em [Alertas](Alertas.md) e nas [notas da v0.6.0](../doc/releases/v0.6.0.pt-BR.md).
+- **Rodapé** (`QSplitter`): o grupo **Status** com status/último resultado e o **Log**, e a coluna
+  direita com **Prints** / **Testar alerta…** / **Abrir YAML**.
 
 ## Modo, perfil e idioma
 
@@ -42,9 +46,10 @@
 
 As ações rodam em **ensaio** por padrão (só registram o que fariam). **Armar ações** executa de
 verdade; **Armar por…** limita por tempo e desarma sozinho; **Desarmar** volta ao ensaio. Os botões
-de arming só ficam ativos com uma sessão em execução (o arming é por sessão e começa desarmado).
-`Esc` (hotkey `abort`) interrompe uma ação em andamento. Detalhes em
-[Ações pseudo-humanas](Acoes-Pseudo-Humanas.md).
+de arming só ficam ativos com uma sessão em execução (o arming é por sessão e começa desarmado). Não
+confunda com **Re-armar baseline** (mesma coluna): esse botão só recaptura o baseline da comparação
+e nada tem a ver com executar ações. `Esc` (hotkey `abort`) interrompe uma ação em andamento.
+Detalhes em [Ações pseudo-humanas](Acoes-Pseudo-Humanas.md).
 
 ## Ajuda no hover
 
@@ -81,9 +86,10 @@ Detalhes em [Evidências](Evidencias.md).
   avisa e nada muda) e renomear é bloqueado com sessão rodando. Scripts com `--selection <nome>`
   precisam do novo nome de arquivo após renomear; `list-selections` e
   `state.json:last_selection` acompanham o novo nome.
-- **Ver local**: desenha a ROI da seleção na tela por ~2 s. **Nunca pinta dentro da ROI** (camada
-  escura só fora, borda logo por fora do buraco), não captura cliques/foco e fecha sozinho — por
-  isso pode ser usado **com o monitoramento rodando** para conferir o que está sendo vigiado.
+- **Ver local** (botão **Ver local da seleção**): desenha a ROI da seleção na tela por ~2 s.
+  **Nunca pinta dentro da ROI** (camada escura só fora, borda logo por fora do buraco), não captura
+  cliques/foco e fecha sozinho — por isso pode ser usado **com o monitoramento rodando** para
+  conferir o que está sendo vigiado. O botão fica na fileira das **Seleções**.
 
 ## Editor de ações
 

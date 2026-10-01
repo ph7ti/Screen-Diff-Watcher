@@ -149,6 +149,20 @@ def test_roi_values_must_be_integers():
 # -- v2 (perfis) -----------------------------------------------------------
 
 
+def test_default_sound_file_is_alert_mp3():
+    config = config_from_dict(default_config_dict())
+    profile = config.resolve()
+    assert profile.alerts[0].type == "sound"
+    assert profile.alerts[0].file == "alert.mp3"
+
+
+def test_parse_sound_alert_defaults_to_alert_mp3():
+    from screen_watch.config.loader import parse_alerts
+
+    alert = parse_alerts([{"type": "sound"}], "alerts")[0]
+    assert alert.file == "alert.mp3"
+
+
 def test_default_config_is_v2_and_round_trips(tmp_path):
     path = tmp_path / "config.yaml"
     save_config(path, default_config_dict())

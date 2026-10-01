@@ -41,7 +41,7 @@ profiles:
         advanced: { similarity_threshold: 0.92, psm: 6, lang: "por+eng", upscale: 2,
                     tesseract_cmd: null }
     alerts:
-      - { type: "sound",    enabled: true, severity_min: 1, cooldown_s: 30, file: "alert.wav" }
+      - { type: "sound",    enabled: true, severity_min: 1, cooldown_s: 30, file: "alert.mp3" }
       - { type: "popup",    enabled: true, severity_min: 1, cooldown_s: 30 }
       - { type: "telegram", enabled: true, severity_min: 2, cooldown_s: 60,
           bot_token_env: "TELEGRAM_BOT_TOKEN", chat_id: "123456789", attach_roi: true }

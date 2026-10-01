@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from screen_watch.resources import icon_path, icon_paths
+from screen_watch.resources import bundled_sounds_dir, default_sound_path, icon_path, icon_paths
 
 EXPECTED_NAMES = [
     "ScreenDiffWatcher_32px.png",
@@ -43,3 +43,17 @@ def test_tray_icon_image_uses_project_icon():
 
     image = _icon_image()
     assert image.size == (32, 32)
+
+
+def test_bundled_sounds_dir_is_assets_sounds_folder():
+    path = bundled_sounds_dir()
+    assert path.name == "sounds"
+    assert path.parent.name == "assets"
+
+
+def test_default_sound_path_is_bundled_alert_mp3():
+    path = default_sound_path()
+    assert path is not None
+    assert path.name == "alert.mp3"
+    assert path.is_file()
+    assert path.stat().st_size > 0

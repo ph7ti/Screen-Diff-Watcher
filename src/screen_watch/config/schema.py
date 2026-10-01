@@ -167,7 +167,7 @@ class AlertOptions:
     enabled: bool = True
     severity_min: int = 1
     cooldown_s: float = 30.0
-    file: str = "alert.wav"
+    file: str = "alert.mp3"
     bot_token_env: str = "TELEGRAM_BOT_TOKEN"
     chat_id: str = ""
     attach_roi: bool = True

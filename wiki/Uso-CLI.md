@@ -122,8 +122,8 @@ feito (doc/00 §18, item 8).
 
 Com `rearm: true` (default), uma mudança sustentada alarma **uma vez**; uma nova mudança realarma. Se
 um alerta falhar (ex.: Telegram fora do ar), ele é re-tentado respeitando o `cooldown_s` (backoff),
-sem martelar a cada tick. O re-arm manual está no tray, no botão **Re-armar** da janela e na hotkey
-`rearm`.
+sem martelar a cada tick. O re-arm manual está no tray, no botão **Re-armar baseline** da janela e na
+hotkey `rearm`.
 
 ## Robustez (eventos do loop)
 

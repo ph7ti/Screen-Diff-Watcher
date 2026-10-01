@@ -3,6 +3,39 @@
 Todas as mudanças relevantes deste projeto. Formato inspirado em "Keep a Changelog";
 versionamento semântico. Versão: `screen_watch.__version__` (fonte única).
 
+## [0.7.1] — 2026-10-01
+
+Detalhes e exemplos: [`doc/releases/v0.7.1.md`](doc/releases/v0.7.1.md)
+([PT](doc/releases/v0.7.1.pt-BR.md)).
+
+### Adicionado
+
+- **Som default empacotado (`alert.mp3`)**: o `file` padrão dos alertas `sound` passa a ser
+  `"alert.mp3"`, e o resolver procura também em `screen_watch/assets/sounds/` (empacotado), entre
+  `app_home()/sounds` e o CWD. Novas configs já apontam para o som que vem no instalador; configs
+  existentes com `alert.wav`/outro caminho não mudam (arquivo ausente continua caindo no `beep`).
+- **Popup ao escolher o som**: depois de cada **Escolher…**, a GUI mostra um aviso orientando a colar
+  o caminho no `config.yaml` do perfil desejado, com **Copiar caminho e abrir YAML** (padrão),
+  **Só abrir o YAML** e **Fechar**.
+- **Repaginação da janela principal**: painel superior em **grid 2×2** (Seleções à esquerda,
+  Monitoramento à direita; Ações da sessão à esquerda, Detecção e alertas à direita), **Status + Log**
+  no rodapé com os botões **Prints / Testar alerta… / Abrir YAML** na coluna direita.
+
+### Mudado
+
+- **Ver local** passou do grupo Monitoramento para a fileira de botões do grupo **Seleções**;
+  **Gravar prints (evidências)** passou para o **Monitoramento**.
+- Textos da GUI: **Ver local da seleção**, **Armar Ações** e **Desarmar Ações**.
+- O campo do som exibe o trecho `file: "..."` (o rótulo de snippet separado foi removido);
+  **Copiar caminho** e **Reproduzir** ficam desabilitados sem valor.
+
+### Notas
+
+- Novas chaves i18n `dialog.sound_*` nos dois catálogos; o default empacotado vive em
+  `src/screen_watch/assets/sounds/alert.mp3` (declarado em `package-data` e no `datas` do PyInstaller).
+- A **0.7.1** é uma escolha consciente de **PATCH** (a regra documentada seria MINOR — só layout/UX e
+  o default do som, sem quebra de API nem de dados).
+
 ## [0.7.0] — 2026-10-01
 
 Detalhes e exemplos: [`doc/releases/v0.7.0.md`](doc/releases/v0.7.0.md)

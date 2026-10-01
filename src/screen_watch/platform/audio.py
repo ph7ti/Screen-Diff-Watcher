@@ -12,8 +12,10 @@ porta para tocar audio. Camadas, em ordem:
    (`paplay`/`aplay`/`ffplay`/`afplay`) no Linux/macOS.
 
 `file` relativo procura primeiro em `platform.paths.sounds_dir()`
-(``app_home()/sounds``) e depois no CWD (compatibilidade com o comportamento
-antigo). Arquivo ausente ou formato sem backend cai no `beep()`.
+(``app_home()/sounds``), depois no diretorio empacotado
+(`resources.bundled_sounds_dir()`, onde mora o `alert.mp3` default) e por fim no
+CWD (compatibilidade com o comportamento antigo). Arquivo ausente ou formato sem
+backend cai no `beep()`.
 
 Nunca levanta: devolve `False` e loga `warning` quando nao ha backend, para o
 `AlertChain` nao quebrar por causa de som.
@@ -29,6 +31,7 @@ import threading
 from pathlib import Path
 
 from screen_watch.platform.paths import sounds_dir
+from screen_watch.resources import bundled_sounds_dir
 
 log = logging.getLogger(__name__)
 
@@ -43,7 +46,8 @@ _PLAYERS: dict[str, tuple[tuple[str, ...], ...]] = {
     "darwin": (("afplay",),),
 }
 
-# Arquivos de campainha candidatos quando nao ha `alert.wav`.
+# Arquivos de campainha candidatos quando o som configurado nao existe (o
+# default `alert.mp3` vem no pacote, entao isto e so o ultimo recurso).
 _BELL_FILES = (
     "/usr/share/sounds/freedesktop/stereo/bell.oga",
     "/usr/share/sounds/freedesktop/stereo/complete.oga",
@@ -109,8 +113,9 @@ def _play_windows(path: str) -> bool:
 def resolve_sound_path(path: str | Path) -> str:
     """Resolve o caminho do som sem I/O extra.
 
-    Absoluto usa como esta; relativo procura em ``sounds_dir()`` e, se nao
-    existir, devolve o valor original (leitura relativa ao CWD, como antes).
+    Absoluto usa como esta; relativo procura em ``sounds_dir()`` (arquivo do
+    usuario), depois no diretorio empacotado (``bundled_sounds_dir()``) e, se
+    nao existir, devolve o valor original (leitura relativa ao CWD, como antes).
     """
     value = Path(path)
     if value.is_absolute():
@@ -118,6 +123,9 @@ def resolve_sound_path(path: str | Path) -> str:
     candidate = sounds_dir() / value
     if candidate.is_file():
         return str(candidate)
+    bundled = bundled_sounds_dir() / value
+    if bundled.is_file():
+        return str(bundled)
     return str(value)
 
 
