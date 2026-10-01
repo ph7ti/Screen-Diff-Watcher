@@ -166,6 +166,7 @@ alvo: `mode`, `poll_interval_s`, `rearm`, `masks`, `alerts`, `actions` e `text_w
   "window_handle": 123456,
   "window_title_hint": "ERP - Estoque",
   "app_name": "ERP",
+  "name": "verificando download",
   "origin_at_selection": [100, 200],
   "roi_relative": [120, 340, 400, 80],
   "mode": "advanced",
@@ -178,8 +179,13 @@ alvo: `mode`, `poll_interval_s`, `rearm`, `masks`, `alerts`, `actions` e `text_w
 - **Precedência do modo**: modo explícito (seletor da GUI) > `overrides.mode` > `selection.mode`.
 - Overrides de `actions` são validados com o modo resolvido (filtros `text_*` exigem `advanced`);
   `text_watch` **exige `advanced`** (`config.text_watch_needs_advanced`).
-- Seleções `version: 1` continuam carregando (sem overrides/`app_name`).
+- Seleções `version: 1` continuam carregando (sem overrides/`app_name`/`name`).
 - `window_handle` é a chave de lookup; `roi_relative` é a fonte de verdade da ROI a cada tick.
+- `name` (opcional) é o **nome de exibição** editado na GUI (prefixo no rótulo e no `run`).
+  Renomear grava `name` e move o arquivo para o **slug** do nome
+  (`verificando download` → `verificando-download.json`), nunca sobrescrevendo outra seleção;
+  `--selection <nome>` passa a usar o **novo nome do arquivo**. A reedição da região (duplo clique)
+  preserva `name`/`mode`/`overrides` e **limpa as máscaras** (relativas à ROI antiga).
 
 ## Migração de um YAML v1 (`targets:`)
 

@@ -229,10 +229,15 @@ def test_parser_accepts_list_selections_and_migrate():
     assert parser.parse_args(["migrate-config", "--dry-run"]).func is cli._cmd_migrate_config
 
 
-def test_slugify():
-    assert cli._slugify("WhatsApp.Root") == "whatsapp-root"
-    assert cli._slugify("Visual Studio Code - Insiders") == "visual-studio-code-insiders"
-    assert cli._slugify("!!!") == "target"
+def test_select_manual_uses_slug_of_app_name(monkeypatch, tmp_path):
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    monkeypatch.setattr(
+        "screen_watch.platform.window.find_window_by_handle", lambda handle: _FakeWindow()
+    )
+    args = argparse.Namespace(roi=[1, 2, 30, 40], handle=7, title="", mode="advanced", name=None)
+
+    assert cli._cmd_select_manual(args) == 0
+    assert (tmp_path / "selections" / "janela-fake.json").exists()
 
 
 def test_list_selections_marks_last(monkeypatch, tmp_path, capsys):
@@ -247,6 +252,17 @@ def test_list_selections_marks_last(monkeypatch, tmp_path, capsys):
     out = capsys.readouterr().out
     assert "demo.json" in out
     assert "(last)" in out
+
+
+def test_list_selections_shows_the_custom_name(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    (tmp_path / "selections").mkdir()
+    _write_selection(tmp_path / "selections" / "demo.json", name="Meu Painel")
+
+    assert cli._cmd_list_selections(argparse.Namespace()) == 0
+    out = capsys.readouterr().out
+    assert "Meu Painel" in out
+    assert "(last)" not in out
 
 
 def test_migrate_config_command(monkeypatch, tmp_path, capsys):
@@ -624,10 +640,10 @@ def test_validate_selections_accepts_valid_override_action(monkeypatch, tmp_path
     assert "1/1" in capsys.readouterr().out
 
 
-def test_run_starts_and_stops_loop(monkeypatch, tmp_path):
+def test_run_starts_and_stops_loop(monkeypatch, tmp_path, capsys):
     monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
     (tmp_path / "selections").mkdir()
-    _write_selection(tmp_path / "selections" / "demo.json")
+    _write_selection(tmp_path / "selections" / "demo.json", name="Meu Painel")
     monkeypatch.setattr(cli, "is_wayland", lambda: False)
     monkeypatch.setattr(cli, "_check_monitor_scales", lambda rect: None)
     monkeypatch.setattr("screen_watch.platform.window.find_window_by_handle", lambda handle: _FakeWindow())
@@ -655,6 +671,7 @@ def test_run_starts_and_stops_loop(monkeypatch, tmp_path):
         selection="demo", config=str(tmp_path / "absent.yaml"), profile=None
     )
     assert cli._cmd_run(args) == 0
+    assert "Meu Painel" in capsys.readouterr().out
 
 
 def test_test_action_rehearsal(monkeypatch, tmp_path, capsys):

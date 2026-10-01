@@ -10,13 +10,14 @@ from dataclasses import replace
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QIcon
+from PyQt6.QtGui import QIcon, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
     QCheckBox,
     QComboBox,
     QFileDialog,
+    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QInputDialog,
@@ -35,7 +36,7 @@ from PyQt6.QtWidgets import (
 )
 
 from screen_watch.actions.arming import ARMED, TIMED
-from screen_watch.errors import ConfigError, render_error
+from screen_watch.errors import AppError, ConfigError, render_error
 from screen_watch.gui.controller import MonitorController, new_event_queue
 from screen_watch.gui.hover_help import attach_help
 from screen_watch.gui.labels import selection_label
@@ -122,8 +123,15 @@ class MainWindow(QMainWindow):
         self.btn_rearm = QPushButton(tr("main.btn_rearm"))
         self.btn_rearm.setEnabled(False)
         self.btn_minimize = QPushButton(tr("main.btn_minimize"))
-        for button in (self.btn_start, self.btn_stop, self.btn_rearm, self.btn_minimize):
-            mon.addWidget(button)
+        self.btn_show_roi = QPushButton(tr("main.btn_show_roi"))
+        self.btn_show_roi.setEnabled(False)
+        monitor_buttons = QGridLayout()
+        monitor_buttons.addWidget(self.btn_start, 0, 0)
+        monitor_buttons.addWidget(self.btn_stop, 1, 0)
+        monitor_buttons.addWidget(self.btn_rearm, 2, 0)
+        monitor_buttons.addWidget(self.btn_minimize, 0, 1)
+        monitor_buttons.addWidget(self.btn_show_roi, 1, 1)
+        mon.addLayout(monitor_buttons)
 
         mode_row = QHBoxLayout()
         mode_row.addWidget(QLabel(tr("main.mode_label")))
@@ -173,6 +181,16 @@ class MainWindow(QMainWindow):
         self.list = QListWidget()
         self.list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         sel.addWidget(self.list)
+
+        name_row = QHBoxLayout()
+        name_row.addWidget(QLabel(tr("main.selection_name_label")))
+        self.selection_name = QLineEdit()
+        self.selection_name.setEnabled(False)
+        name_row.addWidget(self.selection_name, 1)
+        self.btn_rename = QPushButton(tr("main.btn_rename"))
+        self.btn_rename.setEnabled(False)
+        name_row.addWidget(self.btn_rename)
+        sel.addLayout(name_row)
         columns.addWidget(selections, 2)
 
         upper_layout.addLayout(columns)
@@ -299,7 +317,15 @@ class MainWindow(QMainWindow):
 
         # ligacoes
         self.list.currentItemChanged.connect(self._item_changed)
-        self.list.itemDoubleClicked.connect(lambda _item: self._toggle_clicked())
+        # Duplo clique reedita a regiao; Enter na lista inicia/para (QShortcut com
+        # WidgetShortcut: `itemActivated` tambem dispararia no duplo clique).
+        self.list.itemDoubleClicked.connect(lambda _item: self._edit_region())
+        self._list_shortcuts = [
+            QShortcut(QKeySequence(text), self.list) for text in ("Return", "Enter")
+        ]
+        for shortcut in self._list_shortcuts:
+            shortcut.setContext(Qt.ShortcutContext.WidgetShortcut)
+            shortcut.activated.connect(self._toggle_clicked)
         self.mode_combo.currentTextChanged.connect(self._mode_changed)
         self.profile_combo.currentTextChanged.connect(self._profile_changed)
         self.language_combo.currentIndexChanged.connect(self._language_changed)
@@ -308,6 +334,9 @@ class MainWindow(QMainWindow):
         self.btn_stop.clicked.connect(self._stop)
         self.btn_rearm.clicked.connect(self._rearm)
         self.btn_minimize.clicked.connect(self.hide)
+        self.btn_show_roi.clicked.connect(self._show_roi)
+        self.btn_rename.clicked.connect(self._rename_selection)
+        self.selection_name.returnPressed.connect(self._rename_selection)
         self.btn_arm.clicked.connect(lambda: self._handle_action({"action": "arm"}))
         self.btn_disarm.clicked.connect(lambda: self._handle_action({"action": "disarm"}))
         self.btn_run_action.clicked.connect(self._run_action_once)
@@ -336,6 +365,9 @@ class MainWindow(QMainWindow):
         self._help(self.btn_stop, "window.stop")
         self._help(self.btn_rearm, "window.rearm")
         self._help(self.btn_minimize, "window.minimize")
+        self._help(self.btn_show_roi, "window.show_roi")
+        self._help(self.selection_name, "window.selection_name")
+        self._help(self.btn_rename, "window.selection_name")
         self._help(self.mode_combo, "window.mode")
         self._help(self.profile_combo, "window.profile")
         self._help(self.language_combo, "window.language")
@@ -411,6 +443,8 @@ class MainWindow(QMainWindow):
         )
         if self.list.count():
             self.list.setCurrentRow(0)
+        self._populate_selection_name()
+        self._update_show_roi_button()
         self._populate_actions()
         self._refresh_alerts_group()
 
@@ -551,8 +585,196 @@ class MainWindow(QMainWindow):
             action_filter=self._checked_action_names(),
         )
 
+    # -- nome da selecao ---------------------------------------------------
+    def _populate_selection_name(self) -> None:
+        selected = self._selected()
+        if selected is None:
+            self.selection_name.clear()
+            self.selection_name.setEnabled(False)
+            self.btn_rename.setEnabled(False)
+            return
+        _kind, value = selected
+        from screen_watch.persistence.selection import load_selection
+
+        try:
+            selection = load_selection(value)
+        except (ConfigError, OSError, ValueError):
+            selection = None
+        if selection is None:
+            text = Path(value).stem
+        else:
+            text = selection.name or selection.app_name or Path(value).stem
+        self.selection_name.setText(text)
+        self.selection_name.setEnabled(True)
+        self.btn_rename.setEnabled(True)
+
+    def _select_path(self, path: Path) -> None:
+        """Seleciona na lista o item cujo arquivo e `path` (apos renomear)."""
+        wanted = str(path)
+        for row in range(self.list.count()):
+            item = self.list.item(row)
+            data = item.data(TARGET_ROLE)
+            if data is not None and str(data[1]) == wanted:
+                self.list.setCurrentItem(item)
+                self.list.scrollToItem(item)
+                return
+
+    def _rename_selection(self) -> None:
+        if self._controller.running:
+            QMessageBox.information(self, tr("main.title"), tr("dialog.rename_running"))
+            return
+        selected = self._selected()
+        if selected is None:
+            QMessageBox.information(self, tr("main.title"), tr("dialog.select_selection"))
+            return
+        _kind, value = selected
+        old_path = Path(value)
+        typed = self.selection_name.text().strip()
+        if not typed:  # nome vazio mantem o atual
+            self._populate_selection_name()
+            return
+
+        from screen_watch.persistence.selection import plan_rename, rename_selection
+        from screen_watch.platform.paths import selections_dir
+
+        try:
+            new_path = plan_rename(selections_dir(), old_path, typed)
+            rename_selection(old_path, new_path, name=typed)
+        except Exception as exc:
+            title = (
+                tr("dialog.rename_conflict")
+                if getattr(exc, "code", "") == "selection.name_conflict"
+                else tr("main.title")
+            )
+            QMessageBox.warning(self, title, render_error(exc))
+            return
+        if new_path == old_path:
+            self._append(f"selection name -> {typed!r} ({old_path.stem})")
+        else:
+            self._append(
+                f"selection renamed: {old_path.stem} -> {new_path.stem} ({typed!r})"
+            )
+        self._reload()
+        self._select_path(new_path)
+        QMessageBox.information(
+            self, tr("main.title"), tr("dialog.rename_done", name=typed)
+        )
+
+    # -- regiao na tela ----------------------------------------------------
+    def _update_show_roi_button(self) -> None:
+        self.btn_show_roi.setEnabled(self._selected() is not None)
+
+    def _show_roi(self) -> None:
+        selected = self._selected()
+        if selected is None:
+            QMessageBox.information(self, tr("main.title"), tr("dialog.select_selection"))
+            return
+        _kind, value = selected
+        from screen_watch.capture.roi import (
+            absolute_roi_for_selection,
+            roi_unavailable_error,
+        )
+        from screen_watch.persistence.selection import load_selection
+
+        try:
+            selection = load_selection(value)
+        except (ConfigError, OSError, ValueError) as exc:
+            self._append(f"unreadable selection: {exc}")
+            return
+        try:
+            rect = absolute_roi_for_selection(selection)
+        except Exception as exc:
+            QMessageBox.warning(
+                self, tr("main.title"), tr("dialog.load_failed", error=render_error(exc))
+            )
+            return
+        if rect is None:
+            QMessageBox.warning(self, tr("main.title"), render_error(roi_unavailable_error(selection)))
+            return
+        x, y, w, h = rect
+        name = (
+            selection.name
+            or selection.app_name
+            or selection.window_title_hint
+            or Path(value).stem
+        )
+        from screen_watch.gui.highlight import show_roi_highlight
+
+        show_roi_highlight(rect, tr("highlight.label", name=name, x=x, y=y, w=w, h=h))
+        self._append(f"region highlighted for {Path(value).stem}: {x},{y} {w}x{h}")
+
+    def _edit_region(self) -> None:
+        if self._controller.running:
+            QMessageBox.information(self, tr("main.title"), tr("dialog.edit_running"))
+            return
+        selected = self._selected()
+        if selected is None:
+            QMessageBox.information(self, tr("main.title"), tr("dialog.select_selection"))
+            return
+        _kind, value = selected
+        from screen_watch.persistence.selection import load_selection
+        from screen_watch.platform.window import find_window_by_handle
+
+        try:
+            selection = load_selection(value)
+        except (ConfigError, OSError, ValueError) as exc:
+            QMessageBox.warning(
+                self, tr("main.title"), tr("dialog.load_failed", error=render_error(exc))
+            )
+            return
+        try:
+            info = find_window_by_handle(selection.window_handle)
+        except Exception:
+            info = None
+        if info is None or not info.exists or info.is_minimized:
+            QMessageBox.warning(
+                self, tr("main.title"), tr("dialog.reedit_window_missing")
+            )
+            return
+
+        from screen_watch.cli.commands import overlay_relative_roi
+
+        try:
+            relative, info = overlay_relative_roi(selection.window_handle)
+        except AppError as exc:
+            if exc.code == "runtime.selection_cancelled":
+                return  # cancelar o overlay e um no-op
+            QMessageBox.warning(self, tr("main.title"), render_error(exc))
+            return
+        except Exception as exc:
+            QMessageBox.warning(
+                self, tr("main.title"), tr("dialog.selection_failed", error=render_error(exc))
+            )
+            return
+
+        updated = replace(
+            selection,
+            roi_relative=relative,
+            origin_at_selection=(info.rect[0], info.rect[1]),
+            masks=(),
+        )
+        if isinstance(updated.overrides, dict) and "masks" in updated.overrides:
+            # `overrides.masks` teria precedencia no build_target e e relativo a ROI antiga.
+            overrides = dict(updated.overrides)
+            overrides.pop("masks", None)
+            updated = replace(updated, overrides=overrides or None)
+        from screen_watch.persistence.selection import dump_selection
+
+        try:
+            dump_selection(value, updated)
+        except OSError as exc:
+            self._append(f"could not save the region: {exc}")
+            return
+        item = self.list.currentItem()
+        if item is not None:
+            item.setText(self._label_for("selection", value))
+        self._append(f"region updated for {Path(value).stem}: {relative}")
+        self._append(f"masks cleared (region changed): {Path(value).stem}")
+
     # -- acoes -------------------------------------------------------------
     def _item_changed(self, _current, _previous) -> None:
+        self._populate_selection_name()
+        self._update_show_roi_button()
         selected = self._selected()
         if selected is None:
             self._populate_actions()
@@ -1110,7 +1332,9 @@ class MainWindow(QMainWindow):
         if self._profile:
             fields["profile"] = self._profile
         update_state(**fields)
-        self.status.setText(tr("status.monitoring", name=target.name, mode=target.mode))
+        self.status.setText(
+            tr("status.monitoring", name=target.label or target.name, mode=target.mode)
+        )
         self._set_running(True)
         self._print_action_summary()
 
@@ -1310,6 +1534,7 @@ class MainWindow(QMainWindow):
         self.mode_combo.setEnabled(not running)
         self.language_combo.setEnabled(not running)
         self._update_arming_buttons()
+        self._update_show_roi_button()
 
     def _drain(self) -> None:
         self._update_action_status()

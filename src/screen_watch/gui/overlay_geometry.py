@@ -82,6 +82,42 @@ def resolve_ref_point(
     return "screen", (int(point[0]), int(point[1]))
 
 
+def clip_rect(rect: Rect, frame: Rect) -> Rect | None:
+    """Intersecao de dois retangulos, ou `None` quando nao se sobrepoem."""
+    x1 = max(rect[0], frame[0])
+    y1 = max(rect[1], frame[1])
+    x2 = min(rect[0] + rect[2], frame[0] + frame[2])
+    y2 = min(rect[1] + rect[3], frame[1] + frame[3])
+    if x2 <= x1 or y2 <= y1:
+        return None
+    return (x1, y1, x2 - x1, y2 - y1)
+
+
+def dim_rects(roi: Rect, screen: Rect) -> tuple[Rect, ...]:
+    """Ate 4 retangulos que escurecem `screen` **apenas fora** de `roi`.
+
+    Invariante (usada pelo realce "Ver local"): nenhum retangulo cobre a
+    interseccao de `roi` com `screen`. Sem interseccao (ROI em outro monitor)
+    devolve a tela inteira.
+    """
+    sx, sy, sw, sh = screen
+    visible = clip_rect(roi, screen)
+    if visible is None:
+        return ((sx, sy, sw, sh),)
+    x1, y1, _w, _h = visible
+    x2, y2 = x1 + visible[2], y1 + visible[3]
+    rects: list[Rect] = []
+    if y1 > sy:
+        rects.append((sx, sy, sw, y1 - sy))
+    if y2 < sy + sh:
+        rects.append((sx, y2, sw, sy + sh - y2))
+    if x1 > sx:
+        rects.append((sx, y1, x1 - sx, y2 - y1))
+    if x2 < sx + sw:
+        rects.append((x2, y1, sx + sw - x2, y2 - y1))
+    return tuple(rects)
+
+
 def is_valid_selection(rect: Rect, *, min_side: int = MIN_SELECTION_SIDE) -> bool:
     """Area minima em pixels **logicos** (doc secao 9.6)."""
     return rect[2] >= min_side and rect[3] >= min_side

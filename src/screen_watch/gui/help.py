@@ -14,6 +14,8 @@ HELP_KEYS: tuple[str, ...] = (
     "window.stop",
     "window.rearm",
     "window.minimize",
+    "window.show_roi",
+    "window.selection_name",
     "window.mode",
     "window.profile",
     "window.language",

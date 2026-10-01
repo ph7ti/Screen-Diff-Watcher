@@ -3,6 +3,44 @@
 Todas as mudanças relevantes deste projeto. Formato inspirado em "Keep a Changelog";
 versionamento semântico. Versão: `screen_watch.__version__` (fonte única).
 
+## [0.7.0] — 2026-10-01
+
+Detalhes e exemplos: [`doc/releases/v0.7.0.md`](doc/releases/v0.7.0.md)
+([PT](doc/releases/v0.7.0.pt-BR.md)).
+
+### Adicionado
+
+- **Nome da seleção com renomeação do arquivo**: campo **Nome da seleção** abaixo da lista (confirma
+  pelo botão **Renomear** ou **Enter**). O nome vira prefixo do rótulo
+  (`verificando download - Seleção App — Região …`) e o arquivo passa a ser o **slug** do nome
+  (`selections/verificando-download.json`; acentos normalizados, máx. 60). Nunca sobrescreve outra
+  seleção (colisão avisa e nada muda), faz rollback em falha e atualiza o
+  `state.json:last_selection`. Renomear é bloqueado com sessão rodando. O nome também aparece no
+  `run` e no `list-selections`.
+- **Ver local**: botão no grupo Monitoramento (que passou a ter **duas colunas**) que destaca a ROI
+  na tela por ~2 s. O realce **nunca pinta dentro da ROI** (camada escura só fora + borda logo por
+  fora), não captura cliques/foco e fecha sozinho — por isso funciona **com a sessão rodando**.
+- **Reeditar a região por duplo clique**: reabre o overlay para a janela da seleção e regrava
+  `roi_relative`/`origin_at_selection` preservando nome, modo e overrides; as **máscaras são limpas**
+  (eram relativas à ROI antiga), com log explícito.
+
+### Mudado
+
+- **Duplo clique na lista não inicia mais o monitoramento** — agora **reedita a região**. Para
+  iniciar/parar, use **Enter** na lista, o botão **Iniciar/Parar**, o tray ou as hotkeys.
+- `--selection <nome>` dos scripts passa a exigir o **novo nome de arquivo** após renomear uma
+  seleção (o `last_selection` e o `list-selections` acompanham).
+- O slug de novas seleções `select`/`select-manual` agora remove acentos e tem limite de 60
+  caracteres (`naming.slugify`, compartilhado com a GUI).
+
+### Notas
+
+- 4 códigos de erro novos (`selection.name_invalid`, `selection.name_too_long`,
+  `selection.name_conflict`, `selection.rename_failed`), chaves `main.*`/`dialog.*`/`highlight.*`/
+  `help.*` nos dois catálogos i18n.
+- `Selection` v2 ganhou `name` opcional (seleções antigas continuam carregando); `TargetConfig`
+  ganhou `label` (exibição; o `name` continua sendo o arquivo).
+
 ## [0.6.0] — 2026-09-30
 
 Detalhes e exemplos: [`doc/releases/v0.6.0.md`](doc/releases/v0.6.0.md)

@@ -4,7 +4,7 @@
 
 > **Purpose of this document**: to serve as the **single source of truth for the design** so that
 > another AI (or developer) can continue the project without having to reconstruct decisions, and to
-> record **what is implemented** (reference: v0.6.0). Every decision recorded here was made
+> record **what is implemented** (reference: v0.7.0). Every decision recorded here was made
 > deliberately; where there are alternatives, they are listed as "rejected" with the reason.
 >
 > **Maintenance rule**: do not replace a recorded decision with a "more modern" alternative
@@ -56,7 +56,7 @@ alert the user when that panel undergoes a visual change, without requiring the 
 looking at the screen. Natural extension: react to the change with a simple action (e.g., click
 "Refresh") when that is explicitly armed.
 
-### 1.4 Implementation status (v0.6.0)
+### 1.4 Implementation status (v0.7.0)
 
 Implemented and covered by tests: platform boundary, capture/anchoring (Model B), the three
 comparison modes, pipeline with short-circuit (`advanced` gated by phash and bypassed by
@@ -66,9 +66,11 @@ template, stable `id` and cooldown) with re-arm, **selectable sound (Qt Multimed
 (appears/disappears, advanced only, per-selection override), send test per channel (`test-alert
 --list/--only` and the GUI button), evidence, pseudo-human
 actions (arming, rehearsal, limits, auditing, GUI editor, recorder), scheduler (suspends actions
-only), profiles + v1→v2 migration, selection JSON v2 with overrides, CLI (`init-config` …
-`validate-i18n`), GUI + tray with i18n and hover help, packaging (PyInstaller; Inno Setup on
-Windows; `.deb` on Linux) and tag-based release pipeline.
+only), profiles + v1→v2 migration, selection JSON v2 with overrides and the **selection
+`name`/rename** (`selections/<slug>.json`), CLI (`init-config` … `validate-i18n`), GUI + tray with
+i18n and hover help — including **"Highlight"** (transient ROI outline that never paints inside the
+ROI) and **double-click to re-edit the region / Enter to start-stop** — packaging (PyInstaller; Inno
+Setup on Windows; `.deb` on Linux) and tag-based release pipeline.
 
 Pending **manual validation** items (not automatable in CI):
 
@@ -208,10 +210,21 @@ Each item below is a closed decision. Format: **Decision → Reason → Rejected
   correctly resolved, `CompositionMode_Clear` available for the selection "hole".
 - **Implementation details**:
   - **Layout**: the window follows the `UI.txt` mockup (**Monitoring** column with
-    Start/Stop/Re-arm/Minimize, Mode/Profile/Language and arming; **Selections** group; row of
+    Start/Stop/Re-arm/Minimize **and Highlight in a two-column grid**, Mode/Profile/Language and
+    arming; **Selections** group with the list and the
+    **Selection name** field (`name` + Rename); row of
     New Target/Remove/Reload/Open YAML/Prints + evidence; **Session actions** group with
     checklist and buttons; Status/Last and **Log** in the footer in a `QSplitter`). Step editing with
     Move Up/Move Down/drag&drop/Edit/Duplicate.
+  - **Selection interactions**: **double-click re-edits the region** (overlay again, same window,
+    preserving `name`/`mode`/`overrides` and clearing `masks`); **Enter starts/stops** the session
+    (`QShortcut` with `WidgetShortcut`; `itemActivated` is not used because it also fires on the
+    double-click). Renaming writes the display name and moves the file (slug; never overwrites).
+  - **Highlight ("Ver local")**: one frameless, *top-most* window per monitor, transparent to
+    clicks/focus (`WindowTransparentForInput` + `WA_TransparentForMouseEvents`, no grabs, no modal),
+    dimming **only outside** the ROI (`overlay_geometry.dim_rects`) with a 2 px border drawn just
+    outside the hole; auto-closes after 2 s. Because the ROI pixels are never painted, it can run
+    while the session monitors (`gui/highlight.py`).
   - **Tray**: `pystray` (`gui/tray.py`) with show/hide, start/stop, arm/disarm, profile
     and quit. The GUI receives events through a **queue** consumed by `QTimer` (`gui/controller.py`);
     tray/hotkey callbacks never call Qt from inside the listener thread.
@@ -270,6 +283,7 @@ ScreenDiffWatcher/
 │       ├── cli/                   # CLI: subcommands (commands.py) + parser (parser.py)
 │       ├── app.py                 # orchestration: pipeline + chain + session + evidence
 │       ├── errors.py              # AppError/ConfigError + ERROR_CODES + render_error
+│       ├── naming.py              # slugify for selection file names (pure)
 │       ├── gui_main.py            # entry point of the windowless executable (GUI)
 │       ├── resources.py           # package resources (icons etc.)
 │       │
@@ -288,6 +302,7 @@ ScreenDiffWatcher/
 │       │   ├── backend.py         # Protocol ScreenCaptureBackend (bounds/capture/close)
 │       │   ├── mss_backend.py     # mss implementation (BGRA->RGB, per-thread instance)
 │       │   ├── resolver.py        # window + roi_relative -> absolute ROI (Model B)
+│       │   ├── roi.py             # shared window+ROI resolution (capture and Highlight)
 │       │   ├── geometry.py        # intersect_rect (clip against the virtual desktop)
 │       │   └── mask.py            # apply_mask
 │       │
@@ -334,7 +349,7 @@ ScreenDiffWatcher/
 │       │   └── loader.py          # YAML <-> dataclasses; defaults; v1->v2 migration
 │       │
 │       ├── persistence/
-│       │   └── selection.py       # selection JSON v1/v2 + build_target (overrides)
+│       │   └── selection.py       # selection JSON v1/v2 + build_target (overrides) + name/rename
 │       │
 │       ├── i18n/
 │       │   ├── __init__.py        # JSON catalog, language resolution, tr()
@@ -355,6 +370,7 @@ ScreenDiffWatcher/
 │       │   ├── help.py            # help texts (pure)
 │       │   ├── hover_help.py      # 2 s tooltip
 │       │   ├── labels.py          # catalog labels
+│       │   ├── highlight.py       # transient ROI highlight ("Ver local"; never paints the ROI)
 │       │   └── qt_app.py          # ensure_app (single QApplication)
 │       │
 │       └── assets/icons/          # icons (used in the bundle)
@@ -553,6 +569,7 @@ Current version (**v2**):
   "window_handle": 123456,
   "window_title_hint": "ERP - Estoque",
   "app_name": "ERP",
+  "name": "verificando download",
   "origin_at_selection": [100, 200],
   "roi_relative": [120, 340, 400, 80],
   "mode": "advanced",
@@ -562,10 +579,11 @@ Current version (**v2**):
 ```
 
 Required fields: `version`, `window_handle`, `origin_at_selection`, `roi_relative`.
-`app_name`, `mode`, `masks` and `overrides` are optional with defaults. `version: 1` selections
-still load without `overrides`/`app_name` (§12.3). `window_title_hint` is only a human hint;
-the lookup uses `window_handle`. `roi_relative` is the source of truth for reconstructing the ROI on
-each tick.
+`app_name`, `name`, `mode`, `masks` and `overrides` are optional with defaults. `version: 1`
+selections still load without `overrides`/`app_name`/`name` (§12.3). `window_title_hint` is only a
+human hint; the lookup uses `window_handle`. `roi_relative` is the source of truth for reconstructing
+the ROI on each tick. `name` is the display name (shown as a prefix in the GUI label and in `run`);
+the **file name** is the slug of the name (`naming.slugify`), which is what `--selection` uses.
 
 ### 7.4 Capture loop — implemented skeleton
 
@@ -1234,6 +1252,7 @@ values for that target: `mode`, `poll_interval_s`, `rearm`, `masks`, `alerts`, `
   "window_handle": 123456,
   "window_title_hint": "ERP - Estoque",
   "app_name": "ERP",
+  "name": "verificando download",
   "origin_at_selection": [100, 200],
   "roi_relative": [120, 340, 400, 80],
   "mode": "advanced",
@@ -1247,6 +1266,20 @@ values for that target: `mode`, `poll_interval_s`, `rearm`, `masks`, `alerts`, `
 `selection.mode`. `actions` overrides are parsed with the resolved mode (`text_*` filters require
 `advanced`; §11.4) and so is `text_watch` (`config.text_watch_needs_advanced` otherwise).
 `window_title_hint` is only a human hint; the lookup uses `window_handle`.
+
+**Name and rename** (`name`, optional): `build_target` copies it to `TargetConfig.label`, which the
+GUI/CLI prefer over the file stem in status/`run`; the stem remains the file key
+(`state.json:last_selection`, action selection). The GUI field confirms with the Rename button or
+Enter: `plan_rename` computes the slug (`naming.slugify`, accents stripped, max 60 chars) and
+`rename_selection` writes the destination + removes the old file, **never overwriting** (conflict →
+`selection.name_conflict`) and rolling back on failure (`selection.rename_failed`); a slug equal to
+the current stem is a no-op that only records `name`. `last_selection` is updated when it pointed to
+the old file name. Renaming is blocked while a session runs.
+
+**Region re-edit (GUI)**: double-click reopens the overlay for the selection window and rewrites
+`roi_relative`/`origin_at_selection`, preserving `name`, `mode`, `overrides`, `app_name` and
+`window_title_hint`; `masks` (both `selection.masks` and `overrides.masks`) are **cleared** because
+they are relative to the old ROI.
 
 ### 12.4 State, app-data and writing
 
@@ -1388,6 +1421,16 @@ Each item below is a **real** pitfall already discussed and resolved. Do not rei
     not pass `--tessdata-dir`.
 22. **Publishing a tag != `__version__`**: `release.yml` fails on purpose. The tag `vX.Y.Z` must be
     identical (without `v`) to `screen_watch.__version__`.
+23. **Painting over the ROI in the highlight**: never. The dim layer is computed **outside** the ROI
+    (`dim_rects`) and the border is drawn 2 px outside the hole; a single painted pixel inside the
+    ROI could become a false positive if a monitoring tick captures during the 2 s highlight (§3.7).
+24. **Using `itemActivated` for Enter in the selection list**: never. It also fires on double-click,
+    which would start/stop and re-edit the region in the same gesture; use `QShortcut` with
+    `WidgetShortcut` (§3.7).
+25. **Renaming with a plain move/`os.replace`**: never. `plan_rename`/`rename_selection` validate the
+    slug (empty/too long/conflict), never overwrite, roll back on failure and update
+    `last_selection`; a region re-edit additionally clears `masks`/`overrides.masks` (they are
+    relative to the old ROI).
 
 ---
 

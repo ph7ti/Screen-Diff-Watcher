@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from screen_watch.gui.overlay_geometry import (
+    clip_rect,
+    dim_rects,
     fits_in_window,
     global_from_local,
     is_valid_selection,
@@ -86,6 +88,45 @@ def test_resolve_ref_point_roi_and_window():
 def test_resolve_ref_point_falls_back_to_screen_without_base():
     assert resolve_ref_point((5, 7), "roi") == ("screen", (5, 7))
     assert resolve_ref_point((5, 7), "window", roi_rect=(1, 2, 3, 4)) == ("screen", (5, 7))
+
+
+def test_clip_rect():
+    assert clip_rect((10, 10, 30, 30), (0, 0, 100, 100)) == (10, 10, 30, 30)
+    assert clip_rect((10, 10, 30, 30), (20, 20, 5, 5)) == (20, 20, 5, 5)
+    assert clip_rect((10, 10, 5, 5), (100, 100, 10, 10)) is None
+    assert clip_rect((0, 0, 10, 10), (10, 0, 10, 10)) is None
+
+
+def test_dim_rects_layout_around_roi():
+    assert dim_rects((10, 10, 20, 20), (0, 0, 50, 50)) == (
+        (0, 0, 50, 10),
+        (0, 30, 50, 20),
+        (0, 10, 10, 20),
+        (30, 10, 20, 20),
+    )
+
+
+def test_dim_rects_never_cover_the_roi():
+    screen = (0, 0, 200, 100)
+    roi = (50, 20, 40, 30)
+    rects = dim_rects(roi, screen)
+    for rect in rects:
+        assert clip_rect(rect, roi) is None
+    covered = sum(rect[2] * rect[3] for rect in rects)
+    assert covered == 200 * 100 - 40 * 30
+
+
+def test_dim_rects_roi_outside_screen_dims_whole_screen():
+    assert dim_rects((500, 500, 10, 10), (0, 0, 100, 100)) == ((0, 0, 100, 100),)
+
+
+def test_dim_rects_clips_roi_to_the_screen():
+    rects = dim_rects((-10, -10, 30, 30), (0, 0, 100, 100))
+    visible = (0, 0, 20, 20)
+    for rect in rects:
+        assert clip_rect(rect, visible) is None
+    covered = sum(rect[2] * rect[3] for rect in rects)
+    assert covered == 100 * 100 - 20 * 20
 
 
 def test_primary_screen_matches_doc_formula():

@@ -33,6 +33,10 @@ Roda no **Windows e no Linux**, capturando apenas pixels (não toca no aplicativ
   em `logs/actions.jsonl`.
 - **GUI com tray + CLI completa**, com **perfis**, agendador (suspende ações fora do horário) e
   atalhos globais.
+- **Nome e conferência da seleção**: dê um **nome** à seleção (o arquivo é renomeado para o slug do
+  nome, sem sobrescrever outro), use **Ver local** para destacar a ROI na tela por ~2 s **sem alterar
+  os pixels dela** (funciona com o monitoramento rodando) e **duplo clique** na lista para reeditar a
+  região — **Enter** inicia/para.
 - **Multi-idioma**: GUI em pt-BR/en-US; o CLI e o log técnico são em inglês fixo.
 
 ## O que ele não faz
@@ -226,7 +230,9 @@ GitHub Release. `workflow_dispatch` gera só os artefatos (sem release).
 **Implementado:** captura e ancoragem (Modelo B), modos de comparação (`light`/`default`/`advanced`)
 com pipeline e curto-circuito (`advanced` com gate de phash, bypassado pelo `text_watch`), alertas
 (som/popup/Telegram/log + webhook/HTTP POST/syslog) com cooldown/rearm e teste de envio, **som
-selecionável (MP3/M4A/OGG/FLAC…)** e o filtro **`text_watch`** (aparece/desaparece), evidências,
+selecionável (MP3/M4A/OGG/FLAC…)** e o filtro **`text_watch`** (aparece/desaparece), **nome da
+seleção** (renomeia o arquivo pelo slug), **Ver local** (realce da ROI sem tocar nos pixels) e
+**reedição da região por duplo clique** (Enter inicia/para), evidências,
 ações pseudo-humanas (com editor na GUI e gravador), agendador, perfis, CLI completa, GUI + tray com
 i18n (pt-BR/en-US), empacotamento (Inno Setup e `.deb`) e CI/release por tag.
 
@@ -268,7 +274,7 @@ escada de scripts e CI em [wiki/Desenvolvimento-Testes-e-CI.md](wiki/Desenvolvim
 | [**Wiki**](wiki/Home-pt-BR.md) | detalhes de uso e recursos: CLI, GUI, config, ações, alertas, evidências, idiomas, DPI, build |
 | [`doc/00-Documento_de_Arquitetura_e_Especificação.md`](doc/00-Documento_de_Arquitetura_e_Especificação.md) | arquitetura e especificação — **fonte única de verdade do design** |
 | [`doc/01-Build_e_Release.md`](doc/01-Build_e_Release.md) | pipeline de build e release dos instaladores |
-| [`doc/releases/`](doc/releases/v0.6.0.pt-BR.md) | notas de release por versão (arquivo de detalhe) |
+| [`doc/releases/`](doc/releases/v0.7.0.pt-BR.md) | notas de release por versão (arquivo de detalhe) |
 | [`CHANGELOG.md`](CHANGELOG.md) | mudanças por versão (semântico) |
 | [`README.md`](README.md) | este guia em inglês |
 

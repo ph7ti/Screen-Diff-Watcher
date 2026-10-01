@@ -7,12 +7,16 @@
 
 ## The window
 
-- **Monitoring column** (left): **Start** / **Stop** / **Re-arm** / **Minimize to tray**, the
-  **Mode** (`light`/`default`/`advanced`), **Profile** and **Language** selectors, and the
-  arming controls — **Arm actions**, **Disarm**, **Arm for…** — with the visible state.
+- **Monitoring column** (left): **Start** / **Stop** / **Re-arm** and **Minimize to tray** /
+  **Highlight** in a **two-column grid**, the **Mode** (`light`/`default`/`advanced`), **Profile**
+  and **Language** selectors, and the arming controls — **Arm actions**, **Disarm**, **Arm for…** —
+  with the visible state.
 - **Selections group** (right): list of `app-data/selections/*.json` and the ROI legend. Each item
   shows the **application name**, the **monitored region** and the **mode** (e.g.:
-  `Selection WhatsApp — Region 120,340 400x80 — advanced`). Double-click starts/stops.
+  `Selection WhatsApp — Region 120,340 400x80 — advanced`); a selection with a **name** shows it as a
+  prefix (`verificando download - Selection …`). **Double-click re-edits the region** (overlay);
+  **Enter starts/stops**. Below the list, the **Selection name** field + **Rename** confirm the
+  display name and rename the file to its slug.
 - **File actions row**: **New Target** / **Remove** / **Reload** / **Open YAML** /
   **Captures**, plus the **Record captures (evidence)** checkbox.
 - **Detection and alerts**: **Alert sound** row (effective path; **Choose…** to preview, **Play** and
@@ -61,7 +65,24 @@ Details in [Evidence](Evidence.md).
   windows that are not from active applications** (invisible, hidden by DWM, tool windows, child/auxiliary
   windows and untitled ones).
 - The overlay opens **one window per monitor**: drag with the left button; right button cancels.
+- **Double-click** a selection to **re-edit its region** with the same overlay (the window is looked
+  up by handle; if it is missing or minimized, use **New Target**). The re-edit preserves the
+  **name**, the **mode** and the **overrides** and **clears the masks** (they were relative to the
+  old ROI). It is blocked while the session is running.
 - **Remove** deletes one or more selected selection JSONs (multi-select with Ctrl/Shift).
+
+## Selection name and Highlight
+
+- **Selection name**: type the display name below the list and confirm with **Rename** or **Enter**.
+  The label shows it as a prefix (`verificando download - Selection App — Region …`) and the **file
+  is renamed** to the slug of the name (`verificando download` → `verificando-download.json`; accents
+  are normalized, max 60 chars). An existing name is **never overwritten** (a conflict warns and
+  nothing changes) and renaming is blocked while the session runs. Scripts that use
+  `--selection <name>` must be updated to the new file name after a rename; `list-selections` and
+  `state.json:last_selection` follow the new name.
+- **Highlight** ("Ver local"): draws the selection ROI on screen for ~2 s. It **never paints inside
+  the ROI** (dim layer only outside, border just outside the hole), never takes clicks/focus and
+  auto-closes — so it can be used **while monitoring** to confirm what is being watched.
 
 ## Actions editor
 

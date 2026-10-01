@@ -34,6 +34,10 @@ Runs on **Windows and Linux**, capturing pixels only (it never touches the watch
   `logs/actions.jsonl`.
 - **GUI with tray + full CLI**, with **profiles**, a scheduler (suspends actions outside the time
   window) and global hotkeys.
+- **Selection name and on-screen checks**: give the selection a **name** (the file is renamed to the
+  slug of the name, never overwriting another), use **Highlight** to outline the ROI for ~2 s
+  **without changing its pixels** (it works while monitoring) and **double-click** the list to
+  re-edit the region — **Enter** starts/stops.
 - **Multilingual UI**: pt-BR/en-US; the CLI and the technical log stay in English.
 
 ## What it doesn't do
@@ -230,6 +234,8 @@ creates the GitHub Release. `workflow_dispatch` generates artifacts only (no rel
 with pipeline and short-circuit (`advanced` gated by phash, bypassed by `text_watch`), alerts
 (sound/popup/Telegram/log + webhook/HTTP POST/syslog) with cooldown/re-arm and send test,
 **selectable sound (MP3/M4A/OGG/FLAC…)** and the **`text_watch`** filter (appears/disappears),
+**selection name** (renames the file to its slug), **Highlight** (ROI outline that never touches the
+ROI pixels) and **double-click region re-edit** (Enter starts/stops),
 evidence, pseudo-human actions (with GUI editor and recorder), scheduler, profiles, full CLI,
 GUI + tray with i18n (pt-BR/en-US), packaging (Inno Setup and `.deb`) and tag-driven CI/release.
 
@@ -272,7 +278,7 @@ Integration tests are opt-in (`TEST_REAL_CAPTURE`, `TEST_REAL_TELEGRAM`,
 | [**Wiki**](wiki/Home.md) | usage and feature details: CLI, GUI, config, actions, alerts, evidence, languages, DPI, build |
 | [`doc/00-Architecture_and_Specification.md`](doc/00-Architecture_and_Specification.md) | architecture and specification — **single source of truth for the design** |
 | [`doc/01-Build_and_Release.md`](doc/01-Build_and_Release.md) | installer build and release pipeline |
-| [`doc/releases/`](doc/releases/v0.6.0.md) | per-version release notes (detail file) |
+| [`doc/releases/`](doc/releases/v0.7.0.md) | per-version release notes (detail file) |
 | [`CHANGELOG.md`](CHANGELOG.md) | changes per version (semantic) |
 | [`README.pt-BR.md`](README.pt-BR.md) | este guia em português |
 

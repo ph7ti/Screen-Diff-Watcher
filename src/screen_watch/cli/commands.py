@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from screen_watch.errors import AppError
+from screen_watch.naming import slugify
 from screen_watch.platform.dpi import is_wayland
 from screen_watch.platform.paths import config_path
 
@@ -107,7 +108,12 @@ def _cmd_list_selections(_args: argparse.Namespace) -> int:
         except (ConfigError, OSError, ValueError) as exc:
             print(f"{path.name}  unreadable ({exc}){marker}")
             continue
-        name = selection.app_name or selection.window_title_hint or path.stem
+        name = (
+            selection.name
+            or selection.app_name
+            or selection.window_title_hint
+            or path.stem
+        )
         x, y, w, h = selection.roi_relative
         print(f"{path.name}  {name} — {x},{y} {w}x{h} — {selection.mode}{marker}")
     return 0
@@ -312,7 +318,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
     recorder = evidence_recorder(_load_config_or_none(args.config))
     session = MonitorSession(target, recorder=recorder, on_action=_print_action_event)
     loop = build_loop(target, session, on_event=_print_event, on_error=_print_error)
-    print(f"monitoring {target.name!r} (handle={target.window_handle}) every {target.poll_interval_s}s")
+    display = target.label or target.name
+    print(f"monitoring {display!r} (handle={target.window_handle}) every {target.poll_interval_s}s")
     _print_actions_summary(target)
     loop.start()
     try:
@@ -329,19 +336,9 @@ def _capture_target_roi(target):
     """Captura a ROI atual do target (RGB mascarado) + retangulo fisico + janela."""
     from screen_watch.capture.mask import apply_mask
     from screen_watch.capture.mss_backend import MssCaptureBackend
-    from screen_watch.capture.resolver import resolve
-    from screen_watch.platform.window import find_window_by_handle
+    from screen_watch.capture.roi import resolve_window_roi
 
-    info = find_window_by_handle(target.window_handle)
-    if info is None or not info.exists:
-        raise AppError(
-            code="runtime.window_not_found", params={"handle": target.window_handle}
-        )
-    if info.is_minimized:
-        raise AppError(code="runtime.window_minimized")
-    abs_rect = resolve(info, target.roi_relative)
-    if abs_rect is None:
-        raise AppError(code="runtime.roi_invalid")
+    info, abs_rect = resolve_window_roi(target.window_handle, target.roi_relative)
 
     backend = MssCaptureBackend()
     try:
@@ -651,41 +648,35 @@ def _cmd_select_manual(args: argparse.Namespace) -> int:
         app_name=app_name,
         mode=args.mode,
     )
-    name = args.name or _slugify(app_name or title or f"target-{args.handle}")
+    name = args.name or slugify(app_name or title or f"target-{args.handle}") or "target"
     path = selections_dir() / f"{name}.json"
     dump_selection(path, selection)
     print(f"selection written to: {path} (origin={origin})")
     return 0
 
 
-def _slugify(text: str) -> str:
-    value = "".join(ch.lower() if ch.isalnum() else "-" for ch in text)
-    tokens = [token for token in value.split("-") if token]
-    return "-".join(tokens) or "target"
+def overlay_relative_roi(handle: int):
+    """Overlay -> `(roi_relative, window_info)`, reusado pelo CLI e pela GUI.
 
-
-def capture_selection_for_window(
-    handle: int, *, name: str | None = None, mode: str = "advanced"
-) -> CapturedSelection:
-    """Overlay -> selection JSON relativo a janela (reusado pelo CLI e pela GUI)."""
+    Levanta `runtime.selection_cancelled` quando o usuario cancela; os demais
+    `runtime.*` (janela sumiu/minimizou ou ROI fora da janela) sobem como
+    `AppError`. Ver doc 7.1, passo 5: `getRect()` e consultado imediatamente
+    apos soltar o mouse.
+    """
     from screen_watch.gui.overlay import run_selection
     from screen_watch.gui.overlay_geometry import fits_in_window, to_physical, to_relative
-    from screen_watch.persistence.selection import Selection, dump_selection
-    from screen_watch.platform.paths import ensure_dirs, selections_dir
-    from screen_watch.platform.window import find_window_by_handle, friendly_app_name
+    from screen_watch.platform.window import find_window_by_handle
 
     result = run_selection()
     if result is None:
         raise AppError(code="runtime.selection_cancelled")
 
-    # Doc 7.1, passo 5: consultar getRect() imediatamente apos soltar.
     info = find_window_by_handle(int(handle))
     if info is None or not info.exists:
         raise AppError(
             code="runtime.window_missing_after_selection", params={"handle": handle}
         )
 
-    app_name = friendly_app_name(info.handle, info.title)
     physical = to_physical(
         result.global_logical,
         screen_origin=result.screen_origin,
@@ -700,7 +691,19 @@ def capture_selection_for_window(
             code="runtime.roi_outside_window",
             params={"roi": relative, "window": (info.rect[2], info.rect[3])},
         )
+    return relative, info
 
+
+def capture_selection_for_window(
+    handle: int, *, name: str | None = None, mode: str = "advanced"
+) -> CapturedSelection:
+    """Overlay -> selection JSON relativo a janela (reusado pelo CLI e pela GUI)."""
+    from screen_watch.persistence.selection import Selection, dump_selection
+    from screen_watch.platform.paths import ensure_dirs, selections_dir
+    from screen_watch.platform.window import friendly_app_name
+
+    relative, info = overlay_relative_roi(handle)
+    app_name = friendly_app_name(info.handle, info.title)
     ensure_dirs()
     selection = Selection(
         window_handle=int(handle),
@@ -710,7 +713,7 @@ def capture_selection_for_window(
         app_name=app_name,
         mode=mode,
     )
-    file_name = name or _slugify(app_name or info.title or f"target-{handle}")
+    file_name = name or slugify(app_name or info.title or f"target-{handle}") or "target"
     path = selections_dir() / f"{file_name}.json"
     dump_selection(path, selection)
     return CapturedSelection(path=path, roi_relative=relative)

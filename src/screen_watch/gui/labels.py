@@ -16,7 +16,7 @@ def target_label(target: TargetConfig) -> str:
     hint = f" — {target.window_title_hint}" if target.window_title_hint else ""
     return tr(
         "label.target",
-        name=target.name,
+        name=target.label or target.name,
         hint=hint,
         x=x,
         y=y,
@@ -34,4 +34,7 @@ def selection_label(selection: Selection, stem: str = "") -> str:
         or stem
         or tr("label.default_name")
     )
-    return tr("label.selection", name=name, x=x, y=y, w=w, h=h, mode=selection.mode)
+    prefix = f"{selection.name} - " if selection.name else ""
+    return tr(
+        "label.selection", prefix=prefix, name=name, x=x, y=y, w=w, h=h, mode=selection.mode
+    )

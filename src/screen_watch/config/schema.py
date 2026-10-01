@@ -258,6 +258,8 @@ class TargetConfig:
     actions: tuple[ActionSpec, ...] = ()
     humanize: HumanizeOptions = field(default_factory=HumanizeOptions)
     schedule: ScheduleOptions = field(default_factory=ScheduleOptions)
+    # Nome de exibicao da selecao (a GUI grava; `name` continua sendo o arquivo).
+    label: str = ""
 
 
 @dataclass(frozen=True)

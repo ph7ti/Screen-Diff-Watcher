@@ -45,7 +45,7 @@ class MonitorController:
         self._loop = build_loop(
             target, self._session, on_event=self._on_event, on_error=self._on_error
         )
-        self.events.put({"kind": "started", "target": target.name})
+        self.events.put({"kind": "started", "target": target.label or target.name})
         self._loop.start()
 
     def stop(self, timeout: float = 5.0) -> None:

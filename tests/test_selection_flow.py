@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from screen_watch.cli.commands import capture_selection_for_window
+from screen_watch.cli.commands import capture_selection_for_window, overlay_relative_roi
 from screen_watch.errors import AppError
 
 
@@ -64,3 +64,15 @@ def test_selection_negative_offset_is_rejected(monkeypatch, tmp_path):
         capture_selection_for_window(1)
 
     assert excinfo.value.code == "runtime.roi_outside_window"
+
+
+def test_overlay_cancelled_raises(monkeypatch, tmp_path):
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    overlay = types.ModuleType("screen_watch.gui.overlay")
+    overlay.run_selection = lambda: None
+    monkeypatch.setitem(sys.modules, "screen_watch.gui.overlay", overlay)
+
+    with pytest.raises(AppError) as excinfo:
+        overlay_relative_roi(1)
+
+    assert excinfo.value.code == "runtime.selection_cancelled"

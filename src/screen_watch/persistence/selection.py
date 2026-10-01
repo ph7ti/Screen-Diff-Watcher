@@ -25,6 +25,7 @@ from screen_watch.config.schema import (
     TextWatchOptions,
 )
 from screen_watch.errors import ConfigError
+from screen_watch.naming import MAX_SLUG_LENGTH, slugify
 
 Rect = tuple[int, int, int, int]
 Point = tuple[int, int]
@@ -44,6 +45,8 @@ class Selection:
     mode: str = "advanced"
     masks: tuple[Rect, ...] = ()
     overrides: dict[str, Any] | None = None
+    # Nome de exibicao digitado na GUI; o arquivo usa o slug dele (v2 aceita).
+    name: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         data: dict[str, Any] = {
@@ -51,6 +54,7 @@ class Selection:
             "window_handle": self.window_handle,
             "window_title_hint": self.window_title_hint,
             "app_name": self.app_name,
+            "name": self.name,
             "origin_at_selection": list(self.origin_at_selection),
             "roi_relative": list(self.roi_relative),
             "mode": self.mode,
@@ -80,6 +84,7 @@ class Selection:
             window_handle=int(raw["window_handle"]),
             window_title_hint=str(raw.get("window_title_hint", "")),
             app_name=str(raw.get("app_name", "")),
+            name=str(raw.get("name", "")),
             origin_at_selection=(int(raw["origin_at_selection"][0]), int(raw["origin_at_selection"][1])),
             roi_relative=(
                 int(raw["roi_relative"][0]),
@@ -106,6 +111,85 @@ def load_selection(path: str | Path) -> Selection:
     if not isinstance(raw, dict):
         raise ConfigError(code="selection.not_object")
     return Selection.from_dict(raw)
+
+
+def plan_rename(selections_dir: str | Path, old_path: str | Path, name: str) -> Path:
+    """Valida `name` e devolve o destino em `selections_dir` (nao move nada).
+
+    O slug igual ao stem atual devolve o proprio `old_path`: e um no-op em que o
+    chamador apenas regrava o `name`. Erros: `selection.name_invalid` (nome sem
+    letras/numeros), `selection.name_too_long` (> `MAX_SLUG_LENGTH`) e
+    `selection.name_conflict` (ja existe outra selecao com o mesmo slug).
+    """
+    old = Path(old_path)
+    slug = slugify(name, max_len=None)
+    if not slug:
+        raise ConfigError(code="selection.name_invalid")
+    if len(slug) > MAX_SLUG_LENGTH:
+        raise ConfigError(
+            code="selection.name_too_long", params={"max": MAX_SLUG_LENGTH}
+        )
+    if slug.casefold() == old.stem.casefold():
+        return old
+    # Comparacao sem caixa: no Windows o nome do arquivo e case-insensitive e no
+    # Linux nao queremos dois arquivos que so diferem por caixa.
+    for existing in Path(selections_dir).glob("*.json"):
+        if existing.stem.casefold() == slug.casefold():
+            raise ConfigError(code="selection.name_conflict", params={"name": slug})
+    return Path(selections_dir) / f"{slug}.json"
+
+
+def rename_selection(
+    old_path: str | Path, new_path: str | Path, *, name: str = ""
+) -> Selection:
+    """Move a selecao para `new_path` gravando `name` (rollback em falha).
+
+    Nunca sobrescreve um arquivo existente. Quando `old_path` e `new_path` sao o
+    mesmo arquivo (slug igual, inclusive so caixa), apenas regrava o JSON no
+    lugar. Ao final atualiza `state.json:last_selection` se ele apontava para o
+    nome antigo.
+    """
+    old = Path(old_path)
+    new = Path(new_path)
+    selection = load_selection(old)
+    if name:
+        selection = replace(selection, name=name)
+    same = old.parent == new.parent and old.name.casefold() == new.name.casefold()
+    if same:
+        dump_selection(old, selection)
+        return selection
+    if new.exists():
+        raise ConfigError(code="selection.name_conflict", params={"name": new.stem})
+    try:
+        dump_selection(new, selection)
+    except OSError as exc:
+        raise ConfigError(
+            code="selection.rename_failed", params={"error": exc}
+        ) from exc
+    try:
+        old.unlink()
+    except OSError as exc:
+        try:
+            new.unlink(missing_ok=True)  # rollback: nunca deixar dois arquivos
+        except OSError:
+            pass
+        raise ConfigError(
+            code="selection.rename_failed", params={"error": exc}
+        ) from exc
+    _update_last_selection(old.name, new.name)
+    return selection
+
+
+def _update_last_selection(old_file_name: str, new_file_name: str) -> None:
+    """Aponta `state.json:last_selection` para o arquivo novo (best-effort)."""
+    from screen_watch.platform.paths import load_state, update_state  # noqa: PLC0415
+
+    try:
+        current = str(load_state().get("last_selection") or "")
+        if current and current.casefold() == old_file_name.casefold():
+            update_state(last_selection=new_file_name)
+    except OSError:
+        pass
 
 
 def from_target_config(target: TargetConfig) -> Selection:
@@ -257,6 +341,7 @@ def build_target(
     compare_options = _compare_options_with_watch(defaults.compare_options, overrides, resolved_mode)
     return TargetConfig(
         name=name,
+        label=selection.name,
         window_handle=selection.window_handle,
         roi_relative=selection.roi_relative,
         origin_at_selection=selection.origin_at_selection,
@@ -311,6 +396,7 @@ def to_target_config(
     """
     return TargetConfig(
         name=name,
+        label=selection.name,
         window_handle=selection.window_handle,
         roi_relative=selection.roi_relative,
         origin_at_selection=selection.origin_at_selection,

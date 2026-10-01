@@ -167,6 +167,7 @@ target: `mode`, `poll_interval_s`, `rearm`, `masks`, `alerts`, `actions` and `te
   "window_handle": 123456,
   "window_title_hint": "ERP - Estoque",
   "app_name": "ERP",
+  "name": "verificando download",
   "origin_at_selection": [100, 200],
   "roi_relative": [120, 340, 400, 80],
   "mode": "advanced",
@@ -179,8 +180,13 @@ target: `mode`, `poll_interval_s`, `rearm`, `masks`, `alerts`, `actions` and `te
 - **Mode precedence**: explicit mode (GUI selector) > `overrides.mode` > `selection.mode`.
 - `actions` overrides are validated with the resolved mode (`text_*` filters require `advanced`);
   `text_watch` **requires `advanced`** (`config.text_watch_needs_advanced`).
-- `version: 1` selections keep loading (without overrides/`app_name`).
+- `version: 1` selections keep loading (without overrides/`app_name`/`name`).
 - `window_handle` is the lookup key; `roi_relative` is the ROI source of truth on every tick.
+- `name` (optional) is the **display name** edited in the GUI (prefix in the label and in `run`).
+  Renaming writes `name` and moves the file to the **slug** of the name
+  (`verificando download` → `verificando-download.json`), never overwriting another selection;
+  `--selection <name>` then uses the **new file name**. The region re-edit (double-click) preserves
+  `name`/`mode`/`overrides` and **clears the masks** (relative to the old ROI).
 
 ## Migration from a v1 YAML (`targets:`)
 

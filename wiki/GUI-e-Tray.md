@@ -6,12 +6,16 @@
 
 ## A janela
 
-- **Coluna Monitoramento** (esquerda): **Iniciar** / **Parar** / **Re-armar** / **Minimizar para o
-  tray**, os seletores de **Modo** (`light`/`default`/`advanced`), **Perfil** e **Idioma**, e os
+- **Coluna Monitoramento** (esquerda): **Iniciar** / **Parar** / **Re-armar** e **Minimizar para o
+  tray** / **Ver local** num **grid de duas colunas**, os seletores de **Modo**
+  (`light`/`default`/`advanced`), **Perfil** e **Idioma**, e os
   controles de arming — **Armar ações**, **Desarmar**, **Armar por…** — com o estado visível.
 - **Grupo Seleções** (direita): lista de `app-data/selections/*.json` e a legenda da ROI. Cada item
   mostra o **nome do aplicativo**, a **região monitorada** e o **modo** (ex.:
-  `Seleção WhatsApp — Região 120,340 400x80 — advanced`). Duplo clique inicia/para.
+  `Seleção WhatsApp — Região 120,340 400x80 — advanced`); uma seleção com **nome** o exibe como
+  prefixo (`verificando download - Seleção …`). **Duplo clique reedita a região** (overlay);
+  **Enter inicia/para**. Abaixo da lista, o campo **Nome da seleção** + **Renomear** confirmam o
+  nome de exibição e renomeiam o arquivo para o slug.
 - **Linha de ações de arquivo**: **Novo Target** / **Remover** / **Recarregar** / **Abrir YAML** /
   **Prints**, mais o checkbox **Gravar prints (evidências)**.
 - **Detecção e alertas**: linha **Som do alerta** (caminho efetivo; **Escolher…** para
@@ -62,7 +66,24 @@ Detalhes em [Evidências](Evidencias.md).
   janelas que não são de aplicativos ativos** (invisíveis, ocultas pelo DWM, tool windows, janelas
   filhas/auxiliares e sem título).
 - O overlay abre **uma janela por monitor**: arraste com o botão esquerdo; botão direito cancela.
+- **Duplo clique** numa seleção **reedita a região** com o mesmo overlay (a janela é localizada pelo
+  handle; se sumiu ou está minimizada, use **Novo Target**). A reedição preserva **nome**, **modo** e
+  **overrides** e **limpa as máscaras** (eram relativas à ROI antiga). Fica bloqueada com sessão
+  rodando.
 - **Remover** apaga um ou mais JSONs de seleção selecionados (seleção múltipla com Ctrl/Shift).
+
+## Nome da seleção e Ver local
+
+- **Nome da seleção**: digite o nome de exibição abaixo da lista e confirme com **Renomear** ou
+  **Enter**. O rótulo o mostra como prefixo (`verificando download - Seleção App — Região …`) e o
+  **arquivo é renomeado** para o slug do nome (`verificando download` → `verificando-download.json`;
+  acentos normalizados, máx. 60 caracteres). Um nome existente **nunca é sobrescrito** (conflito
+  avisa e nada muda) e renomear é bloqueado com sessão rodando. Scripts com `--selection <nome>`
+  precisam do novo nome de arquivo após renomear; `list-selections` e
+  `state.json:last_selection` acompanham o novo nome.
+- **Ver local**: desenha a ROI da seleção na tela por ~2 s. **Nunca pinta dentro da ROI** (camada
+  escura só fora, borda logo por fora do buraco), não captura cliques/foco e fecha sozinho — por
+  isso pode ser usado **com o monitoramento rodando** para conferir o que está sendo vigiado.
 
 ## Editor de ações
 

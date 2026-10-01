@@ -21,6 +21,8 @@ from screen_watch.persistence.selection import (
     load_selection,
     override_actions,
     override_text_watch,
+    plan_rename,
+    rename_selection,
     resolve_actions,
     set_override_actions,
     set_override_text_watch,
@@ -407,6 +409,186 @@ def test_build_target_applies_action_filter():
 
     unfiltered = build_target(selection, _profile(mode="advanced"), name="x")
     assert [action.name for action in unfiltered.actions] == ["a", "b"]
+
+
+# -- nome da selecao -------------------------------------------------------
+
+
+def _named_selection(**extra) -> Selection:
+    fields = {
+        "window_handle": 1,
+        "origin_at_selection": (0, 0),
+        "roi_relative": (1, 2, 3, 4),
+        "mode": "advanced",
+    }
+    fields.update(extra)
+    return Selection(**fields)
+
+
+def test_name_round_trips(tmp_path):
+    selection = _named_selection(name="Verificando Download")
+    path = tmp_path / "s.json"
+    dump_selection(path, selection)
+    assert load_selection(path) == selection
+    assert load_selection(path).name == "Verificando Download"
+
+
+def test_name_defaults_to_empty_when_absent(tmp_path):
+    path = tmp_path / "s.json"
+    path.write_text(
+        '{"version": 2, "window_handle": 9, "origin_at_selection": [0, 0],'
+        ' "roi_relative": [1, 2, 3, 4]}',
+        encoding="utf-8",
+    )
+    assert load_selection(path).name == ""
+
+
+def test_build_target_carries_label_from_name():
+    target = build_target(_named_selection(name="Painel"), _profile(), name="demo")
+    assert target.name == "demo"
+    assert target.label == "Painel"
+
+
+def test_build_target_label_empty_without_name():
+    target = build_target(_named_selection(), _profile(), name="demo")
+    assert target.label == ""
+
+
+def test_to_target_config_carries_label():
+    target = to_target_config(_named_selection(name="Painel"), name="demo")
+    assert target.label == "Painel"
+
+
+def test_plan_rename_builds_slug_path(tmp_path):
+    old = tmp_path / "demo.json"
+    assert plan_rename(tmp_path, old, "Verificando Download") == (
+        tmp_path / "verificando-download.json"
+    )
+    assert plan_rename(tmp_path, old, "Seleção Ação") == tmp_path / "selecao-acao.json"
+
+
+def test_plan_rename_same_slug_is_noop(tmp_path):
+    old = tmp_path / "verificando-download.json"
+    assert plan_rename(tmp_path, old, "Verificando Download") == old
+    assert plan_rename(tmp_path, old, "VERIFICANDO DOWNLOAD") == old
+
+
+def test_plan_rename_rejects_conflict_case_insensitive(tmp_path):
+    old = tmp_path / "demo.json"
+    (tmp_path / "Outra.json").write_text("{}", encoding="utf-8")
+    with pytest.raises(ConfigError) as excinfo:
+        plan_rename(tmp_path, old, "outra")
+    assert excinfo.value.code == "selection.name_conflict"
+
+
+def test_plan_rename_rejects_empty_slug(tmp_path):
+    with pytest.raises(ConfigError) as excinfo:
+        plan_rename(tmp_path, tmp_path / "demo.json", "###")
+    assert excinfo.value.code == "selection.name_invalid"
+
+
+def test_plan_rename_rejects_long_slug(tmp_path):
+    with pytest.raises(ConfigError) as excinfo:
+        plan_rename(tmp_path, tmp_path / "demo.json", "a" * 61)
+    assert excinfo.value.code == "selection.name_too_long"
+
+
+def test_rename_selection_moves_file_and_writes_name(monkeypatch, tmp_path):
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    (tmp_path / "selections").mkdir()
+    old = tmp_path / "selections" / "demo.json"
+    dump_selection(old, _named_selection(name="antigo"))
+    new = tmp_path / "selections" / "novo.json"
+
+    updated = rename_selection(old, new, name="Novo")
+
+    assert not old.exists()
+    assert new.exists()
+    assert updated.name == "Novo"
+    assert load_selection(new).name == "Novo"
+    assert load_selection(new).window_handle == 1
+
+
+def test_rename_selection_same_file_writes_only_name(monkeypatch, tmp_path):
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    (tmp_path / "selections").mkdir()
+    path = tmp_path / "selections" / "demo.json"
+    dump_selection(path, _named_selection())
+
+    updated = rename_selection(path, path, name="Novo")
+
+    assert path.exists()
+    assert updated.name == "Novo"
+    assert load_selection(path).name == "Novo"
+
+
+def test_rename_selection_never_overwrites(monkeypatch, tmp_path):
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    (tmp_path / "selections").mkdir()
+    old = tmp_path / "selections" / "demo.json"
+    new = tmp_path / "selections" / "outra.json"
+    dump_selection(old, _named_selection(name="demo"))
+    dump_selection(new, _named_selection(name="outra"))
+
+    with pytest.raises(ConfigError) as excinfo:
+        rename_selection(old, new, name="Outra")
+
+    assert excinfo.value.code == "selection.name_conflict"
+    assert old.exists() and new.exists()
+    assert load_selection(old).name == "demo"
+    assert load_selection(new).name == "outra"
+
+
+def test_rename_selection_rolls_back_on_failure(monkeypatch, tmp_path):
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    (tmp_path / "selections").mkdir()
+    old = tmp_path / "selections" / "demo.json"
+    dump_selection(old, _named_selection())
+    new = tmp_path / "selections" / "novo.json"
+
+    import screen_watch.persistence.selection as selection_module
+
+    def boom(path, selection):
+        raise OSError("disco cheio")
+
+    monkeypatch.setattr(selection_module, "dump_selection", boom)
+
+    with pytest.raises(ConfigError) as excinfo:
+        rename_selection(old, new, name="Novo")
+
+    assert excinfo.value.code == "selection.rename_failed"
+    assert old.exists()
+    assert not new.exists()
+
+
+def test_rename_selection_updates_last_selection(monkeypatch, tmp_path):
+    from screen_watch.platform.paths import load_state, update_state
+
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    (tmp_path / "selections").mkdir()
+    old = tmp_path / "selections" / "demo.json"
+    dump_selection(old, _named_selection())
+    update_state(last_selection="demo.json")
+    new = tmp_path / "selections" / "novo.json"
+
+    rename_selection(old, new, name="Novo")
+
+    assert load_state()["last_selection"] == "novo.json"
+
+
+def test_rename_selection_keeps_unrelated_last_selection(monkeypatch, tmp_path):
+    from screen_watch.platform.paths import load_state, update_state
+
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    (tmp_path / "selections").mkdir()
+    old = tmp_path / "selections" / "demo.json"
+    dump_selection(old, _named_selection())
+    update_state(last_selection="outra.json")
+    new = tmp_path / "selections" / "novo.json"
+
+    rename_selection(old, new, name="Novo")
+
+    assert load_state()["last_selection"] == "outra.json"
 
 
 # -- text_watch (override da selecao > perfil) -----------------------------

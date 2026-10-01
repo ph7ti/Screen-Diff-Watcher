@@ -141,6 +141,12 @@ _EN: dict[str, str] = {
     "selection.version_unsupported": "unsupported selection version: {value!r}",
     "selection.overrides_not_object": "'overrides' must be a JSON object",
     "selection.not_object": "selection JSON must be an object",
+    "selection.name_invalid": "selection name has no letters or digits",
+    "selection.name_too_long": (
+        "selection name is too long (max {max} characters)"
+    ),
+    "selection.name_conflict": "a selection named {name!r} already exists",
+    "selection.rename_failed": "could not rename the selection: {error}",
     # -- runtime --------------------------------------------------------------
     "runtime.tesseract_missing": (
         "Tesseract not found. Install Tesseract (Windows: "
