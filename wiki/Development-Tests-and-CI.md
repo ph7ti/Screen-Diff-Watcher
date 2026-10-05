@@ -33,11 +33,13 @@ $env:TEST_REAL_TELEGRAM="1"; $env:TELEGRAM_BOT_TOKEN="..."; `
   $env:TELEGRAM_TEST_CHAT_ID="..."; python -m pytest -m integration
 $env:TEST_REAL_WEBHOOK_URL="https://..."; python -m pytest -m integration
 $env:TEST_REAL_HTTP_URL="https://..."; python -m pytest -m integration
+$env:TEST_REAL_AUDIO="1"; $env:TEST_REAL_AUDIO_FILE="C:\sounds\alert.mp3"; python -m pytest -m integration
 ```
 
 `TEST_REAL_CAPTURE` really captures from the primary monitor; `TEST_REAL_TELEGRAM` sends a synthetic
 photo and fails if the HTTP is not 2xx; `TEST_REAL_WEBHOOK_URL`/`TEST_REAL_HTTP_URL` send a synthetic
-JSON payload to the given URL.
+JSON payload to the given URL; `TEST_REAL_AUDIO` plays the `TEST_REAL_AUDIO_FILE` (WAV/MP3/OGG/FLAC)
+through the CLI sound path and fails if playback does not succeed.
 
 ## Validation ladder (capture/DPI diagnostics)
 
