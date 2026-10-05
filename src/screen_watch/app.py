@@ -29,6 +29,8 @@ from screen_watch.scheduler.loop import MonitorLoop, MonitorTarget
 log = logging.getLogger(__name__)
 
 ResultCallback = Callable[[ComparisonResult, DispatchOutcome], None]
+FrameCallback = Callable[[Frame, bool], None]
+CompareCallback = Callable[[ComparisonResult], None]
 
 # Desfechos em que o baseline re-arma (alerta efetivo ou inutil). Em cooldown o
 # baseline fica parado para a mudanca nao ser perdida (plano, secao 2).
@@ -280,6 +282,8 @@ class MonitorSession:
         recorder: object | None = None,
         actions: object | None = None,
         on_action: Callable[[dict], None] | None = None,
+        on_frame: FrameCallback | None = None,
+        on_compare: CompareCallback | None = None,
     ) -> None:
         self.target = target
         self.pipeline = build_pipeline(target.mode, target.compare_options)
@@ -287,6 +291,8 @@ class MonitorSession:
         self.rearm = bool(target.rearm)
         self._on_result = on_result
         self._recorder = recorder
+        self._on_frame = on_frame
+        self._on_compare = on_compare
         self._initialized = False
         self._pending_rebaseline = False
         if actions is None:
@@ -296,6 +302,9 @@ class MonitorSession:
         self.actions = actions
 
     def __call__(self, frame: Frame) -> None:
+        is_baseline = self._pending_rebaseline or not self._initialized
+        if self._on_frame is not None:
+            self._on_frame(frame, is_baseline)
         if self._pending_rebaseline:
             self._pending_rebaseline = False
             self.pipeline.initialize(frame)
@@ -308,6 +317,8 @@ class MonitorSession:
             self._record("record_baseline", frame)
             return
         result = self.pipeline.compare(frame)
+        if self._on_compare is not None:
+            self._on_compare(result)
         if not result.changed:
             return
         outcome = self.chain.dispatch(result, frame)
@@ -323,6 +334,8 @@ class MonitorSession:
     def rebaseline_now(self, frame: Frame) -> None:
         """Re-arma o baseline manualmente (tray/botao/hotkey re-arm)."""
         self.pipeline.initialize(frame)
+        if self._on_frame is not None:
+            self._on_frame(frame, True)
 
     def request_rebaseline(self) -> None:
         """Pede re-baseline no proximo frame (thread-safe; chamado pela GUI)."""

@@ -68,6 +68,8 @@ evidence: { enabled: false, dir: null, keep_per_target: 50, max_total_mb: 200,
 - `ui.language` desconhecido gera aviso e volta para `auto` (não é erro).
 - O app regrava o YAML **sem preservar comentários**; a escrita é atômica (temp + `os.replace`) e
   deixa um backup `config.yaml.bak`.
+- Ajuste os limites (`light`/`default`) e o `advanced.similarity_threshold` com o `compare-modes` do
+  CLI ou com o gráfico ao vivo **Calibração…** da GUI (score × limite, export CSV).
 
 ## Canais de alerta
 
@@ -104,6 +106,8 @@ Regras (validadas com código estável `config.alert_*`):
 - `port` deve ser 1..65535; `protocol` é `udp`/`tcp`; `facility` precisa ser uma facility syslog
   conhecida; `method` é `POST`/`PUT`/`PATCH`.
 - `type` desconhecido é erro (um canal "mudo" deixa de passar batido).
+- O seletor de som da GUI **grava** o `file:` no alerta `sound` do perfil ativo (criado se não
+  existir) com escrita atômica + `.bak`; config v1 precisa ser migrada antes.
 - Detalhes e a lista completa de placeholders: [Alertas](Alertas.md).
 
 ## Perfis
@@ -186,6 +190,9 @@ alvo: `mode`, `poll_interval_s`, `rearm`, `masks`, `alerts`, `actions` e `text_w
   (`verificando download` → `verificando-download.json`), nunca sobrescrevendo outra seleção;
   `--selection <nome>` passa a usar o **novo nome do arquivo**. A reedição da região (duplo clique)
   preserva `name`/`mode`/`overrides` e **limpa as máscaras** (relativas à ROI antiga).
+- Máscaras vivem só no JSON da seleção: `overrides.masks` tem precedência sobre `masks` (o perfil não
+  tem máscaras). O editor de máscaras da GUI grava onde as máscaras efetivas vivem: `overrides.masks`
+  existente, senão `masks` não vazio, senão cria `overrides.masks`.
 
 ## Migração de um YAML v1 (`targets:`)
 

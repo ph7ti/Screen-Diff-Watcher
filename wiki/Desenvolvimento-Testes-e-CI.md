@@ -52,11 +52,14 @@ Em regressões de captura/DPI, use os scripts na ordem — **não comece pela GU
 
 ## CI (GitHub Actions)
 
-`.github/workflows/ci.yml` roda, em **`ubuntu-latest` e `windows-latest`** × **Python 3.11 e 3.13**:
+`.github/workflows/ci.yml` roda, em **`ubuntu-latest` e `windows-latest`** × **Python 3.11, 3.12 e 3.13**:
 
 - `ruff check .`
 - `python -m screen_watch validate-i18n`
-- `pytest -m "not integration"`
+- `pytest -q -m "not integration" --cov=screen_watch --cov-report=term-missing`
+
+A cobertura é **informativa** por enquanto (sem nota mínima). O artefato `coverage-xml` é enviado
+pela célula Linux/3.13.
 
 Em pull requests, o job `package` também monta os instaladores **sem publicar** (pega quebra de
 empacotamento).
@@ -65,6 +68,23 @@ empacotamento).
 `windows-latest` + Inno Setup; Linux `ubuntu-22.04`) e publica o GitHub Release com
 `SHA256SUMS.txt`. Ele **falha** se a tag (sem `v`) for diferente de `screen_watch.__version__`. Com
 `workflow_dispatch` e o input `version`, gera apenas os artefatos do workflow (sem release).
+
+## Publicação da wiki (runbook manual)
+
+A GitHub Wiki é um **repositório git separado**; a pasta `wiki/` do repo é apenas um espelho e o CI
+não a publica. Para publicar alterações de páginas:
+
+```powershell
+git clone https://github.com/ph7ti/Screen-Diff-Watcher.wiki.git
+# copie o conteúdo das páginas para o clone preservando o estilo de links remoto:
+# links internos da wiki sem o sufixo .md; links para doc/README apontam para
+# https://github.com/ph7ti/Screen-Diff-Watcher/blob/main/...
+git -C Screen-Diff-Watcher.wiki add -A
+git -C Screen-Diff-Watcher.wiki commit -m "Sync wiki with vX.Y.Z"
+git -C Screen-Diff-Watcher.wiki push origin master
+```
+
+A publicação automática (workflow com o segredo `WIKI_PUSH_TOKEN`) fica adiada até o segredo existir.
 
 ## Build local dos instaladores
 

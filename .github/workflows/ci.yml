@@ -15,7 +15,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        python: ["3.11", "3.13"]
+        python: ["3.11", "3.12", "3.13"]
 
     steps:
       - uses: actions/checkout@v4
@@ -38,11 +38,18 @@ jobs:
 
       - name: Tests (Linux)
         if: runner.os == 'Linux'
-        run: xvfb-run -a python -m pytest -q -m "not integration"
+        run: xvfb-run -a python -m pytest -q -m "not integration" --cov=screen_watch --cov-report=term-missing --cov-report=xml
 
       - name: Tests (Windows)
         if: runner.os != 'Linux'
-        run: python -m pytest -q -m "not integration"
+        run: python -m pytest -q -m "not integration" --cov=screen_watch --cov-report=term-missing --cov-report=xml
+
+      - name: Upload coverage artifact
+        if: runner.os == 'Linux' && matrix.python == '3.13'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
 
   package:
     name: package (${{ matrix.os }})

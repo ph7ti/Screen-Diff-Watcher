@@ -191,6 +191,26 @@ git push origin v0.7.1
 `release.yml` builds Windows (`windows-latest` + `choco install innosetup -y`) and Linux
 (`ubuntu-22.04`), generates `SHA256SUMS.txt` and creates the GitHub Release with `gh release create`.
 
+### Wiki publication (manual runbook)
+
+The GitHub Wiki is a **separate git repository** and is **not** updated by CI; the `wiki/` folder in
+the repo is only a mirror. After changing wiki pages, publish manually:
+
+```powershell
+git clone https://github.com/ph7ti/Screen-Diff-Watcher.wiki.git
+# copy the page content into the clone preserving the remote link style:
+# internal wiki links without the .md suffix; doc/README links pointing at
+# https://github.com/ph7ti/Screen-Diff-Watcher/blob/main/...
+git -C Screen-Diff-Watcher.wiki add -A
+git -C Screen-Diff-Watcher.wiki commit -m "Sync wiki with vX.Y.Z"
+git -C Screen-Diff-Watcher.wiki push origin master
+```
+
+Automatic publication (a workflow using a `WIKI_PUSH_TOKEN` secret) is deferred until the secret
+exists. CI (`ci.yml`) runs, in `ubuntu-latest`/`windows-latest` × Python 3.11/3.12/3.13, `ruff`,
+`validate-i18n` and `pytest` with `--cov=screen_watch`; the `coverage-xml` artifact comes from the
+Linux/3.13 cell.
+
 ---
 
 ## 9. Validation (definition of done)

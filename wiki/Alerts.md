@@ -64,10 +64,13 @@ log** (Telegram requires `chat_id`, so it does not enter the default).
   log warning (never silence nor an exception).
 - The `simpleaudio` extra (`pip install -e ".[sound]"`) remains optional and does **not** enter the
   installers (no reliable wheel for Python 3.13); it is only tried for `.wav`.
-- **GUI selector**: the **Alert sound** row previews any file with **Play** and shows the
-  `file: "<path>"` snippet to paste into the YAML — it **does not persist** anything (the YAML is
-  read at start). After **Choose…** a popup points to `config.yaml` and the active profile, with
-  **Copy path and open YAML** / **Open YAML only** / **Close**.
+- **GUI selector (v0.8.0)**: the **Alert sound** row previews any file with **Play** and, after
+  **Choose…**, asks for confirmation and **writes** `file:` into the `type: "sound"` alert of the
+  active profile in `config.yaml` (atomic write, `config.yaml.bak` backup; comments are not
+  preserved). The dialog keeps **Copy path and open YAML** / **Open YAML only** / **Close** as
+  secondary actions. A v1 config is refused with a message to run `migrate-config`; when the selected
+  selection has `overrides.alerts` (which replace the profile alerts) the dialog warns that the sound
+  will not apply to it.
 - Full format matrix per context: [v0.6.0 release notes](../doc/releases/v0.6.0.md).
 
 ### Popup
@@ -87,6 +90,12 @@ log** (Telegram requires `chat_id`, so it does not enter the default).
 ### Log
 
 - One JSON line per firing in `app-data/logs/alerts.jsonl` (or in the configured `path`).
+- The record has no channel/target/evidence path (`ts`, `strategy`, `changed`, `score`, `threshold`,
+  `severity`, `window_handle`, `absolute_rect`, `sequence`, `detail`).
+- **Alert history (v0.8.0)**: the GUI **History…** button opens a table over this file with filters
+  (date from/to, minimum severity, strategy), tolerant to invalid lines. **Open print** finds the
+  nearest `*_change.png` within ±2 s of the alert (best effort; otherwise it reports that no print was
+  found) and **Open prints folder** opens the effective captures folder.
 
 ### Webhook / HTTP POST
 

@@ -70,6 +70,9 @@ _EN: dict[str, str] = {
     "config.migrate_no_targets": "nothing to migrate: YAML without 'targets'",
     "config.migrate_duplicate_names": "duplicate target names: {names}",
     "config.migrate_empty": "nothing to migrate: 'targets' is empty",
+    "config.v1_not_editable": (
+        "config is v1: run 'migrate-config' before editing the sound from the GUI"
+    ),
     "config.action_text_needs_advanced": (
         "action {name!r}: text_* filters require mode 'advanced' (OCR); selection is {mode!r}"
     ),

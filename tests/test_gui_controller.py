@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import numpy as np
+
 from screen_watch.alerts.chain import DispatchOutcome
 from screen_watch.compare.protocol import ComparisonResult
 from screen_watch.config.schema import TargetConfig
-from screen_watch.gui.controller import MonitorController, new_event_queue
+from screen_watch.gui.controller import CALIBRATION_MAX, MonitorController, new_event_queue
 
 
 def _target() -> TargetConfig:
@@ -75,10 +77,20 @@ def test_start_then_reject_second_start(monkeypatch):
             self.running = False
 
     class FakeSession:
-        def __init__(self, target, on_result=None, recorder=None, on_action=None):
+        def __init__(
+            self,
+            target,
+            on_result=None,
+            recorder=None,
+            on_action=None,
+            on_frame=None,
+            on_compare=None,
+        ):
             self.target = target
             self.recorder = recorder
             self.on_action = on_action
+            self.on_frame = on_frame
+            self.on_compare = on_compare
 
     import screen_watch.app as app
 
@@ -119,3 +131,59 @@ def test_actions_property_and_rebaseline():
     assert controller.actions == "dispatcher"
     controller.rebaseline()
     assert calls == [True]
+
+
+def test_preview_keeps_downsampled_latest_and_baseline(make_frame):
+    controller = MonitorController(new_event_queue())
+    first = make_frame(np.full((480, 640, 3), 10, dtype=np.uint8))
+    second = make_frame(np.full((480, 640, 3), 20, dtype=np.uint8))
+
+    controller._on_frame(first, True)
+    controller._on_frame(second, False)
+
+    latest, baseline = controller.preview()
+    assert latest is not None and baseline is not None
+    assert max(latest.shape[:2]) <= 240
+    assert int(latest[0, 0, 0]) == 20
+    assert int(baseline[0, 0, 0]) == 10
+
+
+def test_preview_clears(make_frame):
+    controller = MonitorController(new_event_queue())
+    controller._on_frame(make_frame(np.zeros((10, 10, 3), dtype=np.uint8)), True)
+
+    controller.clear_preview()
+
+    latest, baseline = controller.preview()
+    assert latest is None and baseline is None
+
+
+def test_on_compare_collects_calibration_samples():
+    controller = MonitorController(new_event_queue())
+    result = ComparisonResult(
+        changed=False, score=1.5, threshold=6.0, strategy="default", severity=0
+    )
+
+    controller._on_compare(result)
+
+    samples = controller.calibration()
+    assert len(samples) == 1
+    _ts, strategy, score, threshold, severity = samples[0]
+    assert strategy == "default"
+    assert score == 1.5
+    assert threshold == 6.0
+    assert severity == 0
+
+
+def test_calibration_buffer_is_bounded():
+    controller = MonitorController(new_event_queue())
+    for index in range(CALIBRATION_MAX + 20):
+        controller._on_compare(
+            ComparisonResult(
+                changed=False, score=index, threshold=1.0, strategy="light", severity=0
+            )
+        )
+
+    samples = controller.calibration()
+    assert len(samples) == CALIBRATION_MAX
+    assert samples[-1][2] == CALIBRATION_MAX + 19

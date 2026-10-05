@@ -1,6 +1,6 @@
 # Development — agent knowledge base
 
-Status: v0.7.1 · Scope: setup, quality gates, tests, CI, release, app-data
+Status: v0.8.0 · Scope: setup, quality gates, tests, CI, release, app-data
 
 Commands below were verified against the repository at v0.7.1. Build/release details are in
 `doc/01-Build_and_Release.md`; design rationale in `doc/00`.
@@ -32,7 +32,7 @@ No coverage gate, mypy or pyright exists today (roadmap items). On Linux, GUI te
 
 ## Tests
 
-- 55 test files under `tests/`; `tests/conftest.py` has an **autouse fixture forcing i18n to pt-BR**
+- 60 test files under `tests/`; `tests/conftest.py` has an **autouse fixture forcing i18n to pt-BR**
   and provides the `make_frame` / `solid` fixtures.
 - GUI tests do not instantiate `QApplication` at collection time; on Linux CI they run under `xvfb-run`.
 - Integration tests are opt-in via the `integration` marker (excluded from CI):
@@ -60,17 +60,21 @@ Run on a real desktop, not CI; rationale in `doc/00` §13 and its pitfalls §14.
 
 ## CI (`.github/workflows/`)
 
-- `ci.yml`: matrix ubuntu-latest/windows-latest × Python 3.11 and 3.13; steps are install `.[dev]`,
-  `ruff check .`, `validate-i18n`, `pytest -q -m "not integration"` (Linux under `xvfb-run`). A
-  PR-only `package` job builds installers with `build_release.py` and uploads artifacts, no publish.
+- `ci.yml`: matrix ubuntu-latest/windows-latest × Python 3.11, 3.12 and 3.13; steps are install
+  `.[dev]`, `ruff check .`, `validate-i18n`, `pytest -q -m "not integration" --cov=screen_watch`
+  (Linux under `xvfb-run`); the `coverage-xml` artifact comes from the Linux/3.13 cell (report only,
+  no gate). A PR-only `package` job builds installers with `build_release.py`, no publish.
 - `release.yml`: triggered by tags `v*.*.*` (or `workflow_dispatch` with a version input). A version
   guard fails when the ref does not equal `screen_watch.__version__`; builds the Windows `.exe` and
   Linux `.deb`, smoke-tests `features --json`, writes `SHA256SUMS.txt` and creates the GitHub Release
   with notes taken from `CHANGELOG.md`.
+- **Wiki**: the GitHub Wiki is a separate repo and CI does **not** publish it; use the manual runbook
+  in `doc/01` §8 (copy pages preserving the remote link style, commit and push `master`). Automation
+  is deferred until a `WIKI_PUSH_TOKEN` secret exists.
 
 ## Release process (increment)
 
-1. Bump `src/screen_watch/__init__.py::__version__` (MINOR for features, PATCH for fixes; `pyproject.toml` is dynamic).
+1. Bump `src/screen_watch/__init__.py::__version__` (MINOR for features, PATCH for fixes; `pyproject.toml` is dynamic) and the `Status:` headers of the 3 KB files (`tests/test_agent_kb.py` enforces the match).
 2. Green gates: ruff + unit tests + `validate-i18n`.
 3. Update `doc/00` (if design changed), wiki/README (EN + PT mirrors), `CHANGELOG.md` (PT) and `doc/releases/vX.Y.Z.md` + `.pt-BR.md`.
 4. Build on the target OS: `python scripts/build_release.py --windows` / `--linux`; smoke `dist/screen-watch/screen-watch features --json`.

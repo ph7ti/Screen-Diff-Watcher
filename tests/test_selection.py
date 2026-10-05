@@ -17,6 +17,7 @@ from screen_watch.persistence.selection import (
     Selection,
     build_target,
     dump_selection,
+    effective_masks,
     from_target_config,
     load_selection,
     override_actions,
@@ -24,6 +25,7 @@ from screen_watch.persistence.selection import (
     plan_rename,
     rename_selection,
     resolve_actions,
+    set_masks,
     set_override_actions,
     set_override_text_watch,
     to_target_config,
@@ -724,3 +726,86 @@ def test_build_target_rejects_profile_text_watch_outside_advanced():
     with pytest.raises(ConfigError) as excinfo:
         build_target(selection, profile, name="x")
     assert excinfo.value.code == "config.text_watch_needs_advanced"
+
+
+def test_dump_selection_is_atomic_and_leaves_no_temp_files(tmp_path):
+    path = tmp_path / "s.json"
+    dump_selection(path, Selection(window_handle=1, origin_at_selection=(0, 0), roi_relative=(1, 2, 3, 4)))
+    assert load_selection(path).window_handle == 1
+    assert list(tmp_path.glob("*.tmp")) == []
+
+
+def test_dump_selection_failure_keeps_previous_content(tmp_path, monkeypatch):
+    import os
+
+    path = tmp_path / "s.json"
+    path.write_text("original", encoding="utf-8")
+
+    def boom(*_args, **_kwargs):
+        raise OSError("disco cheio")
+
+    monkeypatch.setattr(os, "replace", boom)
+    with pytest.raises(OSError):
+        dump_selection(path, Selection(window_handle=1, origin_at_selection=(0, 0), roi_relative=(1, 2, 3, 4)))
+    assert path.read_text(encoding="utf-8") == "original"
+    assert list(tmp_path.glob("*.tmp")) == []
+
+
+def test_effective_masks_prefers_override():
+    selection = Selection(
+        window_handle=1,
+        origin_at_selection=(0, 0),
+        roi_relative=(1, 2, 3, 4),
+        masks=((1, 1, 1, 1),),
+        overrides={"masks": [[2, 2, 2, 2]]},
+    )
+    assert effective_masks(selection) == ((2, 2, 2, 2),)
+
+
+def test_effective_masks_falls_back_to_selection():
+    selection = Selection(
+        window_handle=1,
+        origin_at_selection=(0, 0),
+        roi_relative=(1, 2, 3, 4),
+        masks=((1, 1, 1, 1),),
+    )
+    assert effective_masks(selection) == ((1, 1, 1, 1),)
+
+
+def test_set_masks_updates_existing_override_and_keeps_other_keys():
+    selection = Selection(
+        window_handle=1,
+        origin_at_selection=(0, 0),
+        roi_relative=(1, 2, 3, 4),
+        masks=((9, 9, 9, 9),),
+        overrides={"masks": [[1, 1, 1, 1]], "rearm": False},
+    )
+    updated = set_masks(selection, ((2, 2, 3, 3),))
+    assert updated.overrides == {"masks": [[2, 2, 3, 3]], "rearm": False}
+    assert updated.masks == ((9, 9, 9, 9),)
+
+
+def test_set_masks_updates_selection_field_when_not_empty():
+    selection = Selection(
+        window_handle=1,
+        origin_at_selection=(0, 0),
+        roi_relative=(1, 2, 3, 4),
+        masks=((1, 1, 1, 1),),
+    )
+    updated = set_masks(selection, ((4, 4, 5, 5),))
+    assert updated.masks == ((4, 4, 5, 5),)
+    assert updated.overrides is None
+
+
+def test_set_masks_creates_override_when_no_field_exists():
+    selection = Selection(window_handle=1, origin_at_selection=(0, 0), roi_relative=(1, 2, 3, 4))
+    updated = set_masks(selection, ((3, 3, 3, 3),))
+    assert updated.masks == ()
+    assert updated.overrides == {"masks": [[3, 3, 3, 3]]}
+
+
+def test_set_masks_empty_without_existing_field_is_noop():
+    selection = Selection(window_handle=1, origin_at_selection=(0, 0), roi_relative=(1, 2, 3, 4))
+    updated = set_masks(selection, ())
+    assert updated == selection
+    assert updated.overrides is None

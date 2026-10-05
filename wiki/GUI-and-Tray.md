@@ -90,6 +90,30 @@ Details in [Evidence](Evidence.md).
   takes clicks/focus and auto-closes — so it can be used **while monitoring** to confirm what is
   being watched. The button lives in the **Selections** row.
 
+## Mask editor
+
+The **Edit masks…** button (Selections row) opens a transparent overlay per monitor over the target
+window: the ROI border and the current masks are drawn; **left-drag adds** a mask, **right-click
+removes** the mask under the cursor, **Enter saves** and **Esc cancels**. Masks are `[x, y, w, h]`
+rectangles relative to the ROI (physical pixels), so they follow the window. The editor is **blocked
+while the session runs** and saves the selection JSON atomically where the effective masks live:
+`overrides.masks` if the key already exists, otherwise `masks`, otherwise it creates `overrides.masks`
+(which has precedence). Typical masks: clock, spinner, cursor.
+
+## Preview
+
+While the session runs, the **Monitoring** group shows two downsampled thumbnails: the **baseline**
+and the **latest captured frame**. They are copies made off the capture loop (the loop's image buffer
+is never handed to Qt) and clear when the session stops; nothing is recorded.
+
+## Calibration
+
+The **Calibration…** button opens a live chart of the **score** and the **threshold** for **every**
+comparison of the running session (not only the changes), with dots colored by severity. **Export
+CSV…** saves the samples (timestamp, strategy, score, threshold, severity) for spreadsheet analysis
+and **Clear** empties the view. It complements the CLI `compare-modes`. Thresholds live in the
+profile `defaults.compare_options` — see [Configuration](Configuration.md).
+
 ## Actions editor
 
 The **New action…**, **Edit…** and **Remove Action** buttons create/edit actions written to

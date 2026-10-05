@@ -91,6 +91,30 @@ Detalhes em [Evidências](Evidencias.md).
   cliques/foco e fecha sozinho — por isso pode ser usado **com o monitoramento rodando** para
   conferir o que está sendo vigiado. O botão fica na fileira das **Seleções**.
 
+## Editor de máscaras
+
+O botão **Editar máscaras…** (fileira das Seleções) abre um overlay transparente por monitor sobre a
+janela alvo: a borda da ROI e as máscaras atuais são desenhadas; **arrastar com o botão esquerdo
+adiciona**, **clique direito remove** a máscara sob o cursor, **Enter salva** e **Esc cancela**.
+Máscaras são retângulos `[x, y, w, h]` relativos à ROI (pixels físicos), então acompanham a janela.
+O editor fica **bloqueado com a sessão rodando** e grava o JSON da seleção de forma atômica onde as
+máscaras efetivas vivem: `overrides.masks` se a chave já existe, senão `masks`, senão cria
+`overrides.masks` (que tem precedência). Máscaras típicas: relógio, spinner, cursor.
+
+## Preview
+
+Enquanto a sessão roda, o grupo **Monitoramento** mostra duas miniaturas reduzidas: o **baseline** e
+o **último frame capturado**. São cópias feitas fora do loop de captura (o buffer de imagem do loop
+nunca vai para o Qt) e somem quando a sessão para; nada é gravado.
+
+## Calibração
+
+O botão **Calibração…** abre um gráfico ao vivo do **score** e do **limite** de **cada** comparação
+da sessão (não só as mudanças), com pontos coloridos por severidade. **Exportar CSV…** salva as
+amostras (timestamp, modo, score, limite, severidade) para análise em planilha e **Limpar** esvazia a
+visão. Complementa o `compare-modes` do CLI. Os limites ficam em `defaults.compare_options` do perfil
+— veja [Configuração](Configuracao.md).
+
 ## Editor de ações
 
 Os botões **Nova ação…**, **Editar…** e **Remover Ação** criam/editam ações gravadas em

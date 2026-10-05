@@ -4,7 +4,7 @@
 
 > **Purpose of this document**: to serve as the **single source of truth for the design** so that
 > another AI (or developer) can continue the project without having to reconstruct decisions, and to
-> record **what is implemented** (reference: v0.7.1). Every decision recorded here was made
+> record **what is implemented** (reference: v0.8.0). Every decision recorded here was made
 > deliberately; where there are alternatives, they are listed as "rejected" with the reason.
 >
 > **Maintenance rule**: do not replace a recorded decision with a "more modern" alternative
@@ -56,7 +56,7 @@ alert the user when that panel undergoes a visual change, without requiring the 
 looking at the screen. Natural extension: react to the change with a simple action (e.g., click
 "Refresh") when that is explicitly armed.
 
-### 1.4 Implementation status (v0.7.1)
+### 1.4 Implementation status (v0.8.0)
 
 Implemented and covered by tests: platform boundary, capture/anchoring (Model B), the three
 comparison modes, pipeline with short-circuit (`advanced` gated by phash and bypassed by
@@ -74,6 +74,13 @@ ROI), **double-click to re-edit the region / Enter to start-stop**, the **2×2 g
 Status+Log footer with the buttons on the right), the **bundled default sound `alert.mp3`** (resolver
 order `app_home()/sounds` → `assets/sounds` → CWD) and the **sound-choice popup** that points to the
 YAML — packaging (PyInstaller; Inno Setup on Windows; `.deb` on Linux) and tag-based release pipeline.
+
+**v0.8.0 additions**: visual **mask editor** (draw/remove masks in the overlay, atomic selection JSON
+write, `overrides.masks` precedence, blocked while running), **sound picker writes `file:` into the
+active profile's YAML** (atomic + `.bak`, config v1 refused), **frame preview** (baseline + latest,
+downsampled thumbnails), **alert history** over `logs/alerts.jsonl` (date/severity/strategy filters,
+best-effort evidence print) and **live calibration** (score vs threshold, CSV export); CI now runs
+Python 3.11/3.12/3.13 with a coverage artifact and the wiki has a manual publication runbook.
 
 Pending **manual validation** items (not automatable in CI):
 
@@ -213,7 +220,8 @@ Each item below is a closed decision. Format: **Decision → Reason → Rejected
   correctly resolved, `CompositionMode_Clear` available for the selection "hole".
 - **Implementation details**:
   - **Layout**: the window follows the `UI.txt` mockup (upper panel in a **2×2 grid**: on the left the
-    **Selections** group — New Target/Remove/Reload/**Highlight selection** button row, legend, list and
+    **Selections** group — New Target/Remove/Reload/**Highlight selection**/**Edit masks…** button row,
+    legend, list and
     the **Selection name** field (`name` + Rename) — and the **Session actions** group — checklist,
     counter and the New action…/Edit…/Remove Action/Run action row; on the right **Monitoring** — a
     two-column grid Start/Language, Stop/Re-arm baseline, Mode/Profile, Arm actions/Disarm actions,
@@ -222,9 +230,11 @@ Each item below is a closed decision. Format: **Decision → Reason → Rejected
     in the footer, in a `QSplitter`, the **Status** group with Status/Last/**Log** and the right column
     with **Captures/Test alert…/Open YAML**). Step editing with
     Move Up/Move Down/drag&drop/Edit/Duplicate.
-  - **Sound popup**: after choosing a sound, the GUI shows a modal hint to paste the `file:` snippet
-    into the `type: "sound"` alert of `config.yaml` (it mentions the active profile), with the buttons
-    **Copy path and open YAML** (default), **Open YAML only** and **Close** (`dialog.sound_*`).
+  - **Sound picker (v0.8.0)**: after choosing a sound, the GUI **asks for confirmation and writes**
+    `file:` into the active profile's `sound` alert in `config.yaml` (atomic + `.bak`, §11.2/§12.1);
+    the dialog keeps **Copy path and open YAML**/**Open YAML only**/**Close** as secondary actions,
+    warns when the selection overrides `alerts`, and shows a migrate message for config v1 instead of
+    writing.
   - **Selection interactions**: **double-click re-edits the region** (overlay again, same window,
     preserving `name`/`mode`/`overrides` and clearing `masks`); **Enter starts/stops** the session
     (`QShortcut` with `WidgetShortcut`; `itemActivated` is not used because it also fires on the
@@ -234,6 +244,19 @@ Each item below is a closed decision. Format: **Decision → Reason → Rejected
     dimming **only outside** the ROI (`overlay_geometry.dim_rects`) with a 2 px border drawn just
     outside the hole; auto-closes after 2 s. Because the ROI pixels are never painted, it can run
     while the session monitors (`gui/highlight.py`).
+  - **Mask editor ("Edit masks…", v0.8.0)**: modal per-monitor overlay (same visual pattern as the
+    selection overlay) that shows the ROI border and the effective masks; left-drag adds a mask,
+    right-click removes the mask under the cursor, Enter saves and Esc cancels. It is blocked while a
+    session runs and writes the selection JSON atomically (§8.3, §12.3).
+  - **Preview, history and calibration (v0.8.0)**: the Monitoring area shows a **Preview** with the
+    latest captured frame and the baseline; only downsampled thumbnails cross the thread boundary —
+    the controller keeps two bounded arrays under a lock and the GUI builds/copies the `QImage` on
+    the GUI thread (the loop thread never hands its `numpy` array to a widget). An **Alert history**
+    table reads `logs/alerts.jsonl` (tolerant to invalid lines) with date/severity/strategy filters
+    and a best-effort "open print" (nearest `*_change.png` within ±2 s, else the captures folder).
+    A **Calibration** widget plots `score` vs `threshold` from a bounded per-session ring buffer fed
+    by **every** comparison (not only changed frames) with CSV export; no extra dependency (custom
+    `QPainter`).
   - **Tray**: `pystray` (`gui/tray.py`) with show/hide, start/stop, arm/disarm, profile
     and quit. The GUI receives events through a **queue** consumed by `QTimer` (`gui/controller.py`);
     tray/hotkey callbacks never call Qt from inside the listener thread.
@@ -671,8 +694,18 @@ def apply_mask(rgb: np.ndarray, masks: list[tuple[int, int, int, int]]) -> np.nd
 
 ### 8.3 Typically masked regions
 
-Cursor, loading spinner, clock, network indicator, anything that blinks. The overlay does not yet
-draw masks (out of the MVP); edit `masks` in the YAML/selection JSON.
+Cursor, loading spinner, clock, network indicator, anything that blinks.
+
+**Visual mask editor (v0.8.0)**: the GUI has an **Edit masks…** button (Selections group) that opens a
+transparent overlay per monitor over the target window. Drag with the left button **adds** a mask;
+right-click over an existing mask **removes** it; **Enter confirms** (writes the selection JSON) and
+**Esc cancels** (no write). Masks stay ROI-relative physical pixels, so they survive moving the
+window. The editor is **blocked while a session is running** (same rule as rename) because the ROI is
+being measured; unlike Highlight (pitfall 23), this overlay is modal and may paint over the ROI
+precisely because monitoring is stopped. It writes where the effective masks currently live (§12.3)
+and the write is atomic (§12.4). The geometry (ROI in screen-local logical space, drag → mask, clamp,
+hit-test) lives in the pure module `gui/mask_editor_geometry.py`; the Qt overlay is
+`gui/mask_overlay.py::run_mask_editor`.
 
 ---
 
@@ -1011,6 +1044,14 @@ class Notifier(Protocol):
 - Optional `simpleaudio` extra (`pip install -e ".[sound]"`); it does **not** go into the installers
   (no reliable wheel for Python 3.13) and is only tried for WAV.
 - **Do not use** `playsound` (abandoned).
+- **Sound picker writes back to the YAML (v0.8.0)**: after choosing a file, the GUI asks for
+  confirmation and writes `file:` into the first alert with `type: sound` of the **active profile**
+  via `config/loader.py::set_profile_sound_file`, creating the alert with the default shape when it
+  is missing. `save_config` is atomic and keeps `config.yaml.bak`, so a write failure leaves the
+  original file intact. Config v1 is refused (`config.v1_not_editable`) with a message pointing to
+  `migrate-config`. When the selected target has `overrides.alerts`, that override replaces the
+  profile alerts, so the GUI warns (`dialog.sound_override_warning`) that the sound will not apply
+  to it.
 
 **Popup (`popup.py`)**:
 - Library: `plyer.notification`.
@@ -1028,7 +1069,10 @@ class Notifier(Protocol):
 
 **Log (`log.py`)**:
 - `JsonlNotifier`: one JSON line per firing in `app-data/logs/alerts.jsonl` (or the path
-  configured in `path`).
+  configured in `path`). Fields: `ts`, `strategy`, `changed`, `score`, `threshold`, `severity`,
+  `window_handle`, `absolute_rect`, `sequence`, `detail`. The record has **no channel/target/evidence
+  path**, so the v0.8.0 history filters date/severity/strategy and locates the print best-effort
+  (nearest `*_change.png` within ±2 s — `alerts/history.py`).
 
 **Webhook / HTTP POST (`http.py`)**:
 - `post_json` does `POST`/`PUT`/`PATCH` JSON via `httpx`, redirects **not** followed, success = 2xx
@@ -1237,6 +1281,9 @@ evidence: { enabled: false, dir: null, keep_per_target: 50, max_total_mb: 200,
   use a nested **`options:`** block. An unknown `type` is `ConfigError` (`config.alert_unknown_type`).
 - Every alert has an optional **`id`** (default `type`; `type#n` when repeated) used as the **cooldown
   key** and for the send test. `payload` XOR `payload_raw`; unknown `${...}` → `ConfigError`.
+- The GUI sound picker edits the active profile's `sound` alert **on disk** through
+  `set_profile_sound_file` + `save_config` (atomic, `.bak`, comments not preserved — §12.4); a v1
+  config is refused with `config.v1_not_editable`.
 - `version` accepts 1 or 2 (any other value is `ConfigError`); v2 **requires** `profiles`; a
   nonexistent `profile` is `ConfigError` (`config.profile_unknown`).
 - `version` absent with `targets:` is the legacy v1: it loads for one version, with a warning, and is
@@ -1296,6 +1343,13 @@ the old file name. Renaming is blocked while a session runs.
 `window_title_hint`; `masks` (both `selection.masks` and `overrides.masks`) are **cleared** because
 they are relative to the old ROI.
 
+**Mask editor (GUI, v0.8.0)**: the editor loads the **effective** masks (`overrides.masks` when the
+key exists — it has precedence — otherwise `selection.masks`) and writes back to the **same place**:
+existing `overrides.masks` is updated, else non-empty `selection.masks` is updated, else
+`overrides.masks` is created (target-specific, higher precedence). It never migrates or clears the
+other field silently, and saving with the same empty masks is a no-op when neither field had content.
+Saving uses the atomic `dump_selection` (§12.4).
+
 ### 12.4 State, app-data and writing
 
 `platform/paths.py` centralizes `app_home()`, `config_path()`, `selections_dir()`, `logs_dir()`,
@@ -1311,7 +1365,8 @@ updated on a successful `run`/GUI start (the `action_selection` and `evidence_en
 optional and backward compatible).
 
 The YAML is rewritten atomically (temp + `os.replace`) with a `config.yaml.bak` backup **without
-preserving comments**; `state.json` is atomic, without backup. `migrate-config` reloads from disk
+preserving comments**; `state.json` is atomic, without backup; the selection JSON (`dump_selection`)
+is also atomic (temp + `os.replace`), without backup. `migrate-config` reloads from disk
 before rewriting.
 
 The effective prints folder comes from `evidence/recorder.py::captures_dir(options)` (`evidence.dir`
@@ -1517,7 +1572,7 @@ actions/dispatch.ActionDispatcher.on_result(result, frame) → rebaseline: bool
 config/loader.load_config(path) → AppConfig
 persistence/selection.build_target(selection, profile, name=..., mode=..., schedule=...,
                                    action_filter=...) → TargetConfig
-app.MonitorSession(target, recorder=..., on_action=...) → sink(frame)
+app.MonitorSession(target, recorder=..., on_action=..., on_frame=..., on_compare=...) → sink(frame)
 app.build_loop(target, session, on_event=..., on_error=...) → MonitorLoop
 scheduler/loop.MonitorLoop.start()/.stop()/.join()
 scheduler/schedule.is_open(options, now=...) → bool; gate(options) → Callable | None
@@ -1539,6 +1594,11 @@ MonitorLoop._tick
       → ActionDispatcher.on_result     (rehearsal/armed; scheduler; limits; audit)
       → baseline re-arm (outcome/rebaseline) + change evidence
 ```
+
+`MonitorSession` optional callbacks (v0.8.0): `on_frame(frame, is_baseline)` runs on every tick
+(before the comparison) and `on_compare(result)` runs on every comparison, including
+`changed == False`; both default to `None`. The GUI controller uses them for the preview thumbnails
+and the calibration ring buffer (`gui/controller.py`), never touching Qt from the loop thread.
 
 ---
 

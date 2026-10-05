@@ -192,6 +192,26 @@ git push origin v0.7.1
 O `release.yml` builda Windows (`windows-latest` + `choco install innosetup -y`) e Linux
 (`ubuntu-22.04`), gera `SHA256SUMS.txt` e cria o GitHub Release com `gh release create`.
 
+### Publicação da wiki (runbook manual)
+
+A GitHub Wiki é um **repositório git separado** e **não** é atualizada pelo CI; a pasta `wiki/` do
+repo é apenas um espelho. Depois de alterar páginas da wiki, publique manualmente:
+
+```powershell
+git clone https://github.com/ph7ti/Screen-Diff-Watcher.wiki.git
+# copie o conteúdo das páginas para o clone preservando o estilo de links remoto:
+# links internos da wiki sem o sufixo .md; links para doc/README apontando para
+# https://github.com/ph7ti/Screen-Diff-Watcher/blob/main/...
+git -C Screen-Diff-Watcher.wiki add -A
+git -C Screen-Diff-Watcher.wiki commit -m "Sync wiki with vX.Y.Z"
+git -C Screen-Diff-Watcher.wiki push origin master
+```
+
+A publicação automática (workflow com o segredo `WIKI_PUSH_TOKEN`) fica adiada até o segredo existir.
+O CI (`ci.yml`) roda, em `ubuntu-latest`/`windows-latest` × Python 3.11/3.12/3.13, `ruff`,
+`validate-i18n` e `pytest` com `--cov=screen_watch`; o artefato `coverage-xml` vem da célula
+Linux/3.13.
+
 ---
 
 ## 9. Validação (definição de pronto)

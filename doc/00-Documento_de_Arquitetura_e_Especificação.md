@@ -3,7 +3,7 @@
 
 > **Propósito deste documento**: servir como **fonte única de verdade do design** para que outra IA
 > (ou desenvolvedor) continue o projeto sem precisar reconstruir decisões, e registrar **o que está
-> implementado** (referência: v0.7.1). Toda decisão aqui registrada foi tomada deliberadamente; onde
+> implementado** (referência: v0.8.0). Toda decisão aqui registrada foi tomada deliberadamente; onde
 > houver alternativas, elas estão listadas como "rejeitadas" com o motivo.
 >
 > **Regra de manutenção**: não substitua uma decisão registrada por uma alternativa "mais moderna"
@@ -55,7 +55,7 @@ alertar o usuário quando aquele painel sofrer alteração visual, sem exigir qu
 olhando para a tela. Extensão natural: reagir à mudança com uma ação simples (ex.: clicar em
 "Atualizar") quando isso for explicitamente armado.
 
-### 1.4 Estado da implementação (v0.7.1)
+### 1.4 Estado da implementação (v0.8.0)
 
 Implementado e coberto por testes: fronteira de plataforma, captura/ancoragem (Modelo B), os três
 modos de comparação, pipeline com curto-circuito (`advanced` com gate de phash e bypass pelo
@@ -74,6 +74,14 @@ Monitoramento e Detecção e alertas à direita; Status+Log no rodapé com os bo
 default empacotado `alert.mp3`** (resolver em `app_home()/sounds` → `assets/sounds` → CWD) e o
 **popup ao escolher o som** que orienta a colar o caminho no YAML — empacotamento (PyInstaller;
 Inno Setup no Windows; `.deb` no Linux) e pipeline de release por tag.
+
+**Adições da v0.8.0**: **editor visual de máscaras** (desenhar/remover no overlay, JSON de seleção
+atômico, precedência de `overrides.masks`, bloqueado com sessão rodando), **seletor de som gravando
+`file:` no YAML do perfil ativo** (atômico + `.bak`, config v1 recusada), **preview do frame**
+(baseline + último, miniaturas reduzidas), **histórico de alertas** sobre `logs/alerts.jsonl`
+(filtros de data/severidade/modo, print de evidência best-effort) e **calibração ao vivo**
+(score × limite, export CSV); CI agora em Python 3.11/3.12/3.13 com artefato de cobertura e a wiki
+com runbook manual de publicação.
 
 Pendências de **validação manual** (não automatizável no CI):
 
@@ -213,7 +221,8 @@ Cada item abaixo é uma decisão fechada. Formato: **Decisão → Motivo → Alt
   resolvida corretamente, `CompositionMode_Clear` disponível para o "buraco" da seleção.
 - **Detalhes da implementação**:
   - **Layout**: a janela segue o mockup `UI.txt` (painel superior num **grid 2×2**: à esquerda os
-    grupos **Seleções** — fileira de botões Novo Target/Remover/Recarregar/**Ver local da seleção**,
+    grupos **Seleções** — fileira de botões Novo Target/Remover/Recarregar/**Ver local da seleção**
+    / **Editar máscaras…**,
     legenda, lista e a linha **Nome da seleção** (`name` + Renomear) — e **Ações da sessão** — checklist,
     contador e a fileira Nova ação…/Editar…/Remover Ação/Executar ação; à direita **Monitoramento** —
     grid de duas colunas Iniciar/Idioma, Parar/Re-armar baseline, Modo/Perfil, Armar Ações/Desarmar
@@ -222,9 +231,11 @@ Cada item abaixo é uma decisão fechada. Formato: **Decisão → Motivo → Alt
     Copiar caminho**; no rodapé, num `QSplitter`, o grupo **Status** com Status/Último/**Log** e a
     coluna direita com **Prints/Testar alerta…/Abrir YAML**). Edição de passos com
     Subir/Descer/drag&drop/Editar/Duplicar.
-  - **Popup do som**: ao escolher um som, a GUI mostra um aviso (modal) orientando a colar o trecho
-    `file:` no alerta `type: "sound"` do `config.yaml` (cita o perfil ativo), com os botões **Copiar
-    caminho e abrir YAML** (padrão), **Só abrir o YAML** e **Fechar** (`dialog.sound_*`).
+  - **Seletor de som (v0.8.0)**: ao escolher um som, a GUI **pede confirmação e grava** o `file:` no
+    alerta `sound` do perfil ativo no `config.yaml` (atômico + `.bak`, §11.2/§12.1); o diálogo mantém
+    **Copiar caminho e abrir YAML**/**Só abrir o YAML**/**Fechar** como ações secundárias, avisa
+    quando a seleção tem `alerts` em `overrides` e mostra mensagem de migração para config v1 em vez
+    de gravar.
   - **Interações da seleção**: **duplo clique reedita a região** (overlay de novo, mesma janela,
     preservando `name`/`mode`/`overrides` e limpando `masks`); **Enter inicia/para** a sessão
     (`QShortcut` com `WidgetShortcut`; `itemActivated` não é usado porque também dispara no duplo
@@ -234,6 +245,19 @@ Cada item abaixo é uma decisão fechada. Formato: **Decisão → Motivo → Alt
     modal), escurecendo **apenas fora** da ROI (`overlay_geometry.dim_rects`) com borda de 2 px
     desenhada logo fora do buraco; fecha sozinha em 2 s. Como os pixels da ROI nunca são pintados,
     pode rodar com a sessão monitorando (`gui/highlight.py`).
+  - **Editor de máscaras ("Editar máscaras…", v0.8.0)**: overlay modal por monitor (mesmo padrão
+    visual do overlay de seleção) que mostra a borda da ROI e as máscaras efetivas; arrastar com o
+    botão esquerdo adiciona, clique direito remove a máscara sob o cursor, Enter salva e Esc cancela.
+    Fica bloqueado com a sessão rodando e grava o JSON da seleção de forma atômica (§8.3, §12.3).
+  - **Preview, histórico e calibração (v0.8.0)**: a área Monitoramento mostra um **Preview** com o
+    último frame capturado e o baseline; só miniaturas reduzidas cruzam a fronteira de thread — o
+    controller guarda dois arrays limitados sob lock e a GUI monta/copia o `QImage` na própria thread
+    (a thread do loop nunca entrega seu array `numpy` a um widget). Uma tabela de **histórico de
+    alertas** lê `logs/alerts.jsonl` (tolerante a linhas inválidas) com filtros de
+    data/severidade/modo e "abrir print" best-effort (o `*_change.png` mais próximo em ±2 s, senão a
+    pasta de capturas). Um widget de **calibração** plota `score` × `threshold` de um ring buffer
+    por sessão limitado, alimentado por **todas** as comparações (não só as mudanças), com export
+    CSV; sem dependência nova (`QPainter` custom).
   - **Tray**: `pystray` (`gui/tray.py`) com mostrar/ocultar, iniciar/parar, armar/desarmar, perfil
     e sair. A GUI recebe eventos por **fila** consumida por `QTimer` (`gui/controller.py`); callbacks
     de tray/hotkey nunca chamam Qt de dentro da thread do listener.
@@ -666,8 +690,18 @@ def apply_mask(rgb: np.ndarray, masks: list[tuple[int, int, int, int]]) -> np.nd
 
 ### 8.3 Regiões tipicamente mascaradas
 
-Cursor, spinner de loading, relógio, indicador de rede, qualquer coisa que pisque. O overlay ainda
-não desenha máscaras (fora do MVP); edite `masks` no YAML/JSON de seleção.
+Cursor, spinner de loading, relógio, indicador de rede, qualquer coisa que pisque.
+
+**Editor visual de máscaras (v0.8.0)**: a GUI tem o botão **Editar máscaras…** (grupo Seleções) que
+abre um overlay transparente por monitor sobre a janela alvo. Arrastar com o botão esquerdo
+**adiciona** uma máscara; clique direito sobre uma máscara existente **remove**; **Enter confirma**
+(grava o JSON da seleção) e **Esc cancela** (sem gravar). As máscaras continuam em pixels físicos
+relativos à ROI, então acompanham a janela. O editor é **bloqueado com a sessão rodando** (mesma regra
+do rename) porque a ROI está sendo medida; diferente do Highlight (pitfall 23), este overlay é modal e
+pode pintar sobre a ROI justamente porque o monitoramento está parado. Ele grava onde as máscaras
+efetivas vivem (§12.3) e a escrita é atômica (§12.4). A geometria (ROI em lógico local da tela,
+drag → máscara, clamp, hit-test) vive no módulo puro `gui/mask_editor_geometry.py`; o overlay Qt é
+`gui/mask_overlay.py::run_mask_editor`.
 
 ---
 
@@ -1006,6 +1040,13 @@ class Notifier(Protocol):
 - Extra opcional `simpleaudio` (`pip install -e ".[sound]"`); **não** entra nos instaladores (sem
   wheel confiável para Python 3.13) e só é tentado para WAV.
 - **Não usar** `playsound` (abandonado).
+- **Seletor de som grava no YAML (v0.8.0)**: após escolher um arquivo, a GUI pede confirmação e grava
+  `file:` no primeiro alerta `type: sound` do **perfil ativo** via
+  `config/loader.py::set_profile_sound_file`, criando o alerta com o shape default quando ele não
+  existe. O `save_config` é atômico e mantém `config.yaml.bak`, então falha de escrita deixa o
+  original intacto. Config v1 é recusada (`config.v1_not_editable`) com mensagem apontando o
+  `migrate-config`. Quando a seleção atual tem `overrides.alerts`, esse override substitui os alertas
+  do perfil, então a GUI avisa (`dialog.sound_override_warning`) que o som não valerá para ela.
 
 **Popup (`popup.py`)**:
 - Biblioteca: `plyer.notification`.
@@ -1023,7 +1064,10 @@ class Notifier(Protocol):
 
 **Log (`log.py`)**:
 - `JsonlNotifier`: uma linha JSON por disparo em `app-data/logs/alerts.jsonl` (ou caminho
-  configurado em `path`).
+  configurado em `path`). Campos: `ts`, `strategy`, `changed`, `score`, `threshold`, `severity`,
+  `window_handle`, `absolute_rect`, `sequence`, `detail`. O registro **não tem** canal/alvo/caminho
+  de evidência, então o histórico da v0.8.0 filtra data/severidade/modo e localiza o print
+  best-effort (o `*_change.png` mais próximo em ±2 s — `alerts/history.py`).
 
 **Webhook / HTTP POST (`http.py`)**:
 - `post_json` faz `POST`/`PUT`/`PATCH` JSON via `httpx`, redirects **não** seguidos, sucesso = 2xx
@@ -1051,6 +1095,9 @@ class Notifier(Protocol):
 - Cada alerta tem `id` opcional (default `type`; `type#n` quando repetido no mesmo perfil, validado).
   O `build_notifier` atribui `notifier.uid = id or type`; o `AlertChain` usa
   `getattr(n, "uid", n.name)` como chave, então dois webhooks não compartilham o cooldown.
+- O seletor de som da GUI edita o alerta `sound` do perfil ativo **em disco** via
+  `set_profile_sound_file` + `save_config` (atômico, `.bak`, comentários não preservados — §12.4);
+  config v1 é recusada com `config.v1_not_editable`.
 
 **Regra**: tipo desconhecido é **erro de config** (`config.alert_unknown_type`) — o `build_notifier`
 mantém um `log.warning` + `None` defensivo.
@@ -1292,6 +1339,13 @@ antigo. Renomear é bloqueado com sessão rodando.
 `window_title_hint`; as `masks` (tanto `selection.masks` quanto `overrides.masks`) são **limpas**
 por serem relativas à ROI antiga.
 
+**Editor de máscaras (GUI, v0.8.0)**: o editor carrega as máscaras **efetivas** (`overrides.masks`
+quando a chave existe — tem precedência — senão `selection.masks`) e grava no **mesmo lugar**:
+`overrides.masks` existente é atualizado, senão `selection.masks` não vazio, senão cria
+`overrides.masks` (específico do alvo, precedência maior). Nunca migra nem limpa o outro campo em
+silêncio, e salvar a mesma lista vazia quando nenhum campo tinha conteúdo é no-op. A gravação usa o
+`dump_selection` atômico (§12.4).
+
 ### 12.4 Estado, app-data e gravação
 
 `platform/paths.py` centraliza `app_home()`, `config_path()`, `selections_dir()`, `logs_dir()`,
@@ -1307,7 +1361,8 @@ atualizado ao iniciar `run`/GUI com sucesso (as chaves `action_selection` e `evi
 opcionais e retrocompatíveis).
 
 O YAML é regravado de forma atômica (temp + `os.replace`) com backup `config.yaml.bak` **sem
-preservar comentários**; `state.json` é atômico, sem backup. O `migrate-config` recarrega do disco
+preservar comentários**; `state.json` é atômico, sem backup; o JSON de seleção (`dump_selection`)
+também é atômico (temp + `os.replace`), sem backup. O `migrate-config` recarrega do disco
 antes de regravar.
 
 A pasta de prints efetiva vem de `evidence/recorder.py::captures_dir(options)` (`evidence.dir` quando
@@ -1511,7 +1566,7 @@ actions/dispatch.ActionDispatcher.on_result(result, frame) → rebaseline: bool
 config/loader.load_config(path) → AppConfig
 persistence/selection.build_target(selection, profile, name=..., mode=..., schedule=...,
                                    action_filter=...) → TargetConfig
-app.MonitorSession(target, recorder=..., on_action=...) → sink(frame)
+app.MonitorSession(target, recorder=..., on_action=..., on_frame=..., on_compare=...) → sink(frame)
 app.build_loop(target, session, on_event=..., on_error=...) → MonitorLoop
 scheduler/loop.MonitorLoop.start()/.stop()/.join()
 scheduler/schedule.is_open(options, now=...) → bool; gate(options) → Callable | None
@@ -1533,6 +1588,11 @@ MonitorLoop._tick
       → ActionDispatcher.on_result     (ensaio/armado; agendador; limites; auditoria)
       → re-arm do baseline (outcome/rebaseline) + evidência de mudança
 ```
+
+Callbacks opcionais do `MonitorSession` (v0.8.0): `on_frame(frame, is_baseline)` roda a cada tick
+(antes da comparação) e `on_compare(result)` roda a cada comparação, inclusive `changed == False`;
+ambos têm default `None`. O controller da GUI usa os dois para os thumbnails do preview e o ring
+buffer de calibração (`gui/controller.py`), sem nunca tocar em Qt a partir da thread do loop.
 
 ---
 

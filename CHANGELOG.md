@@ -3,6 +3,47 @@
 Todas as mudanças relevantes deste projeto. Formato inspirado em "Keep a Changelog";
 versionamento semântico. Versão: `screen_watch.__version__` (fonte única).
 
+## [0.8.0] — 2026-10-05
+
+Detalhes e exemplos: [`doc/releases/v0.8.0.md`](doc/releases/v0.8.0.md)
+([PT](doc/releases/v0.8.0.pt-BR.md)).
+
+### Adicionado
+
+- **Editor visual de máscaras**: o botão **Editar máscaras…** abre um overlay por monitor sobre a
+  janela alvo (arrastar adiciona, clique direito remove, Enter salva, Esc cancela). Grava onde as
+  máscaras efetivas vivem (`overrides.masks` > `masks`; cria `overrides.masks` quando não há
+  nenhuma), fica bloqueado com a sessão rodando e o JSON da seleção agora é gravado atomicamente.
+- **Som gravado direto no YAML**: depois de **Escolher…**, a GUI confirma e grava o `file:` no alerta
+  `sound` do perfil ativo (criado se faltar), com escrita atômica + `config.yaml.bak`; config v1 é
+  recusada com `config.v1_not_editable` e seleções com `overrides.alerts` recebem aviso de precedência.
+- **Preview do frame**: o grupo Monitoramento mostra baseline + último frame em miniaturas reduzidas
+  (≤240 px), sempre copiadas fora da thread do loop.
+- **Histórico de alertas**: o botão **Histórico…** lê `logs/alerts.jsonl` com filtros de data,
+  severidade mínima e modo, tolerante a linhas inválidas, com abertura best-effort do print
+  (`*_change.png` em ±2 s) e da pasta de prints.
+- **Calibração ao vivo**: gráfico score × limite de todas as comparações (ring buffer de 600
+  amostras), pontos por severidade e **Exportar CSV…**, sem dependência nova.
+- **Qualidade**: CI em Python 3.11/3.12/3.13 com cobertura como artefato `coverage-xml` (sem gate) e
+  runbook manual de publicação da wiki.
+
+### Mudado
+
+- O popup de ajuda do som virou **diálogo de confirmação**; copiar o trecho e abrir o YAML seguem
+  disponíveis como ações secundárias.
+- `MonitorSession` ganhou callbacks opcionais `on_frame`/`on_compare` (default `None`), sem mudar o
+  CLI/`run`.
+- `dump_selection` é atômico; a reedição de região continua limpando as máscaras.
+
+### Notas
+
+- Chaves i18n novas nos dois catálogos (`main.*`, `overlay_masks.*`, `history.*`, `calibration.empty`,
+  `dialog.masks_*`, `dialog.sound_*`, `dialog.calibration_*`, `error.config.v1_not_editable` e ajuda
+  `window.edit_masks/preview/alert_history/calibration`); `validate-i18n` verde.
+- Módulos puros novos: `gui/mask_editor_geometry.py`, `gui/preview_geometry.py`, `gui/calibration.py`,
+  `alerts/history.py`.
+- 621 testes unitários (45 novos); `ruff` e `validate-i18n` verdes.
+
 ## [0.7.1] — 2026-10-01
 
 Detalhes e exemplos: [`doc/releases/v0.7.1.md`](doc/releases/v0.7.1.md)

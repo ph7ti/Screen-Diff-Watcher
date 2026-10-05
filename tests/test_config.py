@@ -11,6 +11,7 @@ from screen_watch.config.loader import (
     migrate_config_dict,
     remove_target_from_config,
     save_config,
+    set_profile_sound_file,
 )
 
 
@@ -377,6 +378,97 @@ def test_remove_target_keeps_other_top_level_keys(tmp_path):
     raw = yaml.safe_load(path.read_text(encoding="utf-8"))
     assert raw["generation"] == 7
     assert raw["targets"] == []
+
+
+def test_set_profile_sound_file_updates_existing_alert(tmp_path):
+    path = tmp_path / "config.yaml"
+    raw = _v2_dict()
+    raw["profiles"]["default"]["alerts"] = [
+        {"type": "log"},
+        {"type": "sound", "file": "alert.mp3", "severity_min": 2},
+    ]
+    save_config(path, raw)
+
+    set_profile_sound_file(path, "default", "C:/sons/meu.mp3")
+
+    loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
+    sound = [
+        alert for alert in loaded["profiles"]["default"]["alerts"] if alert["type"] == "sound"
+    ]
+    assert len(sound) == 1
+    assert sound[0]["file"] == "C:/sons/meu.mp3"
+    assert sound[0]["severity_min"] == 2
+    assert path.with_name(path.name + ".bak").exists()
+
+
+def test_set_profile_sound_file_creates_alert_when_missing(tmp_path):
+    path = tmp_path / "config.yaml"
+    save_config(path, _v2_dict())
+
+    set_profile_sound_file(path, "default", "novo.mp3")
+
+    loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
+    alerts = loaded["profiles"]["default"]["alerts"]
+    sound = [alert for alert in alerts if alert["type"] == "sound"]
+    assert len(sound) == 1
+    assert sound[0] == {
+        "type": "sound",
+        "enabled": True,
+        "severity_min": 1,
+        "cooldown_s": 30,
+        "file": "novo.mp3",
+    }
+    assert [alert["type"] for alert in alerts] == ["log", "sound"]
+
+
+def test_set_profile_sound_file_rejects_v1(tmp_path):
+    path = tmp_path / "config.yaml"
+    save_config(path, {"targets": []})
+
+    with pytest.raises(ConfigError) as excinfo:
+        set_profile_sound_file(path, "default", "x.mp3")
+
+    assert excinfo.value.code == "config.v1_not_editable"
+
+
+def test_set_profile_sound_file_rejects_unknown_profile(tmp_path):
+    path = tmp_path / "config.yaml"
+    save_config(path, _v2_dict())
+
+    with pytest.raises(ConfigError) as excinfo:
+        set_profile_sound_file(path, "outro", "x.mp3")
+
+    assert excinfo.value.code == "config.profile_unknown"
+
+
+def test_set_profile_sound_file_rejects_non_list_alerts(tmp_path):
+    path = tmp_path / "config.yaml"
+    raw = _v2_dict()
+    raw["profiles"]["default"]["alerts"] = "nope"
+    save_config(path, raw)
+
+    with pytest.raises(ConfigError) as excinfo:
+        set_profile_sound_file(path, "default", "x.mp3")
+
+    assert excinfo.value.code == "config.alerts_not_list"
+
+
+def test_set_profile_sound_file_rollback_keeps_original(tmp_path, monkeypatch):
+    import os
+
+    path = tmp_path / "config.yaml"
+    save_config(path, _v2_dict())
+    original = path.read_text(encoding="utf-8")
+
+    def boom(*_args, **_kwargs):
+        raise OSError("disco cheio")
+
+    monkeypatch.setattr(os, "replace", boom)
+    with pytest.raises(OSError):
+        set_profile_sound_file(path, "default", "x.mp3")
+
+    assert path.read_text(encoding="utf-8") == original
+    assert not list(tmp_path.glob("*.tmp"))
 
 
 def test_default_config_has_humanize_and_no_actions():

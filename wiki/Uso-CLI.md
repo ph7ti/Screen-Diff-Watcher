@@ -109,8 +109,9 @@ python -m screen_watch features --json
 ## Máscaras de regiões voláteis
 
 Máscaras são retângulos `[x, y, w, h]` **relativos à ROI**, pintados de preto antes da comparação —
-úteis para spinners/relógios que mudam sozinhos. O overlay ainda não desenha máscaras; edite o campo
-`masks` no YAML (perfil) ou no JSON da seleção (que sobrescreve o perfil).
+úteis para spinners/relógios que mudam sozinhos. A GUI desenha/remove com o botão **Editar máscaras…**
+(veja [Janela e tray](GUI-e-Tray.md)); sem a GUI, edite `masks` (ou `overrides.masks`, que tem
+precedência) no JSON da seleção — o perfil não tem máscaras.
 
 ## Calibração (Etapa D)
 

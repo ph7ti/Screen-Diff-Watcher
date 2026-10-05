@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QDialog,
     QFileDialog,
     QGridLayout,
     QGroupBox,
@@ -40,6 +41,7 @@ from screen_watch.errors import AppError, ConfigError, render_error
 from screen_watch.gui.controller import MonitorController, new_event_queue
 from screen_watch.gui.hover_help import attach_help
 from screen_watch.gui.labels import selection_label
+from screen_watch.gui.preview_widget import PreviewPanel
 from screen_watch.i18n import available_locales, current_language, locale_meta, tr
 
 POLL_MS = 200
@@ -89,6 +91,8 @@ class MainWindow(QMainWindow):
         # Selecao cujo texto do watch foi editado sem commit (guarda contra
         # `editingFinished` depois de trocar a selecao).
         self._watch_edit_stem: str | None = None
+        # (dialog, widget) da calibracao ao vivo, enquanto o dialogo estiver aberto.
+        self._calibration_dialog: tuple[QDialog, object] | None = None
 
         self._timer = QTimer(self)
         self._timer.setInterval(POLL_MS)
@@ -124,7 +128,15 @@ class MainWindow(QMainWindow):
         self.btn_reload = QPushButton(tr("main.btn_reload"))
         self.btn_show_roi = QPushButton(tr("main.btn_show_roi"))
         self.btn_show_roi.setEnabled(False)
-        for widget in (self.btn_new, self.btn_remove, self.btn_reload, self.btn_show_roi):
+        self.btn_masks = QPushButton(tr("main.btn_edit_masks"))
+        self.btn_masks.setEnabled(False)
+        for widget in (
+            self.btn_new,
+            self.btn_remove,
+            self.btn_reload,
+            self.btn_show_roi,
+            self.btn_masks,
+        ):
             selection_buttons.addWidget(widget)
         selection_buttons.addStretch(1)
         sel.addLayout(selection_buttons)
@@ -197,7 +209,10 @@ class MainWindow(QMainWindow):
         self.arming_label = QLabel("")
         self.arming_label.setWordWrap(True)
         mon.addWidget(self.arming_label, 6, 0, 1, 2)
-        mon.setRowStretch(7, 1)
+
+        self.preview = PreviewPanel()
+        mon.addWidget(self.preview, 7, 0, 1, 2)
+        mon.setRowStretch(8, 1)
         upper_layout.addWidget(monitoring, 0, 1)
 
         actions_group = QGroupBox(tr("main.actions_session"))
@@ -285,9 +300,17 @@ class MainWindow(QMainWindow):
 
         side_buttons = QVBoxLayout()
         self.btn_open_captures = QPushButton(tr("main.btn_captures"))
+        self.btn_history = QPushButton(tr("main.btn_alert_history"))
+        self.btn_calibration = QPushButton(tr("main.btn_calibration"))
         self.btn_test_alert = QPushButton(tr("main.btn_test_alert"))
         self.btn_open = QPushButton(tr("main.btn_open_yaml"))
-        for button in (self.btn_open_captures, self.btn_test_alert, self.btn_open):
+        for button in (
+            self.btn_open_captures,
+            self.btn_history,
+            self.btn_calibration,
+            self.btn_test_alert,
+            self.btn_open,
+        ):
             side_buttons.addWidget(button)
         side_buttons.addStretch(1)
 
@@ -320,6 +343,7 @@ class MainWindow(QMainWindow):
         self.btn_rearm.clicked.connect(self._rearm)
         self.btn_minimize.clicked.connect(self.hide)
         self.btn_show_roi.clicked.connect(self._show_roi)
+        self.btn_masks.clicked.connect(self._edit_masks)
         self.btn_rename.clicked.connect(self._rename_selection)
         self.selection_name.returnPressed.connect(self._rename_selection)
         self.btn_arm.clicked.connect(lambda: self._handle_action({"action": "arm"}))
@@ -333,6 +357,8 @@ class MainWindow(QMainWindow):
         self.btn_reload.clicked.connect(self._reload)
         self.btn_open.clicked.connect(self._open_yaml)
         self.btn_open_captures.clicked.connect(self._open_captures)
+        self.btn_history.clicked.connect(self._open_history)
+        self.btn_calibration.clicked.connect(self._open_calibration)
         self.btn_test_alert.clicked.connect(self._test_alert)
         self.chk_evidence.toggled.connect(self._toggle_evidence)
         self.btn_sound_choose.clicked.connect(self._choose_sound)
@@ -350,6 +376,7 @@ class MainWindow(QMainWindow):
         self._help(self.btn_rearm, "window.rearm")
         self._help(self.btn_minimize, "window.minimize")
         self._help(self.btn_show_roi, "window.show_roi")
+        self._help(self.btn_masks, "window.edit_masks")
         self._help(self.selection_name, "window.selection_name")
         self._help(self.btn_rename, "window.selection_name")
         self._help(self.mode_combo, "window.mode")
@@ -364,6 +391,8 @@ class MainWindow(QMainWindow):
         self._help(self.btn_reload, "window.reload")
         self._help(self.btn_open, "window.open_yaml")
         self._help(self.btn_open_captures, "window.captures")
+        self._help(self.btn_history, "window.alert_history")
+        self._help(self.btn_calibration, "window.calibration")
         self._help(self.btn_test_alert, "window.test_alert")
         self._help(self.chk_evidence, "window.evidence")
         self._help(self.action_list, "window.actions_list")
@@ -377,6 +406,7 @@ class MainWindow(QMainWindow):
         self._help(self.expect_combo, "window.text_watch_expect")
         self._help(self.case_check, "window.text_watch_case")
         self._help(self.accents_check, "window.text_watch_accents")
+        self._help(self.preview, "window.preview")
 
         self._update_action_status()
 
@@ -645,7 +675,9 @@ class MainWindow(QMainWindow):
 
     # -- regiao na tela ----------------------------------------------------
     def _update_show_roi_button(self) -> None:
-        self.btn_show_roi.setEnabled(self._selected() is not None)
+        enabled = self._selected() is not None
+        self.btn_show_roi.setEnabled(enabled)
+        self.btn_masks.setEnabled(enabled)
 
     def _show_roi(self) -> None:
         selected = self._selected()
@@ -753,6 +785,70 @@ class MainWindow(QMainWindow):
             item.setText(self._label_for("selection", value))
         self._append(f"region updated for {Path(value).stem}: {relative}")
         self._append(f"masks cleared (region changed): {Path(value).stem}")
+
+    def _edit_masks(self) -> None:
+        if self._controller.running:
+            QMessageBox.information(self, tr("main.title"), tr("dialog.masks_running"))
+            return
+        selected = self._selected()
+        if selected is None:
+            QMessageBox.information(self, tr("main.title"), tr("dialog.select_selection"))
+            return
+        _kind, value = selected
+        from screen_watch.persistence.selection import (
+            dump_selection,
+            effective_masks,
+            load_selection,
+            set_masks,
+        )
+        from screen_watch.platform.window import find_window_by_handle
+
+        try:
+            selection = load_selection(value)
+        except (ConfigError, OSError, ValueError) as exc:
+            QMessageBox.warning(
+                self, tr("main.title"), tr("dialog.load_failed", error=render_error(exc))
+            )
+            return
+        try:
+            info = find_window_by_handle(selection.window_handle)
+        except Exception:
+            info = None
+        if info is None or not info.exists or info.is_minimized:
+            QMessageBox.warning(
+                self, tr("main.title"), tr("dialog.masks_window_missing")
+            )
+            return
+
+        from screen_watch.gui.mask_overlay import run_mask_editor
+
+        try:
+            edited = run_mask_editor(
+                info.rect, selection.roi_relative, effective_masks(selection)
+            )
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                tr("main.title"),
+                tr("dialog.masks_failed", error=render_error(exc)),
+            )
+            return
+        if edited is None:
+            return  # cancelar o editor e um no-op
+        updated = set_masks(selection, edited)
+        try:
+            dump_selection(value, updated)
+        except OSError as exc:
+            QMessageBox.warning(
+                self,
+                tr("main.title"),
+                tr("dialog.masks_failed", error=render_error(exc)),
+            )
+            return
+        self._append(f"masks updated for {Path(value).stem}: {len(edited)}")
+        QMessageBox.information(
+            self, tr("main.title"), tr("dialog.masks_saved", count=len(edited))
+        )
 
     # -- acoes -------------------------------------------------------------
     def _item_changed(self, _current, _previous) -> None:
@@ -1128,28 +1224,69 @@ class MainWindow(QMainWindow):
         self.sound_path.setText(tr("main.sound_snippet", path=path))
         self.btn_sound_play.setEnabled(True)
         self.btn_sound_copy.setEnabled(True)
-        self._append(f"sound chosen for preview (not saved): {path}")
-        self._sound_yaml_help()
+        self._confirm_sound_write(path)
 
-    def _sound_yaml_help(self) -> None:
+    def _selection_overrides_alerts(self) -> bool:
+        selected = self._selected()
+        if selected is None:
+            return False
+        _kind, value = selected
+        from screen_watch.persistence.selection import load_selection
+
+        try:
+            selection = load_selection(value)
+        except Exception:
+            return False
+        overrides = selection.overrides
+        return isinstance(overrides, dict) and "alerts" in overrides
+
+    def _confirm_sound_write(self, path: str) -> None:
+        profile = self._profile or "default"
+        text = tr("dialog.sound_confirm", path=path, profile=profile)
+        if self._selection_overrides_alerts():
+            text = f"{text}\n\n{tr('dialog.sound_override_warning')}"
         box = QMessageBox(self)
         box.setWindowTitle(tr("dialog.sound_title"))
-        box.setText(tr("dialog.sound_help", profile=self._profile or "default"))
-        copy_open = box.addButton(
-            tr("dialog.sound_copy_open"), QMessageBox.ButtonRole.AcceptRole
+        box.setText(text)
+        save_button = box.addButton(
+            tr("dialog.sound_save"), QMessageBox.ButtonRole.AcceptRole
         )
-        open_only = box.addButton(
+        copy_button = box.addButton(
+            tr("dialog.sound_copy_open"), QMessageBox.ButtonRole.ActionRole
+        )
+        open_button = box.addButton(
             tr("dialog.sound_open_only"), QMessageBox.ButtonRole.ActionRole
         )
         box.addButton(tr("dialog.sound_close"), QMessageBox.ButtonRole.RejectRole)
-        box.setDefaultButton(copy_open)
+        box.setDefaultButton(save_button)
         box.exec()
         clicked = box.clickedButton()
-        if clicked is copy_open:
+        if clicked is copy_button:
             self._copy_sound_snippet()
             self._open_yaml()
-        elif clicked is open_only:
+            return
+        if clicked is open_button:
             self._open_yaml()
+            return
+        if clicked is not save_button:
+            return
+        if self._config is not None and self._config.legacy:
+            QMessageBox.information(self, tr("main.title"), tr("dialog.sound_v1"))
+            return
+        from screen_watch.config.loader import set_profile_sound_file
+
+        try:
+            set_profile_sound_file(self._config_path, profile, path)
+        except Exception as exc:
+            QMessageBox.warning(self, tr("main.title"), render_error(exc))
+            return
+        self._append(f"sound saved in profile {profile}: {path}")
+        self._reload()
+        QMessageBox.information(
+            self,
+            tr("main.title"),
+            tr("dialog.sound_saved", profile=profile, path=path),
+        )
 
     def _play_sound(self) -> None:
         from screen_watch.platform.audio import play_file, resolve_sound_path
@@ -1513,6 +1650,44 @@ class MainWindow(QMainWindow):
         if not open_path(directory):
             self._append(f"open manually: {directory}")
 
+    def _open_history(self) -> None:
+        from screen_watch.app import effective_evidence_options
+        from screen_watch.evidence.recorder import ensure_captures_dir
+        from screen_watch.gui.history_dialog import AlertHistoryDialog
+
+        captures = None
+        try:
+            captures = ensure_captures_dir(effective_evidence_options(self._config))
+        except OSError as exc:
+            self._append(f"could not create the captures folder: {exc}")
+        AlertHistoryDialog(self, captures_dir=captures).exec()
+
+    def _open_calibration(self) -> None:
+        from screen_watch.gui.calibration_widget import CalibrationWidget
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle(tr("main.calibration_title"))
+        dialog.resize(620, 240)
+        layout = QVBoxLayout(dialog)
+        widget = CalibrationWidget()
+        layout.addWidget(widget)
+        close_button = QPushButton(tr("history.close"))
+        close_button.clicked.connect(dialog.accept)
+        layout.addWidget(close_button)
+        widget.set_samples(self._controller.calibration())
+        self._calibration_dialog = (dialog, widget)
+        dialog.finished.connect(self._calibration_closed)
+        dialog.exec()
+
+    def _calibration_closed(self, _result: int) -> None:
+        self._calibration_dialog = None
+
+    def _update_calibration(self) -> None:
+        if self._calibration_dialog is None:
+            return
+        _dialog, widget = self._calibration_dialog
+        widget.set_samples(self._controller.calibration())
+
     # -- eventos -----------------------------------------------------------
     def _arming_text(self) -> str:
         dispatcher = self._controller.actions
@@ -1545,12 +1720,18 @@ class MainWindow(QMainWindow):
 
     def _drain(self) -> None:
         self._update_action_status()
+        self._update_preview()
+        self._update_calibration()
         while True:
             try:
                 event = self._controller.events.get_nowait()
             except Exception:
                 return
             self._handle(event)
+
+    def _update_preview(self) -> None:
+        latest, baseline = self._controller.preview()
+        self.preview.update_frames(latest, baseline)
 
     def _handle(self, event: dict) -> None:
         kind = event.get("kind")
@@ -1560,6 +1741,7 @@ class MainWindow(QMainWindow):
         elif kind == "stopped":
             self.status.setText(tr("status.stopped"))
             self._set_running(False)
+            self.preview.clear()
         elif kind == "result":
             self.last.setText(
                 tr(

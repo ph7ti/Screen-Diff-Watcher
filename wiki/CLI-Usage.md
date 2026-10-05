@@ -110,8 +110,9 @@ python -m screen_watch features --json
 ## Masks of volatile regions
 
 Masks are `[x, y, w, h]` rectangles **relative to the ROI**, painted black before comparison —
-useful for spinners/clocks that change on their own. The overlay does not draw masks yet; edit the
-`masks` field in the YAML (profile) or in the selection JSON (which overrides the profile).
+useful for spinners/clocks that change on their own. The GUI draws/removes them with the
+**Edit masks…** button (see [Window and tray](GUI-and-Tray.md)); without the GUI, edit `masks` (or
+`overrides.masks`, which has precedence) in the selection JSON — the profile has no masks.
 
 ## Calibration (Step D)
 

@@ -25,10 +25,16 @@ Roda no **Windows e no Linux**, capturando apenas pixels (não toca no aplicativ
   só quando um texto **aparece/desaparece** na ROI (`text_watch`, somente no `advanced`).
 - **Alerta** por som, popup, Telegram, log JSONL, **webhook**, **HTTP POST** e **syslog**, com severidade
   mínima e cooldown por canal. O som toca **WAV/MP3/M4A/AAC/OGG/FLAC/WMA** conforme o contexto (GUI
-  via Qt Multimedia; CLI via `miniaudio`), e a GUI tem um seletor que pré-visualiza e entrega o trecho
-  `file: "..."` para o YAML. O som default é um **`alert.mp3` empacotado** que vai junto com o app;
-  um `file` relativo é resolvido como `app-data/sounds/` → `assets/sounds/` empacotado → CWD.
-- **Máscaras** para ignorar áreas que mudam sozinhas (relógio, spinner, cursor).
+  via Qt Multimedia; CLI via `miniaudio`), e o seletor da GUI pré-visualiza o arquivo e **grava** no
+  alerta `sound` do perfil ativo no `config.yaml` (atômico + `.bak`; config v1 precisa ser migrada
+  antes). O som default é um **`alert.mp3` empacotado** que vai junto com o app; um `file` relativo é
+  resolvido como `app-data/sounds/` → `assets/sounds/` empacotado → CWD.
+- **Máscaras** para ignorar áreas que mudam sozinhas (relógio, spinner, cursor). A GUI desenha e
+  remove em um overlay sobre a janela alvo (**Editar máscaras…**, bloqueado com o monitoramento) e
+  grava no JSON da seleção (`overrides.masks` vence `masks`).
+- **Observabilidade na GUI**: **preview** do baseline + último frame, **histórico de alertas** sobre
+  `logs/alerts.jsonl` (filtros de data/severidade/modo, print de evidência best-effort) e
+  **calibração ao vivo** (score × limite, export CSV).
 - **Evidências**: prints do baseline e de cada mudança — opt-in.
 - **Ações pseudo-humanas** (clique, teclas, texto) quando armadas — ensaio por padrão e auditoria
   em `logs/actions.jsonl`.
@@ -276,7 +282,7 @@ escada de scripts e CI em [wiki/Desenvolvimento-Testes-e-CI.md](wiki/Desenvolvim
 | [**Wiki**](wiki/Home-pt-BR.md) | detalhes de uso e recursos: CLI, GUI, config, ações, alertas, evidências, idiomas, DPI, build |
 | [`doc/00-Documento_de_Arquitetura_e_Especificação.md`](doc/00-Documento_de_Arquitetura_e_Especificação.md) | arquitetura e especificação — **fonte única de verdade do design** |
 | [`doc/01-Build_e_Release.md`](doc/01-Build_e_Release.md) | pipeline de build e release dos instaladores |
-| [`doc/releases/`](doc/releases/v0.7.1.pt-BR.md) | notas de release por versão (arquivo de detalhe) |
+| [`doc/releases/`](doc/releases/v0.8.0.pt-BR.md) | notas de release por versão (arquivo de detalhe) |
 | [`CHANGELOG.md`](CHANGELOG.md) | mudanças por versão (semântico) |
 | [`README.md`](README.md) | este guia em inglês |
 

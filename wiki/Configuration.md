@@ -69,6 +69,8 @@ evidence: { enabled: false, dir: null, keep_per_target: 50, max_total_mb: 200,
 - An unknown `ui.language` generates a warning and falls back to `auto` (it is not an error).
 - The app rewrites the YAML **without preserving comments**; the write is atomic (temp + `os.replace`)
   and leaves a `config.yaml.bak` backup.
+- Tune the thresholds (`light`/`default`) and `advanced.similarity_threshold` with the CLI
+  `compare-modes` or with the GUI **Calibration…** live chart (score vs threshold, CSV export).
 
 ## Alert channels
 
@@ -105,6 +107,8 @@ Rules (validated with a stable `config.alert_*` code):
 - `port` must be 1..65535; `protocol` is `udp`/`tcp`; `facility` must be a known syslog facility;
   `method` is `POST`/`PUT`/`PATCH`.
 - An unknown `type` is an error (a "mute" channel no longer goes unnoticed).
+- The GUI sound picker **writes** `file:` into the active profile's `sound` alert (created if
+  missing) with an atomic save + `.bak`; a v1 config must be migrated first.
 - Details and the full placeholder list: [Alerts](Alerts.md).
 
 ## Profiles
@@ -187,6 +191,9 @@ target: `mode`, `poll_interval_s`, `rearm`, `masks`, `alerts`, `actions` and `te
   (`verificando download` → `verificando-download.json`), never overwriting another selection;
   `--selection <name>` then uses the **new file name**. The region re-edit (double-click) preserves
   `name`/`mode`/`overrides` and **clears the masks** (relative to the old ROI).
+- `masks` live only in the selection JSON: `overrides.masks` takes precedence over `masks` (the
+  profile has no masks). The GUI mask editor writes where the effective masks live: existing
+  `overrides.masks`, else non-empty `masks`, else it creates `overrides.masks`.
 
 ## Migration from a v1 YAML (`targets:`)
 

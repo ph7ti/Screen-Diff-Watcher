@@ -10,6 +10,8 @@ perfil para este alvo. Selecoes v1 continuam carregando sem overrides.
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from collections.abc import Collection
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -101,9 +103,21 @@ class Selection:
 
 
 def dump_selection(path: str | Path, selection: Selection) -> None:
-    Path(path).write_text(
-        json.dumps(selection.to_dict(), indent=2, ensure_ascii=False), encoding="utf-8"
+    """Grava o JSON de forma atomica (temp + `os.replace`, doc secao 12.4)."""
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    text = json.dumps(selection.to_dict(), indent=2, ensure_ascii=False)
+    fd, tmp_name = tempfile.mkstemp(
+        dir=str(target.parent), prefix=target.name + ".", suffix=".tmp"
     )
+    tmp = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+        os.replace(tmp, target)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def load_selection(path: str | Path) -> Selection:
@@ -234,6 +248,39 @@ def set_override_actions(
     else:
         overrides.pop("actions", None)
     return replace(selection, overrides=overrides or None)
+
+
+def effective_masks(selection: Selection) -> tuple[Rect, ...]:
+    """Mascaras efetivas: `overrides.masks` vence `selection.masks` (doc, secao 12.3)."""
+    overrides = selection.overrides
+    if isinstance(overrides, dict) and "masks" in overrides:
+        from screen_watch.config.loader import parse_rects  # noqa: PLC0415
+
+        return parse_rects(overrides.get("masks"), "overrides.masks")
+    return selection.masks
+
+
+def set_masks(selection: Selection, masks: Collection[Rect]) -> Selection:
+    """Devolve copia com `masks` gravadas onde as mascaras efetivas vivem.
+
+    Regra do editor visual (doc, secao 12.3): atualiza `overrides.masks` se a
+    chave ja existe; senao atualiza `selection.masks` se nao estiver vazio; senao
+    cria `overrides.masks`. Nao migra nem limpa o outro campo em silencio; sem
+    mascaras e sem campo existente, devolve a selecao intacta.
+    """
+    items = tuple((int(m[0]), int(m[1]), int(m[2]), int(m[3])) for m in masks)
+    overrides = selection.overrides
+    if isinstance(overrides, dict) and "masks" in overrides:
+        updated = dict(overrides)
+        updated["masks"] = [list(m) for m in items]
+        return replace(selection, overrides=updated)
+    if selection.masks:
+        return replace(selection, masks=items)
+    if not items:
+        return selection
+    updated = dict(overrides or {})
+    updated["masks"] = [list(m) for m in items]
+    return replace(selection, overrides=updated)
 
 
 def override_text_watch(selection: Selection) -> TextWatchOptions | None:

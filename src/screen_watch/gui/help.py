@@ -15,6 +15,7 @@ HELP_KEYS: tuple[str, ...] = (
     "window.rearm",
     "window.minimize",
     "window.show_roi",
+    "window.edit_masks",
     "window.selection_name",
     "window.mode",
     "window.profile",
@@ -41,6 +42,9 @@ HELP_KEYS: tuple[str, ...] = (
     "window.text_watch_expect",
     "window.text_watch_case",
     "window.text_watch_accents",
+    "window.preview",
+    "window.alert_history",
+    "window.calibration",
     # editor
     "editor.name",
     "editor.enabled",

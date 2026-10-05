@@ -1,6 +1,6 @@
 # Roadmap — agent knowledge base
 
-Status: v0.7.1 · Scope: prioritized backlog for v0.8.0 → v1.0.0
+Status: v0.8.0 · Scope: prioritized backlog for v0.9.0 → v1.0.0
 
 Rules:
 
@@ -11,47 +11,20 @@ Rules:
   `CHANGELOG.md` and `doc/releases/vX.Y.Z.md` (EN/PT).
 - Keep entries short; implementation detail belongs in the increment's own plan.
 
-## v0.8.0 — Usability + quality + visual reliability
+## v0.8.0 — Usability + quality + visual reliability (done)
 
-Suggested order: CI/quality → masks → sound → preview → history → calibration (first what does not
-touch the capture path; preview changes `MonitorController`). Risks: Qt threading/memory for the
-preview; YAML write-back not preserving comments; wiki publish needs a push secret (PAT).
+Shipped as **0.8.0** (2026-10-05); details and evidence in `doc/releases/v0.8.0.md` (EN) +
+`v0.8.0.pt-BR.md`, `CHANGELOG.md` and `doc/00` §1.4.
 
-1. **Visual mask editor** — overlay to draw/remove masks relative to the ROI; write to
-   `overrides.masks` (precedence) or `masks`; blocked while a session is running (same rule as
-   rename); pure, testable geometry helpers; i18n + hover help.
-   - Affects: `gui/overlay*.py`, `capture/mask.py` + geometry helpers, `persistence/selection.py`, i18n catalogs.
-   - Acceptance: masks drawable/removable without editing JSON; atomic write; blocked with session running; unit tests.
-   - `doc/00`: §8.3, §12.3.
-2. **Sound recorded directly in the YAML** — the picker writes `file:` into the active profile's
-   `type: sound` alert via `config/loader.py::save_config` (atomic + `.bak`); creates the alert if
-   absent; rollback on failure; clear message for config v1; the current popup becomes confirmation.
-   - Affects: `config/loader.py`, `gui` sound picker, i18n.
-   - Acceptance: choice persisted with backup/rollback; v1 handled clearly; unit tests.
-   - `doc/00`: §11.2, §12.1.
-3. **Quality** — add Python 3.12 to the CI matrix; `pytest --cov=screen_watch` as report/artifact (no
-   hard gate initially); decide automatic wiki publication (requires a push secret, e.g. PAT
-   `WIKI_PUSH_TOKEN`) or keep a documented manual runbook.
-   - Affects: `.github/workflows/ci.yml`, wiki dev page (and an optional publish workflow).
-   - Acceptance: CI green on py3.12 with coverage report; wiki published automatically or runbook documented.
-4. **Frame preview** — last frame + baseline in the GUI (copy/downsample through the event queue;
-   never hand the loop thread's `numpy` array to Qt directly; memory bounded).
-   - Affects: `gui/controller.py`, `gui/main_window.py`, `app.py`.
-   - Acceptance: Qt touched only on the GUI thread; bounded memory; unit tests.
-   - `doc/00`: §3.7.
-5. **Alert history** — table over `logs/alerts.jsonl` with filters (date/severity/channel) and opening
-   the evidence print.
-   - Affects: `gui/` (new widget), small read helpers around `alerts/log.py`.
-   - Acceptance: tolerant to invalid JSONL lines; filters and image open tested.
-   - `doc/00`: §3.7.
-6. **Live calibration** — per-session ring buffer of `ComparisonResult` (score/threshold/severity) +
-   custom widget (no new dependency) + CSV export.
-   - Affects: `gui/controller.py`, `compare/protocol.py` consumers, `gui/` widget.
-   - Acceptance: CSV export; unit tests.
-   - `doc/00`: §3.7.
+- [x] Visual mask editor: overlay draw/remove, effective-location write rule, atomic selection JSON, blocked while running — `doc/00` §8.3/§12.3/§12.4.
+- [x] Sound picker writes `file:` into the active profile YAML (atomic + `.bak`, v1 refused, override warning) — `doc/00` §11.2/§12.1.
+- [x] Quality: CI matrix py3.11/3.12/3.13, `coverage-xml` artifact (no gate), documented manual wiki runbook (automation deferred until `WIKI_PUSH_TOKEN`).
+- [x] Frame preview: baseline + latest thumbnails, bounded and copied off the loop thread — `doc/00` §3.7/§16.
+- [x] Alert history over `logs/alerts.jsonl`: date/severity/strategy filters, best-effort evidence print (`±2 s` heuristic).
+- [x] Live calibration: per-session ring buffer (600) of every comparison, custom chart + CSV export.
 
-Version gate: ruff + unit tests + `validate-i18n` green; `doc/00` §8.3/§12.3 (masks), §11.2/§12.1
-(sound) and §3.7 (observability) updated; wiki updated.
+Follow-up noted for v0.9.0+: the log record has no channel/target/evidence path, so richer history
+needs an `alerts.jsonl` schema decision.
 
 ## v0.9.0 — Reach: alerts + selections + multiple ROIs
 

@@ -769,6 +769,48 @@ def remove_target_from_config(path: str | Path, name: str) -> bool:
     return True
 
 
+def set_profile_sound_file(path: str | Path, profile: str, file: str) -> None:
+    """Grava `file` no alerta `sound` do perfil do YAML v2 (doc, secoes 11.2/12.4).
+
+    Cria o alerta com o shape default se o perfil ainda nao tiver um `sound`.
+    Recarrega do disco antes de regravar (`save_config` e atomico e guarda
+    `config.yaml.bak`), entao qualquer falha de escrita deixa o arquivo original
+    intacto. Config v1 e recusada (`config.v1_not_editable`); perfil inexistente
+    e `config.profile_unknown`.
+    """
+    raw = load_config_dict(path)
+    if raw.get("version") != 2:
+        raise ConfigError(code="config.v1_not_editable", params={"path": str(path)})
+    profiles = raw.get("profiles")
+    if not isinstance(profiles, dict):
+        raise ConfigError(code="config.v2_missing_profiles")
+    profile_raw = profiles.get(profile)
+    if not isinstance(profile_raw, dict):
+        raise ConfigError(code="config.profile_unknown", params={"name": profile})
+    alerts = profile_raw.get("alerts")
+    if alerts is None:
+        alerts = []
+        profile_raw["alerts"] = alerts
+    if not isinstance(alerts, list):
+        raise ConfigError(
+            code="config.alerts_not_list",
+            params={"field": f"profiles.{profile}.alerts"},
+        )
+    sound = next(
+        (
+            alert
+            for alert in alerts
+            if isinstance(alert, dict) and alert.get("type") == "sound"
+        ),
+        None,
+    )
+    if sound is None:
+        sound = {"type": "sound", "enabled": True, "severity_min": 1, "cooldown_s": 30}
+        alerts.append(sound)
+    sound["file"] = file
+    save_config(path, raw)
+
+
 def _webhook_options_to_dict(options: WebhookOptions) -> dict[str, Any]:
     data: dict[str, Any] = {"method": options.method}
     if options.url:

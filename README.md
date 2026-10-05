@@ -26,11 +26,17 @@ Runs on **Windows and Linux**, capturing pixels only (it never touches the watch
   text **appears/disappears** in the ROI (`text_watch`, advanced only).
 - **Alerts** through sound, popup, Telegram, a JSONL log, a **webhook**, an **HTTP POST** and
   **syslog**, with per-channel minimum severity and cooldown. The sound plays **WAV/MP3/M4A/AAC/OGG/
-  FLAC/WMA** depending on the context (GUI via Qt Multimedia; CLI via `miniaudio`), and the GUI has a
-  picker that previews the file and hands you the `file: "..."` snippet for the YAML. The default
-  sound is a **bundled `alert.mp3`** shipped with the app; a relative `file` is resolved as
-  `app-data/sounds/` → bundled `assets/sounds/` → CWD.
-- **Masks** to ignore areas that change on their own (clock, spinner, cursor).
+  FLAC/WMA** depending on the context (GUI via Qt Multimedia; CLI via `miniaudio`), and the GUI
+  picker previews the file and **writes** it into the active profile's `sound` alert in `config.yaml`
+  (atomic + `.bak`; config v1 must be migrated first). The default sound is a **bundled `alert.mp3`**
+  shipped with the app; a relative `file` is resolved as `app-data/sounds/` → bundled
+  `assets/sounds/` → CWD.
+- **Masks** to ignore areas that change on their own (clock, spinner, cursor). The GUI draws and
+  removes them in an overlay over the target window (**Edit masks…**, blocked while monitoring) and
+  saves them in the selection JSON (`overrides.masks` wins over `masks`).
+- **Observability in the GUI**: baseline + latest frame **preview**, an **alert history** table over
+  `logs/alerts.jsonl` (date/severity/strategy filters, best-effort evidence print) and a **live
+  calibration** chart (score vs threshold, CSV export).
 - **Evidence**: prints of the baseline and of each change — opt-in.
 - **Pseudo-human actions** (click, keys, text) when armed — rehearsal by default, audited in
   `logs/actions.jsonl`.
@@ -282,7 +288,7 @@ Integration tests are opt-in (`TEST_REAL_CAPTURE`, `TEST_REAL_TELEGRAM`,
 | [**Wiki**](wiki/Home.md) | usage and feature details: CLI, GUI, config, actions, alerts, evidence, languages, DPI, build |
 | [`doc/00-Architecture_and_Specification.md`](doc/00-Architecture_and_Specification.md) | architecture and specification — **single source of truth for the design** |
 | [`doc/01-Build_and_Release.md`](doc/01-Build_and_Release.md) | installer build and release pipeline |
-| [`doc/releases/`](doc/releases/v0.7.1.md) | per-version release notes (detail file) |
+| [`doc/releases/`](doc/releases/v0.8.0.md) | per-version release notes (detail file) |
 | [`CHANGELOG.md`](CHANGELOG.md) | changes per version (semantic) |
 | [`README.pt-BR.md`](README.pt-BR.md) | este guia em português |
 

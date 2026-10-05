@@ -63,10 +63,13 @@ log** (Telegram exige `chat_id`, então não entra no default).
   (nunca silêncio nem exceção).
 - O extra `simpleaudio` (`pip install -e ".[sound]"`) segue opcional e **não** entra nos instaladores
   (sem wheel confiável para Python 3.13); ele só é tentado para `.wav`.
-- **Seletor da GUI**: a linha **Som do alerta** pré-visualiza qualquer arquivo com **Reproduzir** e
-  mostra o trecho `file: "<caminho>"` para colar no YAML — **não persiste** nada (o YAML é lido ao
-  iniciar). Depois de **Escolher…**, um popup aponta para o `config.yaml` e o perfil ativo, com
-  **Copiar caminho e abrir YAML** / **Só abrir o YAML** / **Fechar**.
+- **Seletor da GUI (v0.8.0)**: a linha **Som do alerta** pré-visualiza qualquer arquivo com
+  **Reproduzir** e, depois de **Escolher…**, pede confirmação e **grava** o `file:` no alerta
+  `type: "sound"` do perfil ativo no `config.yaml` (escrita atômica, backup `config.yaml.bak`;
+  comentários não são preservados). O diálogo mantém **Copiar caminho e abrir YAML** /
+  **Só abrir o YAML** / **Fechar** como ações secundárias. Config v1 é recusada com mensagem para
+  rodar `migrate-config`; quando a seleção atual tem `overrides.alerts` (que substituem os alertas do
+  perfil), o diálogo avisa que o som não valerá para ela.
 - Matriz completa de formatos por contexto: [notas da v0.6.0](../doc/releases/v0.6.0.pt-BR.md).
 
 ### Popup
@@ -86,6 +89,12 @@ log** (Telegram exige `chat_id`, então não entra no default).
 ### Log
 
 - Uma linha JSON por disparo em `app-data/logs/alerts.jsonl` (ou no `path` configurado).
+- O registro não tem canal/alvo/caminho de evidência (`ts`, `strategy`, `changed`, `score`,
+  `threshold`, `severity`, `window_handle`, `absolute_rect`, `sequence`, `detail`).
+- **Histórico de alertas (v0.8.0)**: o botão **Histórico…** da GUI abre uma tabela sobre esse arquivo
+  com filtros (data de/até, severidade mínima, modo), tolerante a linhas inválidas. **Abrir print**
+  procura o `*_change.png` mais próximo em ±2 s do alerta (best effort; senão informa que não achou) e
+  **Abrir pasta de prints** abre a pasta efetiva de capturas.
 
 ### Webhook / HTTP POST
 
