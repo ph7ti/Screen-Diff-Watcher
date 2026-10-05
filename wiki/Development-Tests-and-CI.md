@@ -66,9 +66,10 @@ In pull requests, the `package` job also builds the installers **without publish
 breakage).
 
 `.github/workflows/release.yml` builds the installers from a `v*.*.*` tag (Windows
-`windows-latest` + Inno Setup; Linux `ubuntu-22.04`) and publishes the GitHub Release with
-`SHA256SUMS.txt`. It **fails** if the tag (without `v`) differs from `screen_watch.__version__`. With
-`workflow_dispatch` and the `version` input, it generates only the workflow artifacts (no release).
+`windows-latest` + Inno Setup; Linux on `ubuntu-latest` inside an `ubuntu:22.04` container, keeping
+the older glibc baseline) and publishes the GitHub Release with `SHA256SUMS.txt`. It **fails** if the
+tag (without `v`) differs from `screen_watch.__version__`. With `workflow_dispatch` and the `version`
+input, it generates only the workflow artifacts (no release).
 
 ## Wiki publication (manual runbook)
 

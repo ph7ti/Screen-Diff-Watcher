@@ -65,9 +65,10 @@ Em pull requests, o job `package` também monta os instaladores **sem publicar**
 empacotamento).
 
 `.github/workflows/release.yml` builda os instaladores a partir de uma tag `v*.*.*` (Windows
-`windows-latest` + Inno Setup; Linux `ubuntu-22.04`) e publica o GitHub Release com
-`SHA256SUMS.txt`. Ele **falha** se a tag (sem `v`) for diferente de `screen_watch.__version__`. Com
-`workflow_dispatch` e o input `version`, gera apenas os artefatos do workflow (sem release).
+`windows-latest` + Inno Setup; Linux em `ubuntu-latest` dentro de um container `ubuntu:22.04`,
+mantendo a glibc mais antiga) e publica o GitHub Release com `SHA256SUMS.txt`. Ele **falha** se a tag
+(sem `v`) for diferente de `screen_watch.__version__`. Com `workflow_dispatch` e o input `version`,
+gera apenas os artefatos do workflow (sem release).
 
 ## Publicação da wiki (runbook manual)
 

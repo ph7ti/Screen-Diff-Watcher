@@ -42,7 +42,8 @@ Notes:
 - `build = ["pyinstaller>=6.11.1"]` — **required**: PyInstaller only supports Python 3.13 from
   6.11.1 onwards.
 - `simpleaudio` does **not** go into the bundle on purpose (no reliable wheel on 3.13).
-- The `.deb` targets `amd64` and requires X11; build on `ubuntu-22.04` to get an older glibc.
+- The `.deb` targets `amd64` and requires X11; build on `ubuntu-22.04` to get an older glibc (the
+  release CI does it in an `ubuntu:22.04` container for that reason).
 
 ---
 
@@ -189,7 +190,8 @@ git push origin v0.7.1
 ```
 
 `release.yml` builds Windows (`windows-latest` + `choco install innosetup -y`) and Linux
-(`ubuntu-22.04`), generates `SHA256SUMS.txt` and creates the GitHub Release with `gh release create`.
+(`ubuntu-latest` running inside an `ubuntu:22.04` container, which keeps the older glibc baseline),
+generates `SHA256SUMS.txt` and creates the GitHub Release with `gh release create`.
 
 ### Wiki publication (manual runbook)
 
