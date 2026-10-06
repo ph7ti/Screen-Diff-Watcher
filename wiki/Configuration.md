@@ -81,7 +81,7 @@ evidence: { enabled: false, dir: null, keep_per_target: 50, max_total_mb: 200,
 
 ## Alert channels
 
-Each item of `alerts:` accepts `type`, `enabled`, `severity_min`, `cooldown_s` and an optional **`id`**
+Each item of the profile `alerts:` list accepts `type`, `enabled`, `severity_min`, `cooldown_s` and an optional **`id`**
 (default `type`; `type#n` when repeated). The `id` is the **cooldown key** and the selection name for the
 send test. The four original types (`sound`/`popup`/`telegram`/`log`) use **flat fields**; the new ones
 use a nested **`options:`** block:

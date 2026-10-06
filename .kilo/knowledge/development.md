@@ -33,7 +33,7 @@ No coverage gate, mypy or pyright exists today (roadmap items). On Linux, GUI te
 
 ## Tests
 
-- 60 test files under `tests/`; `tests/conftest.py` has an **autouse fixture forcing i18n to pt-BR**
+- 67 test files under `tests/` (739 unit tests); `tests/conftest.py` has an **autouse fixture forcing i18n to pt-BR**
   and provides the `make_frame` / `solid` fixtures.
 - GUI tests do not instantiate `QApplication` at collection time; on Linux CI they run under `xvfb-run`.
 - Integration tests are opt-in via the `integration` marker (excluded from CI):
@@ -46,9 +46,8 @@ $env:TEST_REAL_HTTP_URL="https://..."; python -m pytest -m integration
 $env:TEST_REAL_AUDIO="1"; $env:TEST_REAL_AUDIO_FILE="C:\sounds\alert.mp3"; python -m pytest -m integration
 ```
 
-**Known doc gap**: `README.md`/`README.pt-BR.md` still list only the first four env pairs —
 `TEST_REAL_AUDIO` + `TEST_REAL_AUDIO_FILE` (real playback of a WAV/MP3/OGG/FLAC file) are documented
-in the wiki pages (EN/PT) but not in the README.
+in the READMEs (EN/PT) and in the wiki pages (EN/PT).
 
 ## Test ladder (capture/DPI regressions)
 

@@ -79,7 +79,7 @@ evidence: { enabled: false, dir: null, keep_per_target: 50, max_total_mb: 200,
 
 ## Canais de alerta
 
-Cada item de `alerts:` aceita `type`, `enabled`, `severity_min`, `cooldown_s` e um **`id`** opcional
+Cada item da lista `alerts:` do perfil aceita `type`, `enabled`, `severity_min`, `cooldown_s` e um **`id`** opcional
 (default `type`; `type#n` quando repetido). O `id` é a **chave de cooldown** e o nome usado na seleção do
 teste de envio. Os quatro tipos originais (`sound`/`popup`/`telegram`/`log`) usam **campos planos**; os
 demais (`webhook`, `http_post`, `syslog`, `ntfy`, `smtp` e `mqtt`) usam um bloco aninhado **`options:`**:

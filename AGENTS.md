@@ -37,8 +37,7 @@ python scripts/build_release.py --windows   # or --linux; run on the target OS; 
 
 Integration tests are opt-in and excluded from CI: `TEST_REAL_CAPTURE`; `TEST_REAL_TELEGRAM` +
 `TELEGRAM_BOT_TOKEN` + `TELEGRAM_TEST_CHAT_ID`; `TEST_REAL_WEBHOOK_URL`; `TEST_REAL_HTTP_URL`;
-`TEST_REAL_AUDIO` + `TEST_REAL_AUDIO_FILE` (the audio pair is still missing from the README — see
-`.kilo/knowledge/development.md`).
+`TEST_REAL_AUDIO` + `TEST_REAL_AUDIO_FILE`.
 
 ## Golden rules
 

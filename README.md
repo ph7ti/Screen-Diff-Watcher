@@ -298,7 +298,8 @@ python -m pytest -q -m "not integration"
 ```
 
 Integration tests are opt-in (`TEST_REAL_CAPTURE`, `TEST_REAL_TELEGRAM`,
-`TEST_REAL_WEBHOOK_URL`, `TEST_REAL_HTTP_URL`) — details, script ladder and CI in
+`TEST_REAL_WEBHOOK_URL`, `TEST_REAL_HTTP_URL`, `TEST_REAL_AUDIO` +
+`TEST_REAL_AUDIO_FILE`) — details, script ladder and CI in
 [wiki/Development-Tests-and-CI.md](wiki/Development-Tests-and-CI.md).
 
 ## Documentation

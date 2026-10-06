@@ -48,6 +48,9 @@ log** (Telegram requires `chat_id`, so it does not enter the default).
 
 ## How each channel works
 
+Each snippet below is an entry for the `alerts:` list of a profile (see the profile example above);
+paste it under `profiles.<name>.alerts` and repeat/combine as needed.
+
 ### Sound
 
 - All playback goes through the `platform/audio.py` boundary; `alerts/` does not know `sys.platform`,
@@ -77,11 +80,10 @@ log** (Telegram requires `chat_id`, so it does not enter the default).
 - Full format matrix per context: [v0.6.0 release notes](../doc/releases/v0.6.0.md).
 
 ```yaml
-alerts:
-  - type: sound
-    severity_min: 1
-    cooldown_s: 30
-    file: "alert.mp3"          # default (bundled); relative → app-data/sounds → bundled → CWD
+- type: sound
+  severity_min: 1
+  cooldown_s: 30
+  file: "alert.mp3"          # default (bundled); relative → app-data/sounds → bundled → CWD
 ```
 
 ### Popup
@@ -89,10 +91,9 @@ alerts:
 - `plyer.notification` (depends on each OS's native backend).
 
 ```yaml
-alerts:
-  - type: popup
-    severity_min: 1
-    cooldown_s: 30
+- type: popup
+  severity_min: 1
+  cooldown_s: 30
 ```
 
 ### Telegram
@@ -106,13 +107,12 @@ alerts:
   set the token, edit the YAML and test.
 
 ```yaml
-alerts:
-  - type: telegram
-    severity_min: 2
-    cooldown_s: 60
-    bot_token_env: TELEGRAM_BOT_TOKEN   # default; the token stays in the environment
-    chat_id: "123456789"                # required
-    attach_roi: true                    # default; false = text only
+- type: telegram
+  severity_min: 2
+  cooldown_s: 60
+  bot_token_env: TELEGRAM_BOT_TOKEN   # default; the token stays in the environment
+  chat_id: "123456789"                # required
+  attach_roi: true                    # default; false = text only
 ```
 
 ### Log
@@ -126,11 +126,10 @@ alerts:
   found) and **Open prints folder** opens the effective captures folder.
 
 ```yaml
-alerts:
-  - type: log
-    severity_min: 1
-    cooldown_s: 0
-    path: ""                            # empty = app-data/logs/alerts.jsonl
+- type: log
+  severity_min: 1
+  cooldown_s: 0
+  path: ""                            # empty = app-data/logs/alerts.jsonl
 ```
 
 ### Webhook / HTTP POST
@@ -153,49 +152,48 @@ alerts:
   **2026-05**) — use the **Workflows** webhook URL.
 
 ```yaml
-alerts:
-  - type: webhook                     # Slack/Discord/Mattermost (text field)
-    id: chat
-    severity_min: 2
-    cooldown_s: 60
-    options:
-      url_env: CHAT_WEBHOOK           # or url: "https://…"; the secret stays out of the YAML
-      method: POST                    # POST (default) | PUT | PATCH
-      headers: { Authorization: "Bearer ${env:HOOK_TOKEN}" }   # optional
-      payload: { text: ":rotating_light: ${message} | target=${target} sev=${severity}" }
-      timeout_s: 5                    # default
-      verify_tls: true                # default; false logs a warning on every send
+- type: webhook                     # Slack/Discord/Mattermost (text field)
+  id: chat
+  severity_min: 2
+  cooldown_s: 60
+  options:
+    url_env: CHAT_WEBHOOK           # or url: "https://…"; the secret stays out of the YAML
+    method: POST                    # POST (default) | PUT | PATCH
+    headers: { Authorization: "Bearer ${env:HOOK_TOKEN}" }   # optional
+    payload: { text: ":rotating_light: ${message} | target=${target} sev=${severity}" }
+    timeout_s: 5                    # default
+    verify_tls: true                # default; false logs a warning on every send
 
-  - type: webhook                     # Teams Workflows (Adaptive Card)
-    id: teams
-    severity_min: 2
-    cooldown_s: 60
-    options:
-      url_env: TEAMS_WEBHOOK
-      payload:
-        type: "message"
-        attachments:
-          - contentType: "application/vnd.microsoft.card.adaptive"
-            content:
-              "$schema": "http://adaptivecards.io/schemas/adaptive-card.json"
-              type: "AdaptiveCard"
-              version: "1.4"
-              body:
-                - type: "TextBlock"
-                  text: "Change on ${target}: ${strategy} sev=${severity}"
-                  wrap: true
+- type: webhook                     # Teams Workflows (Adaptive Card)
+  id: teams
+  severity_min: 2
+  cooldown_s: 60
+  options:
+    url_env: TEAMS_WEBHOOK
+    payload:
+      type: "message"
+      attachments:
+        - contentType: "application/vnd.microsoft.card.adaptive"
+          content:
+            "$schema": "http://adaptivecards.io/schemas/adaptive-card.json"
+            type: "AdaptiveCard"
+            version: "1.4"
+            body:
+              - type: "TextBlock"
+                text: "Change on ${target}: ${strategy} sev=${severity}"
+                wrap: true
 
-  - type: http_post                   # host/IP + port (internal API)
-    id: erp-api
-    severity_min: 3
-    cooldown_s: 120
-    options:
-      scheme: http                    # default
-      host: 10.0.0.20                 # port is required together with host
-      port: 8080
-      path: /alerta                   # optional
-      headers: { Authorization: "Bearer ${env:ERP_TOKEN}" }
-      payload: { evento: "mudanca", alvo: "${target}", sev: "${severity}" }
+- type: http_post                   # host/IP + port (internal API)
+  id: erp-api
+  severity_min: 3
+  cooldown_s: 120
+  options:
+    scheme: http                    # default
+    host: 10.0.0.20                 # port is required together with host
+    port: 8080
+    path: /alerta                   # optional
+    headers: { Authorization: "Bearer ${env:ERP_TOKEN}" }
+    payload: { evento: "mudanca", alvo: "${target}", sev: "${severity}" }
 ```
 
 ### Syslog
@@ -207,20 +205,19 @@ alerts:
 - **UDP does not confirm delivery** (fire-and-forget) — prefer `tcp` when delivery must be confirmed.
 
 ```yaml
-alerts:
-  - type: syslog
-    id: siem
-    severity_min: 1
-    cooldown_s: 0
-    options:
-      host: 10.0.0.9                  # required
-      port: 514                       # default
-      protocol: udp                   # udp (default) | tcp
-      facility: local0                # default
-      app_name: screen-diff-watcher   # syslog tag (ident)
-      payload_raw: "${timestamp} ${target} ${strategy} score=${score} sev=${severity}"   # default "${message}"
-      severity_map: { 0: "debug", 3: "error" }   # optional; keys 0..3
-      timeout_s: 5                    # default
+- type: syslog
+  id: siem
+  severity_min: 1
+  cooldown_s: 0
+  options:
+    host: 10.0.0.9                  # required
+    port: 514                       # default
+    protocol: udp                   # udp (default) | tcp
+    facility: local0                # default
+    app_name: screen-diff-watcher   # syslog tag (ident)
+    payload_raw: "${timestamp} ${target} ${strategy} score=${score} sev=${severity}"   # default "${message}"
+    severity_map: { 0: "debug", 3: "error" }   # optional; keys 0..3
+    timeout_s: 5                    # default
 ```
 
 ### ntfy

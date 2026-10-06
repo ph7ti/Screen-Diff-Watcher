@@ -48,6 +48,9 @@ log** (Telegram exige `chat_id`, então não entra no default).
 
 ## Como cada canal funciona
 
+Cada snippet abaixo é um item da lista `alerts:` de um perfil (veja o exemplo de perfil acima);
+cole em `profiles.<nome>.alerts` e repita/combine conforme necessário.
+
 ### Som
 
 - Toda a reprodução passa pela fronteira `platform/audio.py`; `alerts/` não conhece `sys.platform`,
@@ -77,11 +80,10 @@ log** (Telegram exige `chat_id`, então não entra no default).
 - Matriz completa de formatos por contexto: [notas da v0.6.0](../doc/releases/v0.6.0.pt-BR.md).
 
 ```yaml
-alerts:
-  - type: sound
-    severity_min: 1
-    cooldown_s: 30
-    file: "alert.mp3"          # default (empacotado); relativo → app-data/sounds → empacotados → CWD
+- type: sound
+  severity_min: 1
+  cooldown_s: 30
+  file: "alert.mp3"          # default (empacotado); relativo → app-data/sounds → empacotados → CWD
 ```
 
 ### Popup
@@ -89,10 +91,9 @@ alerts:
 - `plyer.notification` (depende do backend nativo de cada SO).
 
 ```yaml
-alerts:
-  - type: popup
-    severity_min: 1
-    cooldown_s: 30
+- type: popup
+  severity_min: 1
+  cooldown_s: 30
 ```
 
 ### Telegram
@@ -106,13 +107,12 @@ alerts:
   obter o chat id, definir o token, editar o YAML e testar.
 
 ```yaml
-alerts:
-  - type: telegram
-    severity_min: 2
-    cooldown_s: 60
-    bot_token_env: TELEGRAM_BOT_TOKEN   # default; o token fica no ambiente
-    chat_id: "123456789"                # obrigatório
-    attach_roi: true                    # default; false = só texto
+- type: telegram
+  severity_min: 2
+  cooldown_s: 60
+  bot_token_env: TELEGRAM_BOT_TOKEN   # default; o token fica no ambiente
+  chat_id: "123456789"                # obrigatório
+  attach_roi: true                    # default; false = só texto
 ```
 
 ### Log
@@ -126,11 +126,10 @@ alerts:
   **Abrir pasta de prints** abre a pasta efetiva de capturas.
 
 ```yaml
-alerts:
-  - type: log
-    severity_min: 1
-    cooldown_s: 0
-    path: ""                            # vazio = app-data/logs/alerts.jsonl
+- type: log
+  severity_min: 1
+  cooldown_s: 0
+  path: ""                            # vazio = app-data/logs/alerts.jsonl
 ```
 
 ### Webhook / HTTP POST
@@ -153,49 +152,48 @@ alerts:
   desligamento **maio/2026**) — use a URL do **Workflows**.
 
 ```yaml
-alerts:
-  - type: webhook                     # Slack/Discord/Mattermost (campo text)
-    id: chat
-    severity_min: 2
-    cooldown_s: 60
-    options:
-      url_env: CHAT_WEBHOOK           # ou url: "https://…"; o segredo fica fora do YAML
-      method: POST                    # POST (default) | PUT | PATCH
-      headers: { Authorization: "Bearer ${env:HOOK_TOKEN}" }   # opcional
-      payload: { text: ":rotating_light: ${message} | target=${target} sev=${severity}" }
-      timeout_s: 5                    # default
-      verify_tls: true                # default; false registra aviso a cada envio
+- type: webhook                     # Slack/Discord/Mattermost (campo text)
+  id: chat
+  severity_min: 2
+  cooldown_s: 60
+  options:
+    url_env: CHAT_WEBHOOK           # ou url: "https://…"; o segredo fica fora do YAML
+    method: POST                    # POST (default) | PUT | PATCH
+    headers: { Authorization: "Bearer ${env:HOOK_TOKEN}" }   # opcional
+    payload: { text: ":rotating_light: ${message} | target=${target} sev=${severity}" }
+    timeout_s: 5                    # default
+    verify_tls: true                # default; false registra aviso a cada envio
 
-  - type: webhook                     # Teams Workflows (Adaptive Card)
-    id: teams
-    severity_min: 2
-    cooldown_s: 60
-    options:
-      url_env: TEAMS_WEBHOOK
-      payload:
-        type: "message"
-        attachments:
-          - contentType: "application/vnd.microsoft.card.adaptive"
-            content:
-              "$schema": "http://adaptivecards.io/schemas/adaptive-card.json"
-              type: "AdaptiveCard"
-              version: "1.4"
-              body:
-                - type: "TextBlock"
-                  text: "Mudança em ${target}: ${strategy} sev=${severity}"
-                  wrap: true
+- type: webhook                     # Teams Workflows (Adaptive Card)
+  id: teams
+  severity_min: 2
+  cooldown_s: 60
+  options:
+    url_env: TEAMS_WEBHOOK
+    payload:
+      type: "message"
+      attachments:
+        - contentType: "application/vnd.microsoft.card.adaptive"
+          content:
+            "$schema": "http://adaptivecards.io/schemas/adaptive-card.json"
+            type: "AdaptiveCard"
+            version: "1.4"
+            body:
+              - type: "TextBlock"
+                text: "Mudança em ${target}: ${strategy} sev=${severity}"
+                wrap: true
 
-  - type: http_post                   # host/IP + porta (API interna)
-    id: erp-api
-    severity_min: 3
-    cooldown_s: 120
-    options:
-      scheme: http                    # default
-      host: 10.0.0.20                 # port é obrigatório junto com host
-      port: 8080
-      path: /alerta                   # opcional
-      headers: { Authorization: "Bearer ${env:ERP_TOKEN}" }
-      payload: { evento: "mudanca", alvo: "${target}", sev: "${severity}" }
+- type: http_post                   # host/IP + porta (API interna)
+  id: erp-api
+  severity_min: 3
+  cooldown_s: 120
+  options:
+    scheme: http                    # default
+    host: 10.0.0.20                 # port é obrigatório junto com host
+    port: 8080
+    path: /alerta                   # opcional
+    headers: { Authorization: "Bearer ${env:ERP_TOKEN}" }
+    payload: { evento: "mudanca", alvo: "${target}", sev: "${severity}" }
 ```
 
 ### Syslog
@@ -207,20 +205,19 @@ alerts:
 - **UDP não confirma entrega** (fire-and-forget) — prefira `tcp` quando a entrega precisa ser confirmada.
 
 ```yaml
-alerts:
-  - type: syslog
-    id: siem
-    severity_min: 1
-    cooldown_s: 0
-    options:
-      host: 10.0.0.9                  # obrigatório
-      port: 514                       # default
-      protocol: udp                   # udp (default) | tcp
-      facility: local0                # default
-      app_name: screen-diff-watcher   # tag (ident) do syslog
-      payload_raw: "${timestamp} ${target} ${strategy} score=${score} sev=${severity}"   # default "${message}"
-      severity_map: { 0: "debug", 3: "error" }   # opcional; chaves 0..3
-      timeout_s: 5                    # default
+- type: syslog
+  id: siem
+  severity_min: 1
+  cooldown_s: 0
+  options:
+    host: 10.0.0.9                  # obrigatório
+    port: 514                       # default
+    protocol: udp                   # udp (default) | tcp
+    facility: local0                # default
+    app_name: screen-diff-watcher   # tag (ident) do syslog
+    payload_raw: "${timestamp} ${target} ${strategy} score=${score} sev=${severity}"   # default "${message}"
+    severity_map: { 0: "debug", 3: "error" }   # opcional; chaves 0..3
+    timeout_s: 5                    # default
 ```
 
 ### ntfy
@@ -236,14 +233,13 @@ alerts:
   redigida.
 
 ```yaml
-alerts:
-  - type: ntfy
-    id: celular
-    severity_min: 2
-    cooldown_s: 60
-    options: { server: "https://ntfy.sh", topic: "meu-topico", token_env: NTFY_TOKEN,
-               priority_map: { 1: 3, 2: 4, 3: 5 }, tags: ["monitor"],
-               attach_roi: true, timeout_s: 5 }
+- type: ntfy
+  id: celular
+  severity_min: 2
+  cooldown_s: 60
+  options: { server: "https://ntfy.sh", topic: "meu-topico", token_env: NTFY_TOKEN,
+             priority_map: { 1: 3, 2: 4, 3: 5 }, tags: ["monitor"],
+             attach_roi: true, timeout_s: 5 }
 ```
 
 ### SMTP
@@ -257,14 +253,13 @@ alerts:
 - Erros saneados: `alert.smtp_unavailable`, `alert.smtp_auth_failed` e `alert.smtp_send_failed`.
 
 ```yaml
-alerts:
-  - type: smtp
-    id: email
-    severity_min: 3
-    cooldown_s: 120
-    options: { host: "smtp.example.com", port: 587, security: starttls,
-               from_addr: "watch@example.com", to: ["oncall@example.com"],
-               subject: "[monitor] ${target} sev=${severity}", attach_roi: true }
+- type: smtp
+  id: email
+  severity_min: 3
+  cooldown_s: 120
+  options: { host: "smtp.example.com", port: 587, security: starttls,
+             from_addr: "watch@example.com", to: ["oncall@example.com"],
+             subject: "[monitor] ${target} sev=${severity}", attach_roi: true }
 ```
 
 ### MQTT
@@ -281,12 +276,11 @@ alerts:
 - `timeout_s` default 5; **sem imagem**. Erros: `alert.mqtt_unavailable`/`alert.mqtt_publish_failed`.
 
 ```yaml
-alerts:
-  - type: mqtt
-    id: barramento
-    options: { host: "10.0.0.30", topic: "screen-watch/default", qos: 1, retain: false,
-               client_id: screen-diff-watcher, username_env: MQTT_USERNAME,
-               password_env: MQTT_PASSWORD }
+- type: mqtt
+  id: barramento
+  options: { host: "10.0.0.30", topic: "screen-watch/default", qos: 1, retain: false,
+             client_id: screen-diff-watcher, username_env: MQTT_USERNAME,
+             password_env: MQTT_PASSWORD }
 ```
 
 ## Severidade
