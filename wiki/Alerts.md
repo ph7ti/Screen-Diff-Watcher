@@ -76,9 +76,24 @@ log** (Telegram requires `chat_id`, so it does not enter the default).
   will not apply to it.
 - Full format matrix per context: [v0.6.0 release notes](../doc/releases/v0.6.0.md).
 
+```yaml
+alerts:
+  - type: sound
+    severity_min: 1
+    cooldown_s: 30
+    file: "alert.mp3"          # default (bundled); relative → app-data/sounds → bundled → CWD
+```
+
 ### Popup
 
 - `plyer.notification` (depends on each OS's native backend).
+
+```yaml
+alerts:
+  - type: popup
+    severity_min: 1
+    cooldown_s: 30
+```
 
 ### Telegram
 
@@ -90,6 +105,16 @@ log** (Telegram requires `chat_id`, so it does not enter the default).
 - **Full step-by-step**: [Telegram setup](Telegram-Setup.md) — create the bot, get the chat id,
   set the token, edit the YAML and test.
 
+```yaml
+alerts:
+  - type: telegram
+    severity_min: 2
+    cooldown_s: 60
+    bot_token_env: TELEGRAM_BOT_TOKEN   # default; the token stays in the environment
+    chat_id: "123456789"                # required
+    attach_roi: true                    # default; false = text only
+```
+
 ### Log
 
 - One JSON line per firing in `app-data/logs/alerts.jsonl` (or in the configured `path`).
@@ -99,6 +124,14 @@ log** (Telegram requires `chat_id`, so it does not enter the default).
   (date from/to, minimum severity, strategy), tolerant to invalid lines. **Open print** finds the
   nearest `*_change.png` within ±2 s of the alert (best effort; otherwise it reports that no print was
   found) and **Open prints folder** opens the effective captures folder.
+
+```yaml
+alerts:
+  - type: log
+    severity_min: 1
+    cooldown_s: 0
+    path: ""                            # empty = app-data/logs/alerts.jsonl
+```
 
 ### Webhook / HTTP POST
 
@@ -119,6 +152,52 @@ log** (Telegram requires `chat_id`, so it does not enter the default).
 - **Teams**: the legacy *Incoming Webhooks* are being retired (deadline **2026-03-31**, shutdown
   **2026-05**) — use the **Workflows** webhook URL.
 
+```yaml
+alerts:
+  - type: webhook                     # Slack/Discord/Mattermost (text field)
+    id: chat
+    severity_min: 2
+    cooldown_s: 60
+    options:
+      url_env: CHAT_WEBHOOK           # or url: "https://…"; the secret stays out of the YAML
+      method: POST                    # POST (default) | PUT | PATCH
+      headers: { Authorization: "Bearer ${env:HOOK_TOKEN}" }   # optional
+      payload: { text: ":rotating_light: ${message} | target=${target} sev=${severity}" }
+      timeout_s: 5                    # default
+      verify_tls: true                # default; false logs a warning on every send
+
+  - type: webhook                     # Teams Workflows (Adaptive Card)
+    id: teams
+    severity_min: 2
+    cooldown_s: 60
+    options:
+      url_env: TEAMS_WEBHOOK
+      payload:
+        type: "message"
+        attachments:
+          - contentType: "application/vnd.microsoft.card.adaptive"
+            content:
+              "$schema": "http://adaptivecards.io/schemas/adaptive-card.json"
+              type: "AdaptiveCard"
+              version: "1.4"
+              body:
+                - type: "TextBlock"
+                  text: "Change on ${target}: ${strategy} sev=${severity}"
+                  wrap: true
+
+  - type: http_post                   # host/IP + port (internal API)
+    id: erp-api
+    severity_min: 3
+    cooldown_s: 120
+    options:
+      scheme: http                    # default
+      host: 10.0.0.20                 # port is required together with host
+      port: 8080
+      path: /alerta                   # optional
+      headers: { Authorization: "Bearer ${env:ERP_TOKEN}" }
+      payload: { evento: "mudanca", alvo: "${target}", sev: "${severity}" }
+```
+
 ### Syslog
 
 - **Informational by default**: the real severity goes in the text via `${severity}`; use
@@ -126,6 +205,23 @@ log** (Telegram requires `chat_id`, so it does not enter the default).
 - `protocol` is `udp` (default) or `tcp`; `port` default `514`; `facility` default `local0`;
   `app_name` becomes the syslog **tag** (`ident`).
 - **UDP does not confirm delivery** (fire-and-forget) — prefer `tcp` when delivery must be confirmed.
+
+```yaml
+alerts:
+  - type: syslog
+    id: siem
+    severity_min: 1
+    cooldown_s: 0
+    options:
+      host: 10.0.0.9                  # required
+      port: 514                       # default
+      protocol: udp                   # udp (default) | tcp
+      facility: local0                # default
+      app_name: screen-diff-watcher   # syslog tag (ident)
+      payload_raw: "${timestamp} ${target} ${strategy} score=${score} sev=${severity}"   # default "${message}"
+      severity_map: { 0: "debug", 3: "error" }   # optional; keys 0..3
+      timeout_s: 5                    # default
+```
 
 ### ntfy
 
