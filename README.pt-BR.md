@@ -287,7 +287,7 @@ escada de scripts e CI em [wiki/Desenvolvimento-Testes-e-CI.md](wiki/Desenvolvim
 | [**Wiki**](wiki/Home-pt-BR.md) | detalhes de uso e recursos: CLI, GUI, config, ações, alertas, evidências, idiomas, DPI, build |
 | [`doc/00-Documento_de_Arquitetura_e_Especificação.md`](doc/00-Documento_de_Arquitetura_e_Especificação.md) | arquitetura e especificação — **fonte única de verdade do design** |
 | [`doc/01-Build_e_Release.md`](doc/01-Build_e_Release.md) | pipeline de build e release dos instaladores |
-| [`doc/releases/`](doc/releases/v0.9.0.pt-BR.md) | notas de release por versão (arquivo de detalhe) |
+| [`doc/releases/`](doc/releases/v0.9.1.pt-BR.md) | notas de release por versão (arquivo de detalhe) |
 | [`CHANGELOG.md`](CHANGELOG.md) | mudanças por versão (semântico) |
 | [`README.md`](README.md) | este guia em inglês |
 

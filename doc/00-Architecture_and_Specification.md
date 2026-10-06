@@ -4,7 +4,7 @@
 
 > **Purpose of this document**: to serve as the **single source of truth for the design** so that
 > another AI (or developer) can continue the project without having to reconstruct decisions, and to
-> record **what is implemented** (reference: v0.9.0). Every decision recorded here was made
+> record **what is implemented** (reference: v0.9.1). Every decision recorded here was made
 > deliberately; where there are alternatives, they are listed as "rejected" with the reason.
 >
 > **Maintenance rule**: do not replace a recorded decision with a "more modern" alternative
@@ -58,7 +58,7 @@ alert the user when that panel undergoes a visual change, without requiring the 
 looking at the screen. Natural extension: react to the change with a simple action (e.g., click
 "Refresh") when that is explicitly armed.
 
-### 1.4 Implementation status (v0.9.0)
+### 1.4 Implementation status (v0.9.1)
 
 Implemented and covered by tests: platform boundary, capture/anchoring (Model B), the three
 comparison modes, pipeline with short-circuit (`advanced` gated by phash and bypassed by
@@ -93,6 +93,13 @@ evidence tied to delivery attempts); the **selection lifecycle in the CLI** (`re
 README "Radar" item); and **multiple simultaneous ROIs** in the GUI (`SessionManager` running N
 `MonitorLoop`s with per-session preview/calibration, checkbox set, `ui.max_sessions`, aggregated
 status/tray, per-selection tray start/stop).
+
+**v0.9.1 fix**: `SessionManager.escalating` is a **method**; the GUI gate-status/acknowledge code
+calls it (`main_window._update_gate_status`/`_acknowledge`). The leftover property access raised
+`TypeError` inside the `QTimer` slot and PyQt6 aborts the process on an unhandled slot exception —
+the GUI died on the first drain tick (`0xC0000409`) without a visible traceback. Regression tests in
+`tests/test_gui_main_window.py` drive the real methods with Qt-free stubs (and a lazy
+`main_window` import, so the tests that simulate Qt being absent keep working).
 
 Pending **manual validation** items (not automatable in CI):
 

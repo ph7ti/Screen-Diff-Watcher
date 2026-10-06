@@ -293,7 +293,7 @@ Integration tests are opt-in (`TEST_REAL_CAPTURE`, `TEST_REAL_TELEGRAM`,
 | [**Wiki**](wiki/Home.md) | usage and feature details: CLI, GUI, config, actions, alerts, evidence, languages, DPI, build |
 | [`doc/00-Architecture_and_Specification.md`](doc/00-Architecture_and_Specification.md) | architecture and specification — **single source of truth for the design** |
 | [`doc/01-Build_and_Release.md`](doc/01-Build_and_Release.md) | installer build and release pipeline |
-| [`doc/releases/`](doc/releases/v0.9.0.md) | per-version release notes (detail file) |
+| [`doc/releases/`](doc/releases/v0.9.1.md) | per-version release notes (detail file) |
 | [`CHANGELOG.md`](CHANGELOG.md) | changes per version (semantic) |
 | [`README.pt-BR.md`](README.pt-BR.md) | este guia em português |
 

@@ -1,6 +1,6 @@
 # Roadmap — agent knowledge base
 
-Status: v0.9.0 · Scope: prioritized backlog for v1.0.0
+Status: v0.9.1 · Scope: prioritized backlog for v1.0.0
 
 Rules:
 
@@ -29,7 +29,9 @@ needs an `alerts.jsonl` schema decision.
 ## v0.9.0 — Reach: alerts + selections + multiple ROIs (done)
 
 Shipped as **0.9.0** (2026-10-06); details and evidence in `doc/releases/v0.9.0.md` (EN) +
-`v0.9.0.pt-BR.md`, `CHANGELOG.md` and `doc/00` §1.4.
+`v0.9.0.pt-BR.md`, `CHANGELOG.md` and `doc/00` §1.4. **0.9.1** (patch, 2026-10-06) fixes the GUI
+startup crash caused by leftover property-style `escalating` uses after the `SessionManager`
+refactor (see `doc/releases/v0.9.1.md`).
 
 - [x] New channels `ntfy`, `smtp` (stdlib `smtplib`, password via env) and `mqtt` (extra
       `paho-mqtt`), following the extensible map by `type` + i18n error codes + tests + wiki.

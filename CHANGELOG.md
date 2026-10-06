@@ -3,6 +3,25 @@
 Todas as mudanças relevantes deste projeto. Formato inspirado em "Keep a Changelog";
 versionamento semântico. Versão: `screen_watch.__version__` (fonte única).
 
+## [0.9.1] — 2026-10-06
+
+Notas: [`doc/releases/v0.9.1.md`](doc/releases/v0.9.1.md)
+([PT](doc/releases/v0.9.1.pt-BR.md)).
+
+### Corrigido
+
+- **Crash da GUI na inicialização (regressão da 0.9.0)**: o `MonitorController` foi substituído pelo
+  `SessionManager`, onde `escalating` é um **método**, mas `_update_gate_status`/`_acknowledge`
+  ainda usavam a sintaxe de property. O `TypeError` dentro do slot do `QTimer` faz o PyQt6 abortar o
+  processo no primeiro tick do `_drain` (`0xC0000409`), sem traceback visível ao usuário. Os três
+  pontos passaram a chamar `escalating()`; testes de regressão novos em
+  `tests/test_gui_main_window.py` exercitam os métodos reais com stubs, sem Qt.
+
+### Notas
+
+- 689 testes unitários (4 novos); `ruff` e `validate-i18n` verdes. Nenhuma mudança de
+  comportamento fora do fix.
+
 ## [0.9.0] — 2026-10-06
 
 Detalhes e exemplos: [`doc/releases/v0.9.0.md`](doc/releases/v0.9.0.md)

@@ -1,6 +1,6 @@
 # Architecture — agent knowledge base
 
-Status: v0.9.0 · Design SSoT: `doc/00-Architecture_and_Specification.md` (cite as `doc/00 §X`)
+Status: v0.9.1 · Design SSoT: `doc/00-Architecture_and_Specification.md` (cite as `doc/00 §X`)
 
 This page is a pointer summary. Every design decision stays in `doc/00`; do not restate or re-decide
 it here. Principles: `doc/00` §2. Decisions (ADR): §3. Pitfalls never to reintroduce: §14.
@@ -53,6 +53,7 @@ DPI: §5.1. Logical→physical: §9.5. Masks: §8. Config: §12. Glossary: §17.
 - Implemented: capture/anchoring (Model B), `light`/`default`/`advanced` + `text_watch`, alert channels (sound/popup/Telegram/ntfy/smtp/mqtt/log/webhook/http_post/syslog) with cooldown/re-arm, selectable sound + bundled `alert.mp3`, snooze/mute + escalation, evidence, actions + recorder, scheduler, profiles + v1→v2 migration, selection name/rename + headless CLI lifecycle (`remove`/`rename`/`edit-selection`, `list-selections --json`), GUI/tray with i18n, packaging and tag-driven release (`doc/00` §1.4).
 - **v0.8.0**: visual mask editor (atomic selection JSON, `overrides.masks` precedence), sound picker writes the active profile YAML (atomic + `.bak`, v1 refused), frame preview, alert history over `logs/alerts.jsonl` (best-effort evidence print), live calibration (score vs threshold, CSV), CI on py3.11/3.12/3.13 with coverage artifact + manual wiki runbook.
 - **v0.9.0**: ntfy/SMTP/MQTT channels (env-only secrets; MQTT is the optional `mqtt` extra), `AlertGate` snooze/mute in `state.json` + escalation until `acknowledge()`, CLI selection lifecycle/headless flow, and `SessionManager` with N concurrent GUI sessions (`ui.max_sessions`, default 4; CLI `run` stays single-selection).
+- **v0.9.1** (patch): fixes the GUI startup crash of 0.9.0 — `escalating` became a method in `SessionManager` but `main_window._update_gate_status`/`_acknowledge` still used property syntax; the `TypeError` inside the `QTimer` slot aborted the process (`0xC0000409`) on the first drain tick. Regression tests in `tests/test_gui_main_window.py` (Qt-free stubs).
 - Wayland cannot capture (`mss`); occluded windows compare whatever is on screen; macOS is not validated; GNOME tray may need an extension; M4A/AAC in the CLI needs an external player (`ffplay`); ARM is not built.
 - Manual validation pending: GUI/tray/overlay (including multi-session and the v0.8.0/v0.9.0 widgets) at 100/125/150% and the clean-machine bundle checklist (`doc/01` §9).
 
@@ -70,6 +71,7 @@ GitHub releases: https://github.com/ph7ti/Screen-Diff-Watcher/releases
 - v0.7.1 — bundled `alert.mp3` default, sound popup and 2×2 window layout.
 - v0.8.0 — mask editor, sound written to the YAML, preview/history/calibration, CI py3.12 + coverage, wiki runbook.
 - v0.9.0 — ntfy/SMTP/MQTT channels, snooze/mute + escalation, CLI selection lifecycle (headless), multiple ROIs via `SessionManager`.
+- v0.9.1 — patch: GUI startup crash fix (`escalating()` method call) + Qt-free regression tests.
 
 Detailed notes: `doc/releases/vX.Y.Z.md` + `.pt-BR.md` (from v0.5.0 on); `CHANGELOG.md` is the
 semantic log (PT). Note: 0.7.1 was a deliberate PATCH despite the documented MINOR rule.

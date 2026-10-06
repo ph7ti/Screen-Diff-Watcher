@@ -10,7 +10,7 @@ before any non-trivial task:
 ## Project
 
 Desktop app (Python 3.11+, Windows/Linux) that watches a **rectangular region (ROI) of a window**
-and alerts on visual changes. PyQt6 GUI + tray and a full CLI. Current version: **0.9.0**
+and alerts on visual changes. PyQt6 GUI + tray and a full CLI. Current version: **0.9.1**
 (`src/screen_watch/__init__.py`, single source; `pyproject.toml` is dynamic).
 
 ## Source of truth

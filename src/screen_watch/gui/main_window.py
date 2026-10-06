@@ -1612,7 +1612,7 @@ class MainWindow(QMainWindow):
         self._update_gate_status()
 
     def _acknowledge(self) -> None:
-        if not self._controller.escalating:
+        if not self._controller.escalating():
             return
         self._controller.acknowledge()
         self._append("escalation acknowledged")
@@ -1627,13 +1627,13 @@ class MainWindow(QMainWindow):
             remaining = self._controller.gate_remaining_s()
             minutes = max(1, int((remaining + 59) // 60))
             parts.append(tr("status.snoozed", minutes=minutes))
-        if self._controller.escalating:
+        if self._controller.escalating():
             parts.append(tr("status.escalating"))
         self.gate_label.setText(" — ".join(parts))
         self.btn_mute.setText(
             tr("main.btn_unmute") if status == "muted" else tr("main.btn_mute")
         )
-        self.btn_ack.setEnabled(self._controller.escalating)
+        self.btn_ack.setEnabled(self._controller.escalating())
 
     def _start_hotkeys(self) -> None:
         if self._config is None or self._config.legacy:
