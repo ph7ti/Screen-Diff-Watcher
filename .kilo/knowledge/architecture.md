@@ -1,6 +1,6 @@
 # Architecture — agent knowledge base
 
-Status: v0.10.0 · Design SSoT: `doc/00-Architecture_and_Specification.md` (cite as `doc/00 §X`)
+Status: v0.10.1 · Design SSoT: `doc/00-Architecture_and_Specification.md` (cite as `doc/00 §X`)
 
 This page is a pointer summary. Every design decision stays in `doc/00`; do not restate or re-decide
 it here. Principles: `doc/00` §2. Decisions (ADR): §3. Pitfalls never to reintroduce: §14.
@@ -49,7 +49,7 @@ DPI: §5.1. Logical→physical: §9.5. Masks: §8. Config: §12. Glossary: §17.
 - Selection JSON (v1/v2) with `overrides` that **replace** profile values; `persistence.selection.build_target` is the resolution/precedence point.
 - Writing: `save_config` writes atomically (temp + `os.replace`) and keeps `config.yaml.bak` via `shutil.copy2` (comments are not preserved); `dump_selection`/`state.json` are atomic without backup; callers must reload from disk before rewriting (`doc/00` §12.4).
 
-## Current state and known limitations (v0.10.0)
+## Current state and known limitations (v0.10.1)
 
 - Implemented: capture/anchoring (Model B), `light`/`default`/`advanced` + `text_watch`, alert channels (sound/popup/Telegram/ntfy/smtp/mqtt/log/webhook/http_post/syslog) with cooldown/re-arm, selectable sound + bundled `alert.mp3`, snooze/mute + escalation, evidence, actions + recorder, scheduler, profiles + v1→v2 migration, selection name/rename + headless CLI lifecycle (`remove`/`rename`/`edit-selection`, `list-selections --json`), GUI/tray with i18n, packaging and tag-driven release (`doc/00` §1.4).
 - **v0.8.0**: visual mask editor (atomic selection JSON, `overrides.masks` precedence), sound picker writes the active profile YAML (atomic + `.bak`, v1 refused), frame preview, alert history over `logs/alerts.jsonl` (best-effort evidence print), live calibration (score vs threshold, CSV), CI on py3.11/3.12/3.13 with coverage artifact + manual wiki runbook.
@@ -75,6 +75,7 @@ GitHub releases: https://github.com/ph7ti/Screen-Diff-Watcher/releases
 - v0.9.0 — ntfy/SMTP/MQTT channels, snooze/mute + escalation, CLI selection lifecycle (headless), multiple ROIs via `SessionManager`.
 - v0.9.1 — patch: GUI startup crash fix (`escalating()` method call) + Qt-free regression tests.
 - v0.10.0 — action scheduler: per-action time triggers (`at`/`every`/`after`), deadline-capped loop wait, GUI trigger editor, one-off notice, recorder hint.
+- v0.10.1 — patch: DPI fix in the GUI mouse locator and ROI highlight (Qt logical ↔ physical conversion at scale ≠ 100%).
 
 Detailed notes: `doc/releases/vX.Y.Z.md` + `.pt-BR.md` (from v0.5.0 on); `CHANGELOG.md` is the
 semantic log (PT). Note: 0.7.1 was a deliberate PATCH despite the documented MINOR rule.

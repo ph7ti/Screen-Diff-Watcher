@@ -1,6 +1,6 @@
 # Roadmap — agent knowledge base
 
-Status: v0.10.0 · Scope: prioritized backlog for v1.0.0
+Status: v0.10.1 · Scope: prioritized backlog for v1.0.0
 
 Rules:
 

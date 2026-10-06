@@ -11,6 +11,14 @@ monitor de 125%. O `device_pixel_ratio` do Qt (`1.25` no primário) é do espaç
 O overlay, por outro lado, recebe o arrasto em coordenadas lógicas do Qt e converte para físico com
 `gui/overlay_geometry.to_physical` antes de gravar a seleção.
 
+O **localizador** de mouse ("Localizar posição do mouse…" no editor de ações) e o **realce** da ROI
+("Ver local") ficam na mesma fronteira Qt ↔ físico: desde a **v0.10.1** eles também convertem — o
+localizador devolve o ponto **físico** (`QCursor.pos()` é lógico; a conversão ancora no monitor sob
+o cursor, origem + dpr) e o realce converte o retângulo físico para lógico antes de pintar. Antes
+dessa correção, ações criadas pelo localizador clicavam em coordenadas **lógicas** em monitores com
+escala (ex.: ~192×120 px de erro no centro de uma tela 1920×1200 a 125%, crescendo até o canto
+inferior direito).
+
 Ao iniciar `run`, o app verifica cada monitor, marca os adequados (`OK`, 100%) e avisa se a janela do
 target estiver num monitor com escala. `probe-dpi` e `scripts/probe_dpi.py` mostram a matriz
 (mss físico × Qt lógico × escala).

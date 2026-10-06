@@ -1,6 +1,6 @@
 # Development — agent knowledge base
 
-Status: v0.10.0 · Scope: setup, quality gates, tests, CI, release, app-data
+Status: v0.10.1 · Scope: setup, quality gates, tests, CI, release, app-data
 
 Commands below were verified against the repository at v0.7.1. Build/release details are in
 `doc/01-Build_and_Release.md`; design rationale in `doc/00`.

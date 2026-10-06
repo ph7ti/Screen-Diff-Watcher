@@ -8,6 +8,9 @@ from screen_watch.gui.overlay_geometry import (
     is_valid_selection,
     local_from_global,
     normalize_corners,
+    point_to_logical,
+    point_to_physical,
+    rect_to_logical,
     resolve_ref_point,
     to_physical,
     to_relative,
@@ -54,6 +57,44 @@ def test_to_physical_anchors_on_screen_origin():
 
 def test_to_relative_subtracts_window_origin():
     assert to_relative((200, 300, 30, 40), (120, 340)) == (80, -40, 30, 40)
+
+
+def test_point_to_physical_scales_at_125_percent():
+    # Cenario real: monitor 1920x1200 fisico a 125% (logico 1536x960).
+    assert point_to_physical(
+        (768, 480), screen_origin=(0, 0), device_pixel_ratio=1.25
+    ) == (960, 600)
+
+
+def test_point_to_physical_anchors_on_screen_origin():
+    assert point_to_physical(
+        (2020, 478), screen_origin=(1920, 428), device_pixel_ratio=1.0
+    ) == (2020, 478)
+
+
+def test_point_logical_physical_round_trip():
+    # Valores multiplos exatos: a conversao usa int() (truncamento, doc 9.5).
+    for dpr, local in ((1.0, (333, 444)), (1.25, (320, 440)), (1.5, (322, 440)), (2.0, (333, 444))):
+        physical = point_to_physical(local, screen_origin=(10, 20), device_pixel_ratio=dpr)
+        assert point_to_logical(
+            physical, screen_origin=(10, 20), device_pixel_ratio=dpr
+        ) == local
+
+
+def test_rect_to_logical_inverts_to_physical():
+    origin = (100, 50)
+    for dpr in (1.0, 1.25, 2.0):
+        physical = to_physical(
+            (10, 20, 80, 40), screen_origin=origin, device_pixel_ratio=dpr
+        )
+        assert rect_to_logical(
+            physical, screen_origin=origin, device_pixel_ratio=dpr
+        ) == (10, 20, 80, 40)
+
+
+def test_rect_to_logical_identity_when_no_dpr():
+    rect = (123, 456, 30, 40)
+    assert rect_to_logical(rect, screen_origin=(0, 0), device_pixel_ratio=0.0) == rect
 
 
 def test_is_valid_selection_min_side():

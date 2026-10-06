@@ -3,6 +3,28 @@
 Todas as mudanças relevantes deste projeto. Formato inspirado em "Keep a Changelog";
 versionamento semântico. Versão: `screen_watch.__version__` (fonte única).
 
+## [0.10.1] — 2026-10-06
+
+### Corrigido
+
+- **Cliques deslocados em monitores com escala ≠ 100%**: o localizador de mouse do editor de ações
+  devolvia o ponto em espaço **lógico** do Qt (ex.: 1536×960 num monitor físico de 1920×1200 a 125%),
+  mas o clique era executado em espaço **físico** — os cliques caíam deslocados (~192×120 px no
+  centro da tela, crescendo até o canto). Agora o localizador converte lógico→físico ancorado no
+  monitor sob o cursor (origem + dpr, `doc/00` §9.5), valendo para ações `ref: roi`/`window`/`screen`
+  criadas pela GUI.
+- **Realce "Ver local" deslocado**: a caixa de realce recebia o retângulo físico e pintava em
+  coordenadas lógicas do Qt; agora converte físico→lógico por monitor antes de desenhar.
+- **Comentário incorreto em `_locator_bases`**: a base do localizador é física (não lógica); o
+  código e o docstring foram alinhados.
+
+### Notas
+
+- Captura/monitoramento, gravador (`record-actions`) e coordenadas digitadas à mão já operavam em
+  espaço físico e não mudaram — o bug ficava restrito ao caminho da GUI (localizador + realce).
+- 5 testes puros novos em `tests/test_overlay_geometry.py` (conversões de ponto/retângulo em 100%,
+  125%, 150% e 200%); `ruff`, `validate-i18n` e a suíte de testes verdes.
+
 ## [0.10.0] — 2026-10-06
 
 Notas: [`doc/releases/v0.10.0.md`](doc/releases/v0.10.0.md)

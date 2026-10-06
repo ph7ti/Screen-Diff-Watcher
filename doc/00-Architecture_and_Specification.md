@@ -4,7 +4,7 @@
 
 > **Purpose of this document**: to serve as the **single source of truth for the design** so that
 > another AI (or developer) can continue the project without having to reconstruct decisions, and to
-> record **what is implemented** (reference: v0.10.0). Every decision recorded here was made
+> record **what is implemented** (reference: v0.10.1). Every decision recorded here was made
 > deliberately; where there are alternatives, they are listed as "rejected" with the reason.
 >
 > **Maintenance rule**: do not replace a recorded decision with a "more modern" alternative
@@ -58,7 +58,7 @@ alert the user when that panel undergoes a visual change, without requiring the 
 looking at the screen. Natural extension: react to the change with a simple action (e.g., click
 "Refresh") when that is explicitly armed.
 
-### 1.4 Implementation status (v0.10.0)
+### 1.4 Implementation status (v0.10.1)
 
 Implemented and covered by tests: platform boundary, capture/anchoring (Model B), the three
 comparison modes, pipeline with short-circuit (`advanced` gated by phash and bypassed by
@@ -109,6 +109,12 @@ capping the `MonitorLoop` wait (§3.5), strict validation (change-only fields, `
 `cooldown_s >= every_s`), `trigger` in the audit/live payloads, GUI editor trigger selector,
 `list-actions` summary, one-off notice (`trigger ... ignored (explicit run)`) and the recorder
 commented hint; i18n in both catalogs and fake-clock tests.
+
+**v0.10.1 fix**: the GUI mouse locator and the ROI highlight now convert between Qt logical and
+physical space anchored on the monitor origin (§9.5); before, actions created with the locator
+clicked at **logical** coordinates on scaled monitors (`ref: roi`/`window`/`screen`; e.g., ~192×120 px
+off at the center of a 1920×1200 @ 125% screen). Capture, recorder and hand-typed coordinates were
+already physical and unchanged.
 
 Pending **manual validation** items (not automatable in CI):
 
@@ -530,7 +536,8 @@ the ROI "slips" silently. It is the most expensive bug to debug if discovered la
 `mss` stay in the **same physical space** (`pywinctl == GetWindowRect` in 15/15 windows measured).
 That is why the `resolver` uses the identity converter and there is **no drift** in the monitoring
 path, even on a scaled monitor (e.g., 125%). Qt's `device_pixel_ratio` (`1.25` on the primary) belongs
-to Qt's logical space — used only by the overlay (§9.5).
+to Qt's logical space — used only at the Qt boundaries: the select overlay, the mouse locator and the
+ROI highlight (§9.5).
 
 When starting `run`, the app checks each monitor, marks the suitable ones (`OK`, 100%) and warns if
 the target window is on a scaled monitor. `probe-dpi` and `scripts/probe_dpi.py` print the matrix.
@@ -876,6 +883,14 @@ def to_physical(rect: QRect, screen) -> tuple[int, int, int, int]:
 
 **Note**: with `SetProcessDpiAwareness(2)` + `PassThrough`, in many cases `dpr == 1.0` and the conversion
 is the identity. **Do not assume that** — test at 125%, 150%, 200%.
+
+The same anchoring applies to **points** and to the **reverse direction** (pure helpers in
+`gui/overlay_geometry.py`, tested without display): `point_to_physical` (mouse locator —
+`QCursor.pos()` is logical, the runner/`pynput` is physical; anchored on the monitor under the cursor
+via `screenAt`), `point_to_logical` and `rect_to_logical` (ROI highlight "Ver local" — the rect comes
+from the physical path and Qt paints logical). **Rule**: every Qt ↔ physical boundary converts
+**exactly once**, anchored on the monitor origin; the select overlay, the mouse locator and the
+highlight are the only Qt boundaries (v0.10.1).
 
 ### 9.6 Post-drag validation
 

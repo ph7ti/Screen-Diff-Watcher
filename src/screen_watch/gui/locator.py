@@ -2,8 +2,9 @@
 
 Mostra uma caixa com X/Y seguindo o cursor (valores ja no `ref` escolhido, alem do
 absoluto). `Enter`/clique esquerdo confirma; `Esc`/clique direito cancela. Devolve
-o ponto global **logico** (a mesma base do `Frame`); o chamador converte pelo `ref`
-via `overlay_geometry.resolve_ref_point`.
+o ponto global **fisico** (a mesma base do `Frame` e do `pynput`): o `QCursor.pos()`
+do Qt e logico e aqui e convertido pelo monitor sob o cursor (origem + dpr, doc
+secao 9.5) antes de alimentar `overlay_geometry.resolve_ref_point`.
 
 O localizador e aberto **de dentro do dialogo do editor**, que esta em `exec()` (modal
 de aplicacao) — por isso a janela precisa ser filha do dialogo (imune a modalidade) e
@@ -17,6 +18,22 @@ from __future__ import annotations
 from collections.abc import Callable
 
 Rect = tuple[int, int, int, int]
+Point = tuple[int, int]
+
+
+def _to_physical_point(pos) -> Point:
+    """Ponto logico do Qt -> fisico, ancorado no monitor sob o cursor."""
+    from PyQt6.QtGui import QGuiApplication  # noqa: PLC0415
+
+    from screen_watch.gui.overlay_geometry import point_to_physical  # noqa: PLC0415
+
+    screen = QGuiApplication.screenAt(pos) or QGuiApplication.primaryScreen()
+    geometry = screen.geometry()
+    return point_to_physical(
+        (pos.x(), pos.y()),
+        screen_origin=(geometry.x(), geometry.y()),
+        device_pixel_ratio=float(screen.devicePixelRatio()),
+    )
 
 
 def run_locator(
@@ -28,7 +45,7 @@ def run_locator(
     parent=None,
     status: Callable[[str], None] | None = None,
 ) -> tuple[int, int] | None:
-    """Devolve o ponto global (logico) confirmado, ou `None` se cancelado/sem Qt."""
+    """Devolve o ponto global (fisico) confirmado, ou `None` se cancelado/sem Qt."""
     try:
         from PyQt6.QtCore import QEventLoop, Qt, QTimer  # noqa: PLC0415
         from PyQt6.QtGui import QColor, QCursor, QFont, QGuiApplication, QPainter  # noqa: PLC0415
@@ -64,11 +81,12 @@ def run_locator(
 
         def _paint(self) -> None:
             point = QCursor.pos()
+            physical = _to_physical_point(point)
             effective_ref, relative = resolve_ref_point(
-                (point.x(), point.y()), ref, roi_rect=roi_rect, window_rect=window_rect
+                physical, ref, roi_rect=roi_rect, window_rect=window_rect
             )
             self._rel = (effective_ref, relative)
-            self._abs = (point.x(), point.y())
+            self._abs = physical
             self.update()
 
         def paintEvent(self, event) -> None:  # noqa: N802 - API do Qt
@@ -104,17 +122,15 @@ def run_locator(
 
         def keyPressEvent(self, event) -> None:  # noqa: N802 - API do Qt
             if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-                pos = QCursor.pos()
-                result["point"] = (pos.x(), pos.y())
+                result["point"] = _to_physical_point(QCursor.pos())
                 loop.quit()
             elif event.key() == Qt.Key.Key_Escape:
                 result["point"] = None
                 loop.quit()
 
         def mousePressEvent(self, event) -> None:  # noqa: N802 - API do Qt
-            pos = QCursor.pos()
             if event.button() == Qt.MouseButton.LeftButton:
-                result["point"] = (pos.x(), pos.y())
+                result["point"] = _to_physical_point(QCursor.pos())
                 loop.quit()
             elif event.button() == Qt.MouseButton.RightButton:
                 result["point"] = None

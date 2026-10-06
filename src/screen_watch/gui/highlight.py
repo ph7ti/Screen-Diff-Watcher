@@ -9,6 +9,10 @@ sem modalidade. Pinta uma camada escura **apenas fora** da ROI (retangulos de
 Invariante de correcao: nenhum pixel dentro da ROI e pintado, entao o realce
 pode rodar com a sessao monitorando sem virar falso positivo.
 
+`rect` chega em espaco **fisico** (mss/pywinctl); o Qt pinta em espaco
+**logico**, entao cada janela converte o retangulo com a origem e o dpr do seu
+monitor antes de desenhar (doc secao 9.5).
+
 Qt e importado dentro da funcao (CI sem display; doc P12).
 """
 
@@ -22,12 +26,16 @@ _ACTIVE: list[object] = []
 
 
 def show_roi_highlight(rect: Rect, label: str = "", duration_ms: int = 2000) -> None:
-    """Destaca `rect` (logico global) por `duration_ms`; nunca captura entrada."""
+    """Destaca `rect` (fisico global) por `duration_ms`; nunca captura entrada."""
     from PyQt6.QtCore import Qt, QTimer  # noqa: PLC0415
     from PyQt6.QtGui import QColor, QFont, QGuiApplication, QPainter, QPen  # noqa: PLC0415
     from PyQt6.QtWidgets import QWidget  # noqa: PLC0415
 
-    from screen_watch.gui.overlay_geometry import clip_rect, dim_rects  # noqa: PLC0415
+    from screen_watch.gui.overlay_geometry import (  # noqa: PLC0415
+        clip_rect,
+        dim_rects,
+        rect_to_logical,
+    )
     from screen_watch.gui.qt_app import ensure_app  # noqa: PLC0415
 
     ensure_app()
@@ -59,11 +67,18 @@ def show_roi_highlight(rect: Rect, label: str = "", duration_ms: int = 2000) -> 
             geometry = self.geometry()
             sx, sy = geometry.x(), geometry.y()
             screen_rect = (sx, sy, geometry.width(), geometry.height())
+            # Converte o retangulo fisico para o espaco logico deste monitor
+            # (doc secao 9.5); com dpr 1.0 a conversao e identidade.
+            roi = rect_to_logical(
+                rect,
+                screen_origin=(sx, sy),
+                device_pixel_ratio=float(self._screen.devicePixelRatio()),
+            )
             painter = QPainter(self)
-            for gx, gy, gw, gh in dim_rects(rect, screen_rect):
+            for gx, gy, gw, gh in dim_rects(roi, screen_rect):
                 painter.fillRect(gx - sx, gy - sy, gw, gh, dim_color)
 
-            visible = clip_rect(rect, screen_rect)
+            visible = clip_rect(roi, screen_rect)
             if visible is None:
                 return
             vx, vy, vw, vh = visible

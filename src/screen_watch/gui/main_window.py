@@ -1071,7 +1071,7 @@ class MainWindow(QMainWindow):
             pass
 
     def _locator_bases(self, mode: str):
-        """Bases logicas (ROI, janela) para o localizador; (None, None) se indisponivel."""
+        """Bases fisicas (ROI, janela) para o localizador; (None, None) se indisponivel."""
         from screen_watch.capture.resolver import resolve
 
         try:

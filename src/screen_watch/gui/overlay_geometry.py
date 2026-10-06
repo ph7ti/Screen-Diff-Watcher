@@ -51,6 +51,50 @@ def to_physical(global_logical: Rect, *, screen_origin: Point, device_pixel_rati
     )
 
 
+def point_to_physical(
+    point: Point, *, screen_origin: Point, device_pixel_ratio: float
+) -> Point:
+    """Ponto global logico -> global fisico (mesma ancora do `to_physical`).
+
+    Usado pelo localizador de mouse (doc secao 9.5): o `QCursor.pos()` do Qt e
+    logico e precisa virar fisico antes de alimentar o `resolve_ref_point`/runner.
+    """
+    return (
+        screen_origin[0] + int((point[0] - screen_origin[0]) * device_pixel_ratio),
+        screen_origin[1] + int((point[1] - screen_origin[1]) * device_pixel_ratio),
+    )
+
+
+def point_to_logical(
+    point: Point, *, screen_origin: Point, device_pixel_ratio: float
+) -> Point:
+    """Ponto global fisico -> global logico (inverso do `point_to_physical`)."""
+    if device_pixel_ratio <= 0:
+        return point
+    return (
+        screen_origin[0] + int(round((point[0] - screen_origin[0]) / device_pixel_ratio)),
+        screen_origin[1] + int(round((point[1] - screen_origin[1]) / device_pixel_ratio)),
+    )
+
+
+def rect_to_logical(global_physical: Rect, *, screen_origin: Point, device_pixel_ratio: float) -> Rect:
+    """Retangulo global fisico -> global logico (inverso do `to_physical`).
+
+    Usado pelo realce "Ver local" (doc secao 9.5): o retangulo vem do caminho
+    fisico (mss/pywinctl) e o Qt pinta em espaco logico.
+    """
+    if device_pixel_ratio <= 0:
+        return global_physical
+    x = screen_origin[0] + int(round((global_physical[0] - screen_origin[0]) / device_pixel_ratio))
+    y = screen_origin[1] + int(round((global_physical[1] - screen_origin[1]) / device_pixel_ratio))
+    return (
+        x,
+        y,
+        int(round(global_physical[2] / device_pixel_ratio)),
+        int(round(global_physical[3] / device_pixel_ratio)),
+    )
+
+
 def to_relative(global_physical: Rect, window_origin: Point) -> Rect:
     """Retangulo global fisico -> relativo a janela (doc secao 7.1, passo 6)."""
     return (

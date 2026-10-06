@@ -12,6 +12,14 @@ in the **same physical space** — measured across **15/15 windows** (`pywinctl 
 The overlay, on the other hand, receives the drag in Qt logical coordinates and converts it to physical with
 `gui/overlay_geometry.to_physical` before writing the selection.
 
+The mouse **locator** ("Locate mouse position…" in the action editor) and the ROI **highlight**
+("View region") sit on the same Qt ↔ physical boundary: since **v0.10.1** they convert too — the
+locator returns the **physical** point (`QCursor.pos()` is logical; it is anchored on the monitor
+under the cursor, origin + dpr) and the highlight converts the physical rect to logical before
+painting. Before that fix, actions created with the locator clicked at **logical** coordinates on
+scaled monitors (e.g., ~192×120 px off at the center of a 1920×1200 @ 125% screen, growing toward the
+bottom-right corner).
+
 When starting `run`, the app checks each monitor, marks the suitable ones (`OK`, 100%) and warns if the
 target window is on a monitor with scaling. `probe-dpi` and `scripts/probe_dpi.py` show the matrix
 (physical mss × logical Qt × scale).

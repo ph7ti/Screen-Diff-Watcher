@@ -3,7 +3,7 @@
 
 > **Propósito deste documento**: servir como **fonte única de verdade do design** para que outra IA
 > (ou desenvolvedor) continue o projeto sem precisar reconstruir decisões, e registrar **o que está
-> implementado** (referência: v0.10.0). Toda decisão aqui registrada foi tomada deliberadamente; onde
+> implementado** (referência: v0.10.1). Toda decisão aqui registrada foi tomada deliberadamente; onde
 > houver alternativas, elas estão listadas como "rejeitadas" com o motivo.
 >
 > **Regra de manutenção**: não substitua uma decisão registrada por uma alternativa "mais moderna"
@@ -57,7 +57,7 @@ alertar o usuário quando aquele painel sofrer alteração visual, sem exigir qu
 olhando para a tela. Extensão natural: reagir à mudança com uma ação simples (ex.: clicar em
 "Atualizar") quando isso for explicitamente armado.
 
-### 1.4 Estado da implementação (v0.10.0)
+### 1.4 Estado da implementação (v0.10.1)
 
 Implementado e coberto por testes: fronteira de plataforma, captura/ancoragem (Modelo B), os três
 modos de comparação, pipeline com curto-circuito (`advanced` com gate de phash e bypass pelo
@@ -113,6 +113,12 @@ de `change`, `rebaseline` recusado, `cooldown_s >= every_s`), `trigger` nos payl
 auditoria/log, seletor de gatilho no editor da GUI, resumo no `list-actions`, aviso
 `trigger ... ignored (explicit run)` nos fluxos avulsos e dica comentada no gravador; i18n nos dois
 catálogos e testes com relógios falsos.
+
+**Correção da v0.10.1**: o localizador de mouse da GUI e o realce da ROI agora convertem entre o
+espaço lógico do Qt e o físico, ancorados na origem do monitor (§9.5); antes, ações criadas pelo
+localizador clicavam em coordenadas **lógicas** em monitores com escala (`ref: roi`/`window`/`screen`;
+ex.: ~192×120 px de erro no centro de uma tela 1920×1200 a 125%). Captura, gravador e coordenadas
+digitadas à mão já eram físicas e não mudaram.
 
 Pendências de **validação manual** (não automatizável no CI):
 
@@ -535,7 +541,8 @@ def is_wayland() -> bool:
 ficam no **mesmo espaço físico** (`pywinctl == GetWindowRect` em 15/15 janelas medidas). Por isso o
 `resolver` usa o conversor identidade e **não há drift** no caminho de monitoramento, mesmo em
 monitor com escala (ex.: 125%). O `device_pixel_ratio` do Qt (`1.25` no primário) é do espaço
-lógico do Qt — usado apenas pelo overlay (§9.5).
+lógico do Qt — usado apenas nas fronteiras do Qt: o overlay de seleção, o localizador de mouse e o
+realce da ROI (§9.5).
 
 Ao iniciar `run`, o app verifica cada monitor, marca os adequados (`OK`, 100%) e avisa se a janela
 do target estiver num monitor com escala. `probe-dpi` e `scripts/probe_dpi.py` imprimem a matriz.
@@ -881,6 +888,14 @@ def to_physical(rect: QRect, screen) -> tuple[int, int, int, int]:
 
 **Nota**: com `SetProcessDpiAwareness(2)` + `PassThrough`, em muitos casos `dpr == 1.0` e a conversão
 é identidade. **Não assumir isso** — testar em 125%, 150%, 200%.
+
+A mesma ancoragem vale para **pontos** e para a **direção inversa** (helpers puros em
+`gui/overlay_geometry.py`, testáveis sem display): `point_to_physical` (localizador de mouse — o
+`QCursor.pos()` é lógico, o runner/`pynput` é físico; ancora no monitor sob o cursor via `screenAt`),
+`point_to_logical` e `rect_to_logical` (realce "Ver local" — o retângulo vem do caminho físico e o Qt
+pinta lógico). **Regra**: toda fronteira Qt ↔ físico converte **exatamente uma vez**, ancorada na
+origem do monitor; o overlay de seleção, o localizador de mouse e o realce são as únicas fronteiras
+do Qt (v0.10.1).
 
 ### 9.6 Validação pós-drag
 
