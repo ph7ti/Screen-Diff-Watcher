@@ -166,6 +166,19 @@ _EN: dict[str, str] = {
     ),
     "action.list_not_list": "{prefix} must be a list",
     "action.duplicate_names": "{prefix}: duplicate action names: {names}",
+    "action.trigger_invalid": "invalid {field}.trigger: {value!r}; use {valid}",
+    "action.trigger_field_not_supported": (
+        "{field}: {value!r} is not supported with trigger {trigger}"
+    ),
+    "action.trigger_at_required": "{field}.at requires at least one HH:MM time",
+    "action.trigger_at_format": "invalid {field}.at entry: {value!r}; use HH:MM (24h)",
+    "action.trigger_days_invalid": "invalid {field}.days entry: {value!r}; use {valid}",
+    "action.trigger_every_min": "{field}.every_s must be >= 1",
+    "action.trigger_after_min": "{field}.after_s must be >= 1",
+    "action.trigger_rebaseline": "{field}.rebaseline is not supported with trigger {trigger}",
+    "action.cooldown_exceeds_interval": (
+        "{field}.cooldown_s ({cooldown}) must be lower than every_s ({every})"
+    ),
     # -- selection ------------------------------------------------------------
     "selection.missing_field": "selection missing required field: {field!r}",
     "selection.version_unsupported": "unsupported selection version: {value!r}",

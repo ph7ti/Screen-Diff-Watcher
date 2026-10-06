@@ -97,10 +97,17 @@ def test_monitor_session_action_rebaseline_plumbing(make_frame, solid):
         def __init__(self, request):
             self.request = request
             self.calls = 0
+            self.ticks = 0
 
         def on_result(self, result, frame):
             self.calls += 1
             return self.request
+
+        def on_tick(self, frame):
+            self.ticks += 1
+
+        def next_deadline_delay(self):
+            return None
 
     rebaselining = FakeActions(True)
     session = MonitorSession(_target(), actions=rebaselining)
@@ -157,3 +164,55 @@ def test_monitor_session_action_event_plumbing(monkeypatch, tmp_path, make_frame
 
     assert events and events[0]["mode"] == "rehearsal"
     assert events[0]["action"] == "a"
+
+
+class _FakeTickActions:
+    def __init__(self, delay=None):
+        self.ticks = 0
+        self._delay = delay
+
+    def on_result(self, result, frame):
+        return False
+
+    def on_tick(self, frame):
+        self.ticks += 1
+
+    def next_deadline_delay(self):
+        return self._delay
+
+
+def test_monitor_session_calls_on_tick_only_after_baseline(make_frame, solid):
+    actions = _FakeTickActions()
+    session = MonitorSession(_target(), actions=actions)
+
+    session(make_frame(solid(100), sequence=1))  # baseline: nao avalia
+    assert actions.ticks == 0
+
+    session(make_frame(solid(100), sequence=2))
+    session(make_frame(solid(100), sequence=3))
+    assert actions.ticks == 2
+
+    session.request_rebaseline()
+    session(make_frame(solid(100), sequence=4))
+    assert actions.ticks == 2  # frame de re-baseline tambem nao avalia
+
+
+def test_monitor_session_next_deadline_delay_delegates():
+    session = MonitorSession(_target(), actions=_FakeTickActions(delay=12.5))
+    assert session.next_deadline_delay() == 12.5
+
+    without = MonitorSession(_target())
+    assert without.actions is None
+    assert without.next_deadline_delay() is None
+
+
+def test_build_loop_wires_deadline_provider():
+    from screen_watch.app import build_loop
+
+    session = MonitorSession(_target())
+    loop = build_loop(_target(), session)
+    assert loop.deadline_provider is not None
+    assert loop.deadline_provider() is None
+
+    explicit = build_loop(_target(), session, deadline_provider=None)
+    assert explicit.deadline_provider is None

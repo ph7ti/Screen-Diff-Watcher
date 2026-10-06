@@ -51,6 +51,11 @@ HELP_KEYS: tuple[str, ...] = (
     # editor
     "editor.name",
     "editor.enabled",
+    "editor.trigger",
+    "editor.trigger_at",
+    "editor.trigger_days",
+    "editor.trigger_every",
+    "editor.trigger_after",
     "editor.severity_min",
     "editor.cooldown_s",
     "editor.settle_s",

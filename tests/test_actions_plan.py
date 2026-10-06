@@ -168,3 +168,65 @@ def test_parse_action_negative_limits_and_cooldown():
             parse_actions([{"name": "x", field: -1}])
     with pytest.raises(ActionError):
         parse_actions([{"name": "x", "max_per_session": -1}])
+
+
+def test_parse_time_trigger_fields():
+    at = parse_actions(
+        [{"name": "x", "when": {"trigger": "at", "at": ["08:00", "18:30"], "days": ["mon", "fri"]}}]
+    )[0]
+    assert at.trigger == "at"
+    assert at.at == ("08:00", "18:30")
+    assert at.days == ("mon", "fri")
+
+    every = parse_actions([{"name": "x", "when": {"trigger": "every", "every_s": 60}}])[0]
+    assert every.trigger == "every" and every.every_s == 60.0
+
+    after = parse_actions([{"name": "x", "when": {"trigger": "after", "after_s": 300}}])[0]
+    assert after.trigger == "after" and after.after_s == 300.0
+
+    change = parse_actions([{"name": "x"}])[0]
+    assert change.trigger == "change"
+    assert change.at == () and change.days == () and change.every_s == 0.0
+
+
+def test_time_trigger_validation_codes():
+    cases = [
+        ({"trigger": "sometimes"}, "action.trigger_invalid"),
+        ({"trigger": "at"}, "action.trigger_at_required"),
+        ({"trigger": "at", "at": []}, "action.trigger_at_required"),
+        ({"trigger": "at", "at": ["8:00"]}, "action.trigger_at_format"),
+        ({"trigger": "at", "at": ["24:00"]}, "action.trigger_at_format"),
+        ({"trigger": "at", "at": ["08:00"], "days": ["monday"]}, "action.trigger_days_invalid"),
+        ({"trigger": "at", "at": ["08:00"], "days": ["mon", "mon"]}, "action.trigger_days_invalid"),
+        ({"trigger": "at", "at": ["08:00"], "days": []}, "action.trigger_days_invalid"),
+        ({"trigger": "every"}, "action.trigger_every_min"),
+        ({"trigger": "every", "every_s": 0}, "action.trigger_every_min"),
+        ({"trigger": "after"}, "action.trigger_after_min"),
+        ({"trigger": "after", "after_s": 0.5}, "action.trigger_after_min"),
+        ({"trigger": "at", "at": ["08:00"], "severity_min": 2}, "action.trigger_field_not_supported"),
+        ({"trigger": "every", "every_s": 10, "text_any": ["x"]}, "action.trigger_field_not_supported"),
+        ({"trigger": "after", "after_s": 10, "changed": True}, "action.trigger_field_not_supported"),
+        ({"trigger": "change", "at": ["08:00"]}, "action.trigger_field_not_supported"),
+        ({"trigger": "change", "every_s": 10}, "action.trigger_field_not_supported"),
+        ({"trigger": "at", "at": ["08:00"], "every_s": 5}, "action.trigger_field_not_supported"),
+        ({"trigger": "after", "after_s": 5, "days": ["mon"]}, "action.trigger_field_not_supported"),
+    ]
+    for when, code in cases:
+        with pytest.raises(ActionError) as info:
+            parse_actions([{"name": "x", "when": when}], mode="advanced")
+        assert info.value.code == code, when
+
+
+def test_time_trigger_rebaseline_and_cooldown_interval_rejected():
+    with pytest.raises(ActionError) as info:
+        parse_actions([{"name": "x", "when": {"trigger": "every", "every_s": 60}, "rebaseline": True}])
+    assert info.value.code == "action.trigger_rebaseline"
+
+    with pytest.raises(ActionError) as info:
+        parse_actions([{"name": "x", "cooldown_s": 60, "when": {"trigger": "every", "every_s": 60}}])
+    assert info.value.code == "action.cooldown_exceeds_interval"
+
+    action = parse_actions(
+        [{"name": "x", "cooldown_s": 59, "when": {"trigger": "every", "every_s": 60}}]
+    )[0]
+    assert action.cooldown_s == 59

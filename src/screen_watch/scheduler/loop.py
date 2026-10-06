@@ -24,6 +24,7 @@ log = logging.getLogger(__name__)
 WindowLookup = Callable[[int], object]
 Sink = Callable[[Frame], None]
 EventSink = Callable[[str, dict], None]
+DeadlineProvider = Callable[[], float | None]
 
 
 @dataclass(frozen=True)
@@ -56,6 +57,7 @@ class MonitorLoop:
     on_event: EventSink | None = None
     on_error: Callable[[Exception], None] | None = None
     backend_factory: Callable[[], object] = _default_backend_factory
+    deadline_provider: DeadlineProvider | None = None
 
     def __post_init__(self) -> None:
         self._stop = threading.Event()
@@ -87,6 +89,24 @@ class MonitorLoop:
             self._thread.join(timeout=timeout)
 
     # -- interno -----------------------------------------------------------
+    def _next_wait(self, elapsed: float = 0.0) -> float:
+        """Espera do proximo tick, encurtada pelo proximo deadline armado.
+
+        O intervalo normal subtrai o tempo de trabalho; se houver um gatilho de
+        tempo armado mais proximo (doc, secao 3.5/11.4), a espera e reduzida
+        (piso de 50 ms) para o disparo ser pontual. Excecao do provider nunca
+        derruba o loop.
+        """
+        wait = max(0.0, self.interval_s - elapsed)
+        if self.deadline_provider is not None:
+            try:
+                delay = self.deadline_provider()
+            except Exception:  # pragma: no cover - defesa, deadline nunca quebra
+                delay = None
+            if delay is not None:
+                wait = min(wait, max(0.05, float(delay)))
+        return wait
+
     def _run(self) -> None:
         backend = self.backend or self.backend_factory()
         try:
@@ -104,7 +124,7 @@ class MonitorLoop:
                     except Exception as exc:
                         self._error(exc)
                 elapsed = time.perf_counter() - t0
-                self._stop.wait(max(0.0, self.interval_s - elapsed))
+                self._stop.wait(self._next_wait(elapsed))
         finally:
             try:
                 backend.close()

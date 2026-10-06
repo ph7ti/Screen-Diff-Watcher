@@ -272,6 +272,11 @@ Fora da janela de horário o monitoramento e os alertas seguem normais, mas as *
 suspensas (registrado como `suspended_schedule` na auditoria). Agendador ligado sem `days`/`windows`
 não restringe nada.
 
+O agendador é apenas um **portão de suspensão**: ele nunca dispara ações. O disparo é decidido pelo
+gatilho de cada ação — `change` (padrão) ou os gatilhos de tempo `at`/`every`/`after`
+([Ações pseudo-humanas](Acoes-Pseudo-Humanas.md)); um gatilho de tempo que vence fora da janela é
+consumido pela suspensão e **não** é repetido quando a janela reabre.
+
 ## Evidências
 
 Configuradas na seção `evidence:` do YAML **ou** pelo checkbox da GUI (que tem precedência). Detalhes

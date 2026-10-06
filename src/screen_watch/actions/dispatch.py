@@ -1,8 +1,10 @@
 """Decisao/entrega das acoes depois dos alertas (plano, F2-T6).
 
-Avaliadas so quando `result.changed`; nao alteram o desfecho nem o re-arm dos
-alertas. Desarmado grava ensaio; fora do horario grava `suspended_schedule`;
-armado executa e audita.
+O gatilho `change` e avaliado so quando `result.changed`; os gatilhos de tempo
+(`at`/`every`/`after`, doc secao 11.4) sao avaliados em todo frame pos-baseline
+via `on_tick`. Nenhum dos caminhos altera o desfecho nem o re-arm dos alertas.
+Desarmado grava ensaio (apenas `change`); fora do horario grava
+`suspended_schedule`; armado executa e audita.
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ from screen_watch.actions.arming import ArmingController
 from screen_watch.actions.execute import run_armed_action
 from screen_watch.actions.protocol import ActionSpec
 from screen_watch.actions.runner import ActionRunner, describe_step
+from screen_watch.actions.triggers import TriggerState, evaluate, next_delay_s
 from screen_watch.capture.frame import Frame
 from screen_watch.compare.protocol import ComparisonResult
 
@@ -41,6 +44,7 @@ class ActionDispatcher:
         on_event: Callable[[dict], None] | None = None,
         schedule_open: Callable[[], bool] | None = None,
         clock: Callable[[], float] = time.monotonic,
+        wall_clock: Callable[[], float] = time.time,
     ) -> None:
         self._actions = tuple(actions)
         self._arming = arming
@@ -51,7 +55,9 @@ class ActionDispatcher:
         self._on_event = on_event
         self._schedule_open = schedule_open
         self._clock = clock
+        self._wall_clock = wall_clock
         self._last_fire: dict[str, float] = {}
+        self._trigger_states: dict[str, TriggerState] = {}
 
     @property
     def arming(self) -> ArmingController:
@@ -66,14 +72,106 @@ class ActionDispatcher:
             return True
 
     def on_result(self, result: ComparisonResult, frame: Frame) -> bool:
-        """True se alguma acao executada pediu re-baseline (doc, F2-T4)."""
+        """True se alguma acao de mudanca executada pediu re-baseline (doc, F2-T4)."""
         if not result.changed:
             return False
         rebaseline = False
         for action in self._actions:
+            if action.trigger != "change":
+                continue
             if self._maybe_run(action, result, frame):
                 rebaseline = True
         return rebaseline
+
+    def on_tick(self, frame: Frame) -> None:
+        """Avalia os gatilhos de tempo (doc, secao 11.4); sem `change` aqui.
+
+        Chamado em todo frame pos-baseline pela sessao, mesmo sem mudanca.
+        Desarmado o avaliador e apenas resetado (gatilhos de tempo nao tem
+        ensaio); fora do horario a ocorrencia vencida e consumida com auditoria.
+        """
+        armed_since = self._arming.armed_since
+        now_mono = self._clock()
+        now_wall = self._wall_clock()
+        for action in self._actions:
+            if action.trigger == "change":
+                continue
+            state = self._trigger_states.setdefault(action.name, TriggerState())
+            decision = evaluate(
+                action,
+                state,
+                now_wall=now_wall,
+                now_mono=now_mono,
+                armed_since=armed_since,
+            )
+            if not action.enabled:
+                continue  # o estado avancou; desabilitada nunca dispara/audita
+            if decision.missed:
+                self._record(
+                    {
+                        "mode": "skipped",
+                        "reason": "missed",
+                        "action": action.name,
+                        "trigger": action.trigger,
+                        "late_s": round(decision.late_s, 3),
+                    }
+                )
+                continue
+            if not decision.fire:
+                continue
+            if (
+                action.cooldown_s
+                and now_mono - self._last_fire.get(action.name, float("-inf"))
+                < action.cooldown_s
+            ):
+                self._notify(
+                    {
+                        "mode": "skipped",
+                        "reason": "cooldown",
+                        "action": action.name,
+                        "trigger": action.trigger,
+                    }
+                )
+                continue
+            if self._schedule_open is not None and not self._schedule_open():
+                self._record(
+                    {
+                        "mode": "skipped",
+                        "reason": "suspended_schedule",
+                        "action": action.name,
+                        "trigger": action.trigger,
+                    }
+                )
+                continue
+            self._last_fire[action.name] = now_mono
+            self._execute(action, frame)
+
+    def next_deadline_delay(self) -> float | None:
+        """Segundos ate a proxima avaliacao de um gatilho de tempo armado.
+
+        Consumido pelo `MonitorLoop` para encurtar a espera (doc, secao 3.5);
+        chamado na mesma thread do loop.
+        """
+        armed_since = self._arming.armed_since
+        if armed_since is None:
+            return None
+        now_mono = self._clock()
+        now_wall = self._wall_clock()
+        delays: list[float] = []
+        for action in self._actions:
+            if action.trigger == "change" or not action.enabled:
+                continue
+            state = self._trigger_states.setdefault(action.name, TriggerState())
+            delay = next_delay_s(
+                action,
+                state,
+                now_wall=now_wall,
+                now_mono=now_mono,
+                armed_since=armed_since,
+            )
+            if delay is not None:
+                delays.append(delay)
+        return min(delays) if delays else None
 
     # -- interno -----------------------------------------------------------
     def _maybe_run(self, action: ActionSpec, result: ComparisonResult, frame: Frame) -> bool:
@@ -85,12 +183,21 @@ class ActionDispatcher:
         if action.cooldown_s and now - self._last_fire.get(action.name, float("-inf")) < action.cooldown_s:
             # Efemero (nao grava na auditoria): explica no log ao vivo por que um
             # gatilho foi ignorado, sem poluir o JSONL.
-            self._notify({"mode": "skipped", "reason": "cooldown", "action": action.name})
+            self._notify(
+                {"mode": "skipped", "reason": "cooldown", "action": action.name, "trigger": "change"}
+            )
             return False
         self._last_fire[action.name] = now
 
         if self._schedule_open is not None and not self._schedule_open():
-            self._record({"mode": "skipped", "reason": "suspended_schedule", "action": action.name})
+            self._record(
+                {
+                    "mode": "skipped",
+                    "reason": "suspended_schedule",
+                    "action": action.name,
+                    "trigger": "change",
+                }
+            )
             return False
 
         if not self._arming.is_armed():
@@ -99,12 +206,17 @@ class ActionDispatcher:
                 {
                     "mode": "rehearsal",
                     "action": action.name,
+                    "trigger": "change",
                     "steps": [describe_step(step) for step in action.steps],
                     "evidence": evidence,
                 }
             )
             return False
 
+        return self._execute(action, frame)
+
+    def _execute(self, action: ActionSpec, frame: Frame) -> bool:
+        """Executa a acao armada e audita; True se ela pediu re-baseline."""
         run, evidence = run_armed_action(
             action,
             frame,
@@ -117,6 +229,7 @@ class ActionDispatcher:
         payload = {
             "mode": "armed",
             "action": action.name,
+            "trigger": action.trigger,
             "executed": run.executed,
             "steps": list(run.steps),
             "duration_s": round(run.duration_s, 3),
@@ -176,6 +289,7 @@ def build_dispatcher(
     runner: ActionRunner | None = None,
     arming: ArmingController | None = None,
     clock: Callable[[], float] = time.monotonic,
+    wall_clock: Callable[[], float] = time.time,
 ) -> ActionDispatcher | None:
     """Monta o dispatcher a partir de `TargetConfig` (None se nao ha acoes)."""
     actions = getattr(target, "actions", ())
@@ -198,4 +312,5 @@ def build_dispatcher(
         on_event=on_event,
         schedule_open=schedule_open,
         clock=clock,
+        wall_clock=wall_clock,
     )

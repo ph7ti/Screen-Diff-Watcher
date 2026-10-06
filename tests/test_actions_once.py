@@ -192,3 +192,38 @@ def test_run_actions_reports_failure(monkeypatch, tmp_path):
 
     assert code == 1
     assert any("failed" in line for line in lines)
+
+
+def test_run_actions_notifies_ignored_time_trigger(monkeypatch, tmp_path):
+    backend = FakeBackend()
+    monkeypatch.setattr("screen_watch.platform.input.default_backend", lambda: backend)
+    action = ActionSpec(
+        name="a",
+        trigger="after",
+        after_s=60.0,
+        settle_s=0.0,
+        steps=(ActionStep(kind="key", keys="a"),),
+    )
+
+    code, lines = run_actions(
+        _target((action,)),
+        _frame(),
+        armed=True,
+        audit=ActionAudit(tmp_path / "a.jsonl"),
+        countdown=lambda: True,
+    )
+
+    assert code == 0
+    assert any("trigger after ignored (explicit run)" in line for line in lines)
+    assert backend.keys == ["a"]  # execucao explicita ignora o gatilho
+
+
+def test_run_actions_change_trigger_has_no_notice(monkeypatch, tmp_path):
+    backend = FakeBackend()
+    monkeypatch.setattr("screen_watch.platform.input.default_backend", lambda: backend)
+
+    _, lines = run_actions(
+        _target((_key_action(),)), _frame(), armed=False, audit=ActionAudit(tmp_path / "a.jsonl")
+    )
+
+    assert not any("ignored (explicit run)" in line for line in lines)

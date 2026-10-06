@@ -21,7 +21,7 @@ def _number(value: float) -> str:
     return str(int(number)) if number.is_integer() else str(number)
 
 
-def _trigger(action: ActionSpec) -> str:
+def _change_trigger(action: ActionSpec) -> str:
     parts: list[str] = []
     if action.text_any:
         parts.append(f"text_any={list(action.text_any)}")
@@ -34,14 +34,31 @@ def _trigger(action: ActionSpec) -> str:
     return ", ".join(parts)
 
 
+def _time_trigger(action: ActionSpec) -> str:
+    if action.trigger == "at":
+        text = tr("summary.trigger_at", times=", ".join(action.at))
+        if action.days:
+            text = f"{text}, {tr('summary.trigger_at_days', days=', '.join(action.days))}"
+        return text
+    if action.trigger == "every":
+        return tr("summary.trigger_every", seconds=_number(action.every_s))
+    if action.trigger == "after":
+        return tr("summary.trigger_after", seconds=_number(action.after_s))
+    return ""
+
+
 def format_action(action: ActionSpec) -> str:
     """Descricao da acao sem o marcador de selecao (nome, gatilho, limites, passos)."""
-    detail = [f"sev>={action.effective_severity_min}", f"cooldown {_number(action.cooldown_s)}s"]
+    if action.trigger == "change":
+        detail = [f"sev>={action.effective_severity_min}", f"cooldown {_number(action.cooldown_s)}s"]
+        trigger = _change_trigger(action)
+    else:
+        detail = [f"cooldown {_number(action.cooldown_s)}s", f"trigger {action.trigger}"]
+        trigger = _time_trigger(action)
     if action.rebaseline:
         detail.append("rebaseline")
     if not action.enabled:
         detail.append(tr("summary.disabled"))
-    trigger = _trigger(action)
     if trigger:
         detail.append(tr("summary.when", trigger=trigger))
     steps = ", ".join(describe_step(step) for step in action.steps) or tr("summary.no_steps")

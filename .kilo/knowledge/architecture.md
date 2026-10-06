@@ -1,6 +1,6 @@
 # Architecture — agent knowledge base
 
-Status: v0.9.1 · Design SSoT: `doc/00-Architecture_and_Specification.md` (cite as `doc/00 §X`)
+Status: v0.10.0 · Design SSoT: `doc/00-Architecture_and_Specification.md` (cite as `doc/00 §X`)
 
 This page is a pointer summary. Every design decision stays in `doc/00`; do not restate or re-decide
 it here. Principles: `doc/00` §2. Decisions (ADR): §3. Pitfalls never to reintroduce: §14.
@@ -16,7 +16,8 @@ MonitorLoop._tick (scheduler/loop.py)
       → 1st frame / re-arm: pipeline.initialize  (baseline; records evidence)
       → ComparePipeline.compare  (light | default | advanced; short-circuit)
       → AlertChain.dispatch → DispatchOutcome (sound/popup/telegram/log/webhook/http_post/syslog)
-      → ActionDispatcher.on_result (rehearsal/armed; scheduler; limits; audit)
+      → ActionDispatcher.on_result (trigger: change; rehearsal/armed; scheduler; limits; audit)
+      → ActionDispatcher.on_tick    (time triggers every post-baseline frame; deadline cap on wait)
       → baseline re-arm (outcome/rebaseline) + change evidence
 ```
 
@@ -27,15 +28,15 @@ DPI: §5.1. Logical→physical: §9.5. Masks: §8. Config: §12. Glossary: §17.
 
 - `__init__.py` — `__version__`, the single version source.
 - `__main__.py` — `python -m screen_watch` entry point.
-- `app.py` — orchestration: `build_pipeline` :42, `build_alert_chain` :184, `effective_evidence_options` :243, `MonitorSession` :267 (`__call__` :298, `request_rebaseline` :327), `build_loop` :339.
+- `app.py` — orchestration: `build_pipeline` :45, `build_alert_chain` :223, `effective_evidence_options` :286, `MonitorSession` :310 (`__call__` :354, `request_rebaseline` :411, `next_deadline_delay` :421), `build_loop` :435 (wires the deadline provider).
 - `cli/` — `parser.py` (22 subcommands + global `--verbose`/`--language`) and `commands.py`.
 - `gui/` — `main_window.py`, `session_manager.py` (`SessionManager`, N sessions/loops; preview + calibration buffers under locks and the shared `AlertGate`), `tray.py`, `overlay.py`, `overlay_geometry.py`, `mask_overlay.py`, `mask_editor_geometry.py` (pure), `preview_widget.py`, `preview_geometry.py` (pure), `history_dialog.py`, `calibration_widget.py`, `calibration.py` (pure), `countdown.py`, `locator.py`, `action_editor.py`, `alert_dialog.py`, `hotkeys.py`, `help.py`, `hover_help.py`, `labels.py`, `highlight.py`, `qt_app.py`.
 - `capture/` — `frame.py` (immutable Frame), `backend.py` (Protocol) + `mss_backend.py`, `resolver.py` (Model B), `roi.py` (shared by capture/Highlight), `geometry.py` (`intersect_rect`), `mask.py` (`apply_mask`).
 - `compare/` — `protocol.py` (`ComparisonResult`, severity), `light.py`, `default.py`, `advanced.py`, `pipeline.py` (`MODE_STAGES`, short-circuit).
 - `alerts/` — `protocol.py`, `sound.py`, `popup.py`, `telegram.py`, `ntfy.py`, `smtp.py`, `mqtt.py`, `log.py`, `http.py`, `syslog.py`, `template.py`, `test_send.py`, `gate.py` (`AlertGate` snooze/mute), `chain.py` (`AlertChain`, `DispatchOutcome`), `history.py` (pure JSONL read/filters/evidence heuristic).
-- `actions/` — opt-in pseudo-human actions: `protocol.py`, `plan.py`, `dispatch.py`, `runner.py`, `arming.py` (memory only), `audit.py`, `selection.py`, `summary.py`, `once.py`, `recorder.py`.
+- `actions/` — opt-in pseudo-human actions: `protocol.py`, `plan.py`, `dispatch.py` (`ActionDispatcher`, `on_tick` + `next_deadline_delay`), `triggers.py` (pure time-trigger evaluator, injectable clocks), `runner.py`, `arming.py` (memory only, `armed_since`), `audit.py`, `selection.py`, `summary.py`, `once.py`, `recorder.py`.
 - `evidence/` — `recorder.py` (baseline/change/step prints, retention).
-- `scheduler/` — `loop.py` (`MonitorLoop`: thread + `Event.wait`), `schedule.py` (pure time-window gate).
+- `scheduler/` — `loop.py` (`MonitorLoop`: thread + `Event.wait`, wait capped by the action deadline), `schedule.py` (pure time-window gate).
 - `config/` — `schema.py` (dataclasses), `loader.py` (YAML ↔ dataclasses, defaults, v1→v2 migration; `save_config` :1063 atomic + `.bak`, `set_profile_sound_file` :772).
 - `persistence/` — `selection.py`: selection JSON v1/v2, `build_target` :364 (override precedence), `dump_selection` :105 atomic, `set_masks`/`effective_masks` (mask editor), `plan_rename`/`rename_selection` (validated, no overwrite, rollback).
 - `platform/` — the only OS boundary: `dpi.py` (`set_dpi_awareness()` first, `is_wayland()`), `window.py`, `paths.py` (app-data/state), `display.py`, `tesseract.py`, `audio.py`, `input.py`, `shell.py`.
@@ -48,12 +49,13 @@ DPI: §5.1. Logical→physical: §9.5. Masks: §8. Config: §12. Glossary: §17.
 - Selection JSON (v1/v2) with `overrides` that **replace** profile values; `persistence.selection.build_target` is the resolution/precedence point.
 - Writing: `save_config` writes atomically (temp + `os.replace`) and keeps `config.yaml.bak` via `shutil.copy2` (comments are not preserved); `dump_selection`/`state.json` are atomic without backup; callers must reload from disk before rewriting (`doc/00` §12.4).
 
-## Current state and known limitations (v0.8.0)
+## Current state and known limitations (v0.10.0)
 
 - Implemented: capture/anchoring (Model B), `light`/`default`/`advanced` + `text_watch`, alert channels (sound/popup/Telegram/ntfy/smtp/mqtt/log/webhook/http_post/syslog) with cooldown/re-arm, selectable sound + bundled `alert.mp3`, snooze/mute + escalation, evidence, actions + recorder, scheduler, profiles + v1→v2 migration, selection name/rename + headless CLI lifecycle (`remove`/`rename`/`edit-selection`, `list-selections --json`), GUI/tray with i18n, packaging and tag-driven release (`doc/00` §1.4).
 - **v0.8.0**: visual mask editor (atomic selection JSON, `overrides.masks` precedence), sound picker writes the active profile YAML (atomic + `.bak`, v1 refused), frame preview, alert history over `logs/alerts.jsonl` (best-effort evidence print), live calibration (score vs threshold, CSV), CI on py3.11/3.12/3.13 with coverage artifact + manual wiki runbook.
 - **v0.9.0**: ntfy/SMTP/MQTT channels (env-only secrets; MQTT is the optional `mqtt` extra), `AlertGate` snooze/mute in `state.json` + escalation until `acknowledge()`, CLI selection lifecycle/headless flow, and `SessionManager` with N concurrent GUI sessions (`ui.max_sessions`, default 4; CLI `run` stays single-selection).
 - **v0.9.1** (patch): fixes the GUI startup crash of 0.9.0 — `escalating` became a method in `SessionManager` but `main_window._update_gate_status`/`_acknowledge` still used property syntax; the `TypeError` inside the `QTimer` slot aborted the process (`0xC0000409`) on the first drain tick. Regression tests in `tests/test_gui_main_window.py` (Qt-free stubs).
+- **v0.10.0**: per-action **time triggers** (`when.trigger: change|at|every|after`): pure `actions/triggers.py` with injectable clocks, 60 s tolerance (`skipped -> missed`, no catch-up), `armed_since` phases, `ActionDispatcher.on_tick` on every post-baseline frame, `MonitorLoop` wait capped by `next_deadline_delay()`, GUI editor trigger selector, `list-actions` summary, one-off notice and recorder hint; both catalogs and fake-clock tests.
 - Wayland cannot capture (`mss`); occluded windows compare whatever is on screen; macOS is not validated; GNOME tray may need an extension; M4A/AAC in the CLI needs an external player (`ffplay`); ARM is not built.
 - Manual validation pending: GUI/tray/overlay (including multi-session and the v0.8.0/v0.9.0 widgets) at 100/125/150% and the clean-machine bundle checklist (`doc/01` §9).
 
@@ -72,6 +74,7 @@ GitHub releases: https://github.com/ph7ti/Screen-Diff-Watcher/releases
 - v0.8.0 — mask editor, sound written to the YAML, preview/history/calibration, CI py3.12 + coverage, wiki runbook.
 - v0.9.0 — ntfy/SMTP/MQTT channels, snooze/mute + escalation, CLI selection lifecycle (headless), multiple ROIs via `SessionManager`.
 - v0.9.1 — patch: GUI startup crash fix (`escalating()` method call) + Qt-free regression tests.
+- v0.10.0 — action scheduler: per-action time triggers (`at`/`every`/`after`), deadline-capped loop wait, GUI trigger editor, one-off notice, recorder hint.
 
 Detailed notes: `doc/releases/vX.Y.Z.md` + `.pt-BR.md` (from v0.5.0 on); `CHANGELOG.md` is the
 semantic log (PT). Note: 0.7.1 was a deliberate PATCH despite the documented MINOR rule.

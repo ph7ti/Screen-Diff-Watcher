@@ -66,3 +66,30 @@ def test_abort_sets_flag_disarms_and_clears_on_arm():
     arming.abort()
     arming.arm_for(1)
     assert arming.abort_pending() is False
+
+
+def test_armed_since_tracks_arming_cycles():
+    clock = FakeClock(10.0)
+    arming = ArmingController(clock=clock)
+    assert arming.armed_since is None
+
+    arming.arm()
+    assert arming.armed_since == 10.0
+
+    clock.advance(5)
+    arming.arm()  # rearmar reinicia a fase
+    assert arming.armed_since == 15.0
+
+    arming.disarm()
+    assert arming.armed_since is None
+
+
+def test_armed_since_cleared_on_timed_expiry():
+    clock = FakeClock()
+    arming = ArmingController(clock=clock)
+    arming.arm_for(1)
+    assert arming.armed_since == 0.0
+
+    clock.advance(61)
+    assert arming.armed_since is None
+    assert arming.state == DISARMED

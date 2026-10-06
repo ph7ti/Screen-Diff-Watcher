@@ -1119,6 +1119,28 @@ def test_list_actions_reads_overrides_even_with_v1_config(monkeypatch, tmp_path,
     assert "[x] nova" in capsys.readouterr().out
 
 
+def test_list_actions_shows_time_trigger(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    (tmp_path / "selections").mkdir()
+    _write_selection(
+        tmp_path / "selections" / "demo.json",
+        mode="advanced",
+        overrides={
+            "actions": [
+                {"name": "ciclo", "when": {"trigger": "every", "every_s": 60}, "steps": []}
+            ]
+        },
+    )
+
+    args = argparse.Namespace(
+        config=str(tmp_path / "absent.yaml"), selection="demo", profile=None
+    )
+    assert cli._cmd_list_actions(args) == 0
+    out = capsys.readouterr().out
+    assert "trigger every" in out
+    assert "quando: a cada 60s" in out
+
+
 def test_list_actions_without_actions(monkeypatch, tmp_path, capsys):
     monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
     (tmp_path / "selections").mkdir()

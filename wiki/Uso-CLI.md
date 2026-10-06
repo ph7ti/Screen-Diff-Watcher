@@ -121,8 +121,8 @@ Durante a execução, cada gatilho imprime uma linha `[action] rehearsal|armed <
 |---|---|
 | `test-alert --selection S [--list] [--only ID]` | dispara um alerta **sintético** (severidade 3); `--list` imprime id/tipo/estado/destino; `--only ID` envia a um destino (modo texto, ignora `enabled`) |
 | `test-evidence --selection S` | grava um par baseline+change de exemplo e imprime os caminhos |
-| `test-action --selection S [--armed] [--actions ...] [--no-countdown]` | ensaia (default) ou executa as ações; `--armed` mostra a contagem de 3 s |
-| `list-actions --selection S` | lista as ações resolvidas e o subconjunto salvo, sem iniciar sessão |
+| `test-action --selection S [--armed] [--actions ...] [--no-countdown]` | ensaia (default) ou executa as ações; `--armed` mostra a contagem de 3 s; execuções avulsas ignoram o gatilho da ação (linha de aviso) |
+| `list-actions --selection S` | lista as ações resolvidas e o subconjunto salvo, incluindo o gatilho de cada ação (`change`/`at`/`every`/`after`), sem iniciar sessão |
 | `record-actions --selection S [--name NOME] [--out ARQUIVO] [--no-countdown]` | grava cliques/teclas e gera um snippet de `actions:` (extra `input`; `F10` encerra) |
 | `compare-modes --selection S [--delay 5] [--repeat 1] [--modes light,default,advanced]` | mede `changed`/`score`/`threshold`/`severity`/tempo de cada modo (calibração) |
 | `probe-dpi` | imprime a matriz de monitores (mss físico × Qt lógico × escala) e o rect de uma janela |

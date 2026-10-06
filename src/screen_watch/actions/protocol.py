@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 STEP_KINDS = ("activate", "click", "move", "type", "key", "wait")
 REF_KINDS = ("roi", "window", "screen")
 BUTTONS = ("left", "right", "middle")
+TRIGGERS = ("change", "at", "every", "after")
+WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 
 DEFAULT_COOLDOWN_S = 30.0
 DEFAULT_SETTLE_S = 1.5
@@ -49,6 +51,11 @@ class ActionSpec:
     text_all: tuple[str, ...] = ()
     text_regex: str | None = None
     case_sensitive: bool = False
+    trigger: str = "change"
+    at: tuple[str, ...] = ()
+    days: tuple[str, ...] = ()
+    every_s: float = 0.0
+    after_s: float = 0.0
     settle_s: float = DEFAULT_SETTLE_S
     rebaseline: bool = False
     max_per_min: int = DEFAULT_MAX_PER_MIN

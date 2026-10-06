@@ -3,6 +3,38 @@
 Todas as mudanças relevantes deste projeto. Formato inspirado em "Keep a Changelog";
 versionamento semântico. Versão: `screen_watch.__version__` (fonte única).
 
+## [0.10.0] — 2026-10-06
+
+Notas: [`doc/releases/v0.10.0.md`](doc/releases/v0.10.0.md)
+([PT](doc/releases/v0.10.0.pt-BR.md)).
+
+### Adicionado
+
+- **Agendador de ações (gatilhos de tempo)**: cada ação escolhe um gatilho em `when.trigger` —
+  `change` (padrão; reage à mudança detectada) ou `at`/`every`/`after`. `at` dispara em horários
+  `HH:MM` com `days` opcional (nomes reaproveitados do `schedule`); `every` tem fase que começa ao
+  armar e reinicia a cada disparo; `after` é um atraso único contado do armar. Gatilhos de tempo só
+  valem com as ações **armadas** (não têm ensaio) e o loop de monitoramento encurta a espera pelo
+  próximo vencimento (`min(poll_interval_s, deadline)`), mantendo o `at` pontual mesmo com `every_s`
+  menor que o poll.
+- **Tolerância e auditoria**: vencimentos atrasados mais de 60 s (sleep/suspensão) viram
+  `skipped -> missed` no `logs/actions.jsonl` e nunca executam (sem catch-up e sem repetição ao
+  reiniciar); todo registro de ação passa a carregar `trigger`. Fora da janela do `schedule`, a
+  ocorrência vencida é consumida com `suspended_schedule` e não é repetida.
+- **Editor e CLI**: seletor de gatilho no editor de ações da GUI (campos de tempo conforme a
+  escolha), resumo do gatilho no `list-actions`, aviso `trigger ... ignored (explicit run)` nas
+  execuções avulsas (`test-action`/botão de 3 s) e dica comentada dos campos de tempo no snippet do
+  `record-actions`.
+
+### Notas
+
+- **Mudança de comportamento**: ações com gatilho de tempo não disparam mais por mudança (o caminho
+  `change` ficou restrito a `trigger: change`); para gatilhos de tempo, `rebaseline: true` e
+  `cooldown_s >= every_s` são erros de validação e os campos de `change` são rejeitados.
+- 739 testes unitários (50 novos); `ruff` e `validate-i18n` verdes. `at` usa o relógio local ingênuo
+  (DST pode dobrar/perder um disparo) e janela minimizada/fechada pausa os gatilhos de tempo
+  (documentado).
+
 ## [0.9.1] — 2026-10-06
 
 Notas: [`doc/releases/v0.9.1.md`](doc/releases/v0.9.1.md)

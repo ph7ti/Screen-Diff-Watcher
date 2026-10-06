@@ -10,13 +10,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from screen_watch.actions.protocol import ActionSpec
+from screen_watch.actions.protocol import WEEKDAYS, ActionSpec
 
 Rect = tuple[int, int, int, int]
 Point = tuple[int, int]
 
 VALID_MODES = ("light", "default", "advanced")
-VALID_DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+VALID_DAYS = WEEKDAYS
 VALID_TEXT_WATCH_EXPECTS = ("appears", "disappears")
 VALID_ALERT_TYPES = (
     "sound",

@@ -60,7 +60,14 @@ def _result(severity=3, text=None):
 
 
 def _dispatcher(
-    tmp_path, actions, *, clock=None, schedule_open=None, recorder=None, on_event=None
+    tmp_path,
+    actions,
+    *,
+    clock=None,
+    schedule_open=None,
+    recorder=None,
+    on_event=None,
+    wall_clock=None,
 ):
     clock = clock or FakeClock()
     backend = FakeBackend()
@@ -72,7 +79,7 @@ def _dispatcher(
         activate=lambda handle: True,
         is_active=lambda handle: True,
     )
-    arming = ArmingController()
+    arming = ArmingController(clock=clock)
     audit = ActionAudit(tmp_path / "actions.jsonl")
     dispatcher = ActionDispatcher(
         actions,
@@ -84,6 +91,7 @@ def _dispatcher(
         on_event=on_event,
         schedule_open=schedule_open,
         clock=clock,
+        wall_clock=wall_clock or clock,
     )
     return dispatcher, arming, backend, audit
 
@@ -197,7 +205,12 @@ def test_cooldown_emits_live_event_without_audit(tmp_path, make_frame, solid):
     dispatcher.on_result(_result(), frame)
 
     assert len(_records(audit)) == 1
-    assert events[-1] == {"mode": "skipped", "reason": "cooldown", "action": "a"}
+    assert events[-1] == {
+        "mode": "skipped",
+        "reason": "cooldown",
+        "action": "a",
+        "trigger": "change",
+    }
 
 
 def test_disabled_action_ignored(tmp_path, make_frame, solid):
@@ -374,3 +387,145 @@ def test_dispatcher_schedule_error_is_safe(tmp_path):
         schedule_open=boom,
     )
     assert dispatcher.is_schedule_open() is True
+
+
+# -- gatilhos de tempo (v0.10.0) -------------------------------------------
+class WallClock:
+    """Relogio de parede fake independente do monotonic."""
+
+    def __init__(self, start: float) -> None:
+        self.t = start
+
+    def __call__(self) -> float:
+        return self.t
+
+    def advance(self, seconds: float) -> None:
+        self.t += seconds
+
+
+def test_on_tick_every_fires_only_when_armed(tmp_path, make_frame, solid):
+    clock = FakeClock()
+    action = _key_action(trigger="every", every_s=10.0, cooldown_s=0.0)
+    dispatcher, arming, backend, audit = _dispatcher(tmp_path, (action,), clock=clock)
+    frame = make_frame(solid(10), rect=(0, 0, 10, 10))
+
+    dispatcher.on_tick(frame)  # desarmado: sem disparo nem auditoria
+    assert backend.keys == [] and _records(audit) == []
+
+    arming.arm()
+    dispatcher.on_tick(frame)
+    assert backend.keys == []
+    clock.advance(10)
+    dispatcher.on_tick(frame)
+
+    assert backend.keys == ["a"]
+    records = _records(audit)
+    assert records[0]["mode"] == "armed"
+    assert records[0]["trigger"] == "every"
+
+
+def test_on_result_ignores_time_actions(tmp_path, make_frame, solid):
+    action = _key_action(trigger="after", after_s=5.0)
+    dispatcher, arming, backend, audit = _dispatcher(tmp_path, (action,))
+    arming.arm()
+    frame = make_frame(solid(10), rect=(0, 0, 10, 10))
+
+    assert dispatcher.on_result(_result(), frame) is False
+    assert backend.keys == [] and _records(audit) == []
+
+
+def test_on_tick_after_fires_once(tmp_path, make_frame, solid):
+    clock = FakeClock()
+    action = _key_action(trigger="after", after_s=5.0, cooldown_s=0.0)
+    dispatcher, arming, backend, audit = _dispatcher(tmp_path, (action,), clock=clock)
+    arming.arm()
+    frame = make_frame(solid(10), rect=(0, 0, 10, 10))
+
+    dispatcher.on_tick(frame)
+    clock.advance(5)
+    dispatcher.on_tick(frame)
+    assert backend.keys == ["a"]
+
+    clock.advance(60)
+    dispatcher.on_tick(frame)
+    assert backend.keys == ["a"]
+    assert len(_records(audit)) == 1
+
+
+def test_on_tick_missed_records_audit_without_running(tmp_path, make_frame, solid):
+    clock = FakeClock()
+    action = _key_action(trigger="every", every_s=10.0, cooldown_s=0.0)
+    dispatcher, arming, backend, audit = _dispatcher(tmp_path, (action,), clock=clock)
+    arming.arm()
+    frame = make_frame(solid(10), rect=(0, 0, 10, 10))
+
+    clock.advance(1000)
+    dispatcher.on_tick(frame)
+
+    records = _records(audit)
+    assert records[0]["mode"] == "skipped"
+    assert records[0]["reason"] == "missed"
+    assert records[0]["trigger"] == "every"
+    assert backend.keys == []
+
+
+def test_on_tick_at_uses_wall_clock(tmp_path, make_frame, solid):
+    from datetime import datetime
+
+    clock = FakeClock()
+    wall = WallClock(datetime(2026, 10, 6, 7, 59, 50).timestamp())
+    action = _key_action(trigger="at", at=("08:00",), cooldown_s=0.0)
+    dispatcher, arming, backend, audit = _dispatcher(
+        tmp_path, (action,), clock=clock, wall_clock=wall
+    )
+    arming.arm()
+    frame = make_frame(solid(10), rect=(0, 0, 10, 10))
+
+    dispatcher.on_tick(frame)  # ancora o cruzamento no armar (07:59:50)
+    wall.advance(5)
+    dispatcher.on_tick(frame)  # 07:59:55: ainda nao
+    assert backend.keys == []
+
+    wall.advance(7)
+    dispatcher.on_tick(frame)  # 08:00:02: cruzou
+    assert backend.keys == ["a"]
+
+
+def test_on_tick_suspended_schedule_consumes_occurrence(tmp_path, make_frame, solid):
+    clock = FakeClock()
+    gate = {"open": False}
+    action = _key_action(trigger="every", every_s=10.0, cooldown_s=0.0)
+    dispatcher, arming, backend, audit = _dispatcher(
+        tmp_path, (action,), clock=clock, schedule_open=lambda: gate["open"]
+    )
+    arming.arm()
+    frame = make_frame(solid(10), rect=(0, 0, 10, 10))
+
+    clock.advance(10)
+    dispatcher.on_tick(frame)
+    records = _records(audit)
+    assert records[0]["reason"] == "suspended_schedule"
+    assert backend.keys == []
+
+    gate["open"] = True
+    dispatcher.on_tick(frame)  # ocorrencia consumida; nao repete ao reabrir
+    assert backend.keys == []
+
+    clock.advance(10)
+    dispatcher.on_tick(frame)
+    assert backend.keys == ["a"]
+
+
+def test_next_deadline_delay_reports_minimum_and_resets(tmp_path):
+    clock = FakeClock()
+    every = _key_action(name="e", trigger="every", every_s=30.0, cooldown_s=0.0)
+    after = _key_action(name="f", trigger="after", after_s=60.0, cooldown_s=0.0)
+    dispatcher, arming, _, _ = _dispatcher(tmp_path, (every, after), clock=clock)
+
+    assert dispatcher.next_deadline_delay() is None  # desarmado
+    arming.arm()
+    assert dispatcher.next_deadline_delay() == 30.0
+    clock.advance(10)
+    assert dispatcher.next_deadline_delay() == 20.0
+    arming.disarm()
+    assert dispatcher.next_deadline_delay() is None

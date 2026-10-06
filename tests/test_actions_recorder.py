@@ -103,6 +103,17 @@ def test_to_yaml_snippet_is_parseable_and_has_activate():
     assert actions[0].steps[1].kind == "click"
 
 
+def test_to_yaml_snippet_documents_time_triggers():
+    recorder = StepRecorder()
+    recorder.add_key("ctrl+s")
+
+    snippet = recorder.to_yaml("teste")
+    assert "#   trigger: at" in snippet
+    assert '#   at: ["08:00", "18:00"]' in snippet
+    assert "every_s" in snippet
+    assert "after_s" in snippet
+
+
 def test_record_interactively_without_pynput(monkeypatch):
     monkeypatch.setitem(sys.modules, "pynput", None)
     with pytest.raises(InputUnavailable):

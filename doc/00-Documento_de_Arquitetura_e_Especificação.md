@@ -3,7 +3,7 @@
 
 > **Propósito deste documento**: servir como **fonte única de verdade do design** para que outra IA
 > (ou desenvolvedor) continue o projeto sem precisar reconstruir decisões, e registrar **o que está
-> implementado** (referência: v0.9.1). Toda decisão aqui registrada foi tomada deliberadamente; onde
+> implementado** (referência: v0.10.0). Toda decisão aqui registrada foi tomada deliberadamente; onde
 > houver alternativas, elas estão listadas como "rejeitadas" com o motivo.
 >
 > **Regra de manutenção**: não substitua uma decisão registrada por uma alternativa "mais moderna"
@@ -57,7 +57,7 @@ alertar o usuário quando aquele painel sofrer alteração visual, sem exigir qu
 olhando para a tela. Extensão natural: reagir à mudança com uma ação simples (ex.: clicar em
 "Atualizar") quando isso for explicitamente armado.
 
-### 1.4 Estado da implementação (v0.9.1)
+### 1.4 Estado da implementação (v0.10.0)
 
 Implementado e coberto por testes: fronteira de plataforma, captura/ancoragem (Modelo B), os três
 modos de comparação, pipeline com curto-circuito (`advanced` com gate de phash e bypass pelo
@@ -103,6 +103,16 @@ não tratada em slot — a GUI morria no primeiro tick do drain (`0xC0000409`) s
 Testes de regressão em `tests/test_gui_main_window.py` exercitam os métodos reais com stubs sem Qt
 (e import preguiçoso do `main_window`, para que os testes que simulam a ausência do Qt continuem
 funcionando).
+
+**Adições da v0.10.0**: **gatilhos de tempo** por ação (`when.trigger: change|at|every|after`,
+§11.4): o avaliador puro `actions/triggers.py` (relógios de parede/monotonic injetáveis; tolerância
+de 60 s registrada como `skipped -> missed`; sem catch-up nem replay), as fases de
+`ArmingController.armed_since`, o `ActionDispatcher.on_tick` avaliado em todo frame pós-baseline
+mais o `next_deadline_delay()` limitando a espera do `MonitorLoop` (§3.5), validação estrita (campos
+de `change`, `rebaseline` recusado, `cooldown_s >= every_s`), `trigger` nos payloads de
+auditoria/log, seletor de gatilho no editor da GUI, resumo no `list-actions`, aviso
+`trigger ... ignored (explicit run)` nos fluxos avulsos e dica comentada no gravador; i18n nos dois
+catálogos e testes com relógios falsos.
 
 Pendências de **validação manual** (não automatizável no CI):
 
@@ -213,6 +223,10 @@ Cada item abaixo é uma decisão fechada. Formato: **Decisão → Motivo → Alt
   `ui.max_sessions` (default 4, faixa 1..16) limita o conjunto da GUI; o OCR no `advanced` multiplica
   a CPU por sessão (documentado). O `run` do CLI permanece intencionalmente single-selection
   (multi-ROI headless está fora de escopo por ora).
+- **Deadlines dos gatilhos de ação (v0.10.0)**: o mesmo `Event.wait` é limitado pelo próximo
+  vencimento armado (`ActionDispatcher.next_deadline_delay()`, repassado pelo `build_loop`), para o
+  `at` pontual e o `every_s` menor que o poll dispararem na hora; o piso é 0,05 s e, sem deadline, a
+  cadência continua o intervalo do poll (§11.4).
 - **Alternativas rejeitadas**:
   - `asyncio` — overhead desnecessário; `mss`/`pywinctl` são síncronos e bloqueantes.
   - `APScheduler` — sobre-engenharia para um único loop.
@@ -418,7 +432,8 @@ ScreenDiffWatcher/
 │       ├── actions/               # ações pseudo-humanas (opt-in)
 │       │   ├── protocol.py        # ActionSpec/ActionStep (puros)
 │       │   ├── plan.py            # parse/validação (click exige activate; text_* exige advanced)
-│       │   ├── dispatch.py        # ActionDispatcher (ensaio/armado/agendador/limites)
+│       │   ├── dispatch.py        # ActionDispatcher (on_tick/deadline; ensaio/armado/agendador/limites)
+│       │   ├── triggers.py        # avaliador puro dos gatilhos de tempo (at/every/after; clocks injetáveis)
 │       │   ├── runner.py          # execução síncrona + foco + humanização + limites
 │       │   ├── arming.py          # ArmingController (disarmed/armed/timed; só memória)
 │       │   ├── audit.py           # ActionAudit (logs/actions.jsonl)
@@ -1262,14 +1277,35 @@ a cada tick (§11.5).
 
 ### 11.4 Ações pseudo-humanas (opt-in, `actions/`)
 
-Reação **separada** dos alertas: avaliada depois do `AlertChain.dispatch` quando `result.changed`,
-**sem alterar** o `DispatchOutcome` nem o re-arm dos alertas. Só executa quando **armada**; por
-padrão fica em **ensaio** (dry-run), que registra o que faria e grava evidências, sem clicar.
+Reação **separada** dos alertas: o gatilho `change` é avaliado depois do `AlertChain.dispatch` quando
+`result.changed`, e os gatilhos de tempo são avaliados em **todo frame pós-baseline** (mesmo sem
+mudança) — em ambos os casos **sem alterar** o `DispatchOutcome` nem o re-arm dos alertas. Só executa
+quando **armada**; por padrão fica em **ensaio** (dry-run), que registra o que faria e grava
+evidências, sem clicar. Os gatilhos de tempo **não têm ensaio**: armado é o único estado em que são
+avaliados.
 
-- **Gatilho**: `changed` (único suportado; `changed: false` é erro de validação), `severity_min`
-  efetivo (`when.severity_min` > `severity_min`) e filtros de OCR
-  (`text_any`/`text_all`/`text_regex`, case-insensitive por padrão). Filtros de texto exigem
-  `mode: advanced` (validação recusa nos demais modos).
+- **Gatilho (v0.10.0)**: exatamente um por ação, `when.trigger` = `change` (padrão) | `at` | `every` |
+  `after`.
+  - `change` mantém a semântica anterior: `changed` (só `true` é aceito; `changed: false` é erro de
+    validação), `severity_min` efetivo (`when.severity_min` > `severity_min`) e filtros de OCR
+    (`text_any`/`text_all`/`text_regex`, case-insensitive por padrão). Filtros de texto exigem
+    `mode: advanced` (validação recusa nos demais modos).
+  - `at`: `at: ["HH:MM", ...]` (24 h) + `days` opcional (nomes de 3 letras `mon`..`sun`, o mesmo
+    conjunto do `schedule.days`; ausente = todos os dias). Dispara quando o horário é **cruzado com
+    as ações armadas**; a referência de cruzamento reinicia no armar, então horários já passados no
+    dia não disparam.
+  - `every`: `every_s >= 1`; a fase começa ao armar e **reinicia a cada disparo** (próximo vencimento
+    = disparo + `every_s`); rearmar reinicia a fase; sem rajada e sem catch-up após sleep/suspensão
+    (um vencimento mais velho que a tolerância é registrado como `missed`).
+  - `after`: `after_s >= 1`, atraso único relativo ao armar; desarmar cancela, rearmar reinicia;
+    dispara uma única vez (`done` até o próximo armar).
+  - Gatilhos de tempo não aceitam os campos de `change` (`changed`, `severity_min`, `text_*`,
+    `case_sensitive`) e são rejeitados com `rebaseline: true`; `cooldown_s >= every_s` é erro no
+    `every`. Ocorrências atrasadas mais de **60 s** (tolerância/grace) viram
+    `skipped -> missed` no `logs/actions.jsonl` e nunca executam; o relógio local ingênuo do `at`
+    permite que o DST dobre ou perca um disparo (limitação documentada). O avaliador é o módulo puro
+    `actions/triggers.py` (relógios injetáveis; `at` usa tempo de parede, `every`/`after` o relógio
+    monotonic do arming, de `ArmingController.armed_since`).
 - **Passos**: `activate`/`click`/`move`/`type`/`key`/`wait`; `ref` é `roi` (relativo a
   `frame.absolute_rect`), `window` (`frame.window_rect`) ou `screen`. Clique exige `activate` antes
   (foco explícito + verificação `isActive`). Como o `SetForegroundWindow` do Windows é
@@ -1279,26 +1315,34 @@ padrão fica em **ensaio** (dry-run), que registra o que faria e grava evidênci
 - **Humanização** (`defaults.humanize`, §12.2): movimento do mouse interpolado em `mouse_steps`
   pontos com `jitter_px`; pausas com jitter de `wait_jitter_ms`; digitação com intervalo default de
   `key_interval_ms`; `seed` para testes determinísticos.
-- **Cooldown**: um gatilho ignorado por `cooldown_s` **não** vai para o JSONL (para não poluir), mas
-  é publicado no log ao vivo como `skipped -> cooldown`.
+- **Cooldown**: um gatilho ignorado por `cooldown_s` (change ou tempo) **não** vai para o JSONL
+  (para não poluir), mas é publicado no log ao vivo como `skipped -> cooldown`.
 - **Limites**: `max_per_min` (janela móvel de 60 s) e `max_per_session`, checados antes da execução
   (`reason: rate_limited` no resultado/auditoria).
 - **Execução síncrona na thread do loop**: captura/comparação pausam durante a sequência
-  (sem re-entrância); `settle_s` ao final. Entre passos, o runner re-checa arming/aborto.
+  (sem re-entrância); `settle_s` ao final. Entre passos, o runner re-checa arming/aborto. O
+  `on_tick` roda na mesma thread; o loop limita a espera pelo próximo deadline armado
+  (`ActionDispatcher.next_deadline_delay()`, §3.5) para o `at` disparar na hora.
 - **Re-arm**: `rebaseline: false` por padrão (o baseline permanece após a ação); `rebaseline: true`
   opt-in repete o gatilho (relatório/página). Re-arm manual em runtime (tray/botão/hotkey `rearm`,
   via `MonitorSession.request_rebaseline()`).
 - **Ensaio x armado**: `ArmingController` com estados `disarmed`/`armed`/`timed`; estado só em
-  memória, começa desarmado a cada sessão. `Esc` aborta na hora (`aborted`).
-- **Agendador**: fora da janela de horário a ação é suspensa (`suspended_schedule`); monitoramento e
-  alertas seguem.
-- **Auditoria**: `logs/actions.jsonl` (ensaio, execução, suspensão, motivo, duração e caminhos das
-  evidências).
+  memória, começa desarmado a cada sessão. `Esc` aborta na hora (`aborted`). Gatilhos de tempo não
+  são avaliados enquanto desarmado (estado resetado no próximo armar; `armed_since` reinicia a
+  fase/referência de cruzamento).
+- **Agendador (portão de suspensão)**: fora da janela de horário a ação é suspensa
+  (`suspended_schedule`); nos gatilhos de tempo a ocorrência vencida é **consumida** pela suspensão
+  (sem replay quando a janela reabre). Monitoramento e alertas seguem. O `schedule` nunca dispara
+  nada: o disparo é decidido apenas pelo `when.trigger`.
+- **Auditoria**: `logs/actions.jsonl` (ensaio, execução, suspensão, `missed`, motivo, duração e
+  caminhos das evidências). Todo registro carrega `trigger` (`change`/`at`/`every`/`after`).
 - **Criação pela GUI**: `gui/action_editor.py` (`Nova ação...`/`Editar...`/`Remover ação`) grava em
-  `overrides.actions` do JSON de seleção. Como `resolve_actions` lê os overrides antes do perfil,
-  isso funciona também com config v1 (`targets:`), sem migração. A validação reusa `parse_actions`
-  (clique exige `activate`, `text_*` exige `mode: advanced`), então as regras do YAML valem na
-  janela; ações do perfil/YAML são somente leitura na GUI.
+  `overrides.actions` do JSON de seleção, incluindo o seletor de gatilho da v0.10.0 (`change` mantém
+  os campos de when/severidade; `at`/`every`/`after` mostram só os próprios campos). Como
+  `resolve_actions` lê os overrides antes do perfil, isso funciona também com config v1 (`targets:`),
+  sem migração. A validação reusa `parse_actions` (clique exige `activate`, `text_*` exige
+  `mode: advanced`, regras dos gatilhos de tempo inclusas), então as regras do YAML valem na janela;
+  ações do perfil/YAML são somente leitura na GUI.
 - **Localizador de posição**: `gui/locator.py::run_locator` (botão "Localizar posição do
   mouse..." nos passos `click`/`move`) mostra uma caixa seguindo o cursor; Enter/clique esquerdo
   confirma, Esc/clique direito cancela. Devolve o ponto global **lógico** (mesma base do `Frame`) e
@@ -1312,13 +1356,16 @@ padrão fica em **ensaio** (dry-run), que registra o que faria e grava evidênci
   `enabled: false`).
 - **Log ao vivo**: cada gatilho emite um payload efêmero (`ActionDispatcher.on_event` →
   `MonitorSession.on_action` → `kind: "action_event"` na fila da GUI, distinto de `action` =
-  comandos de tray/hotkey); a fonte de verdade continua sendo o JSONL.
+  comandos de tray/hotkey); a fonte de verdade continua sendo o JSONL. Os payloads carregam
+  `trigger`.
 - **Contagem de 3s**: fluxos avulsos (`test-action --armed`, `record-actions` e o botão "Executar
   ação (3s)" da GUI) usam `gui/countdown.py::run_countdown` — overlay Qt sem borda, always-on-top e
   `WindowDoesNotAcceptFocus`, **sem** `activateWindow` (a janela-alvo pode ser focada durante a
   contagem); clique cancela. Instanciado por `gui/qt_app.py::ensure_app` com `QEventLoop` (chamável
   de dentro da GUI). O disparo automático do loop **não** tem contagem. Fallback textual no console
-  sem Qt/display.
+  sem Qt/display. Fluxos avulsos ignoram o gatilho da ação (execução explícita) e imprimem
+  `trigger <t> ignored (explicit run)`; o `record-actions` segue gerando o `when` comentado (change)
+  mais uma dica comentada dos campos de gatilho de tempo.
 - **Backend**: `pynput` como extra opcional (`pip install -e ".[input]"`), import preguiçoso em
   `platform/input.py`; sem ele, hotkeys caem para tray-only e a execução real falha com mensagem
   clara (`InputUnavailable`). Wayland/elevação seguem fora de escopo.
@@ -1449,6 +1496,9 @@ ao vivo). O perfil ativo também é gravado em `state.json.profile`.
 `defaults` cobre: `mode`, `poll_interval_s` (>= 1.0), `rearm`, `compare_options`, `humanize`
 (§11.4) e `escalation` (`enabled`/`severity_min`, §11.3; também aceita override por seleção). O
 `humanize` não tem UI própria: edite o YAML (a GUI cria ações, não humanização).
+Os perfis também carregam `actions:`; o `when:` de cada ação aceita
+`trigger: change|at|every|after` (§11.4) — `at`/`days`/`every_s`/`after_s` são os campos dos
+gatilhos de tempo da v0.10.0 e `days` reusa os nomes do `schedule` (`mon`..`sun`).
 `ui.snooze_minutes` lista as durações oferecidas pelo menu Snooze (GUI + tray); `ui.max_sessions`
 (default 4, faixa 1..16) limita as sessões simultâneas da GUI (§3.5).
 
@@ -1541,23 +1591,28 @@ do `evidence` do YAML (v2) e aplica o toggle de runtime `state.json["evidence_en
 
 - **Perfis na UI**: seletor na janela + submenu no tray; a troca vale no próximo start e persiste em
   `state.json.profile` (`--profile` no CLI).
-- **Agendador** (`scheduler/schedule.py::is_open`, função pura com relógio injetável; `gate()`
-  devolve o callable): fora da janela de horário apenas as **ações** são suspensas
-  (`suspended_schedule`); captura, comparação e alertas seguem. Janelas que cruzam a meia-noite são
-  aceitas; agendador ligado sem `days`/`windows` não restringe.
+- **Agendador × gatilhos** (`scheduler/schedule.py::is_open`, função pura com relógio injetável;
+  `gate()` devolve o callable): o `schedule` é só o **portão de suspensão** — nunca dispara nada. O
+  disparo é decidido pelo `when.trigger` de cada ação (§11.4): `change` reage às mudanças detectadas;
+  `at`/`every`/`after` são por tempo e exigem armar. Fora da janela de horário apenas as **ações**
+  são suspensas (`suspended_schedule`, consumindo um vencimento de gatilho de tempo); captura,
+  comparação e alertas seguem. Janelas que cruzam a meia-noite são aceitas; agendador ligado sem
+  `days`/`windows` não restringe.
 - **Gravador** (`actions/recorder.py` + `record-actions`): com o extra `input`, captura
   cliques/teclas (`F10` encerra), converte coordenadas absolutas para `ref: roi`/`window`/`screen` e
   gera um snippet de `actions:` com `when` comentado. Padrão: contagem de 3s e gravação automática
   (a contagem roda na thread principal, antes dos listeners do `pynput`); `--no-countdown` mantém o
-  `F9` explícito. Cliques fora da janela caem para `ref: screen`.
+  `F9` explícito. Cliques fora da janela caem para `ref: screen`. O snippet mantém o `when`
+  comentado (gatilho change) e acrescenta uma linha comentada com os campos de gatilho de tempo
+  (`trigger`/`at`/`days`/`every_s`/`after_s`); o gravador nunca grava um gatilho.
 - **Seleção de ações na UI**: checklist "Ações da sessão" (`describe_action`/`describe_actions` em
   `actions/summary.py`) + contador "N de M"; persiste por nome de seleção
   (`actions/selection.py::load_action_selection`/`save_action_selection`) e vale no próximo start.
   No CLI, `--actions a,b|all|none` (one-shot, não persiste, precede o salvo) e `list-actions` para
   conferir; `run` imprime o resumo e as linhas ao vivo
   `[action] rehearsal|armed <nome> -> ok|failed|rehearsal`.
-- **Testes/validação**: `is_open` com relógio falso, conversão do gravador sem listener real e troca
-  de perfil (próximo start).
+- **Testes/validação**: `is_open` e o avaliador de gatilhos com relógios falsos, conversão do
+  gravador sem listener real e troca de perfil (próximo start).
 
 ### 12.6 Idiomas (i18n)
 
@@ -1618,7 +1673,7 @@ do que via script.
 ## 14. Armadilhas conhecidas (para a IA implementadora)
 
 Cada item abaixo é uma armadilha **real** já discutida e resolvida. Não reintroduzir. Os itens 1–15
-são os originais; os itens 16–22 foram registrados durante a implementação.
+são os originais; os itens 16–29 foram registrados durante a implementação.
 
 1. **Wayland**: `mss` não captura. Detectar e avisar. Não tentar contornar no protótipo.
 2. **DPI awareness fora de ordem**: se `SetProcessDpiAwareness` for chamado depois de `mss` ou Qt,
@@ -1660,6 +1715,17 @@ são os originais; os itens 16–22 foram registrados durante a implementação.
     slug (vazio/longo/conflito), nunca sobrescrevem, fazem rollback em falha e atualizam o
     `last_selection`; a reedição da região ainda limpa `masks`/`overrides.masks` (relativas à ROI
     antiga).
+26. **Replay de gatilho de tempo perdido**: nunca. Uma ocorrência além da tolerância de 60 s é
+    registrada como `skipped -> missed` e descartada (sem rajada após sleep/suspensão e sem
+    catch-up entre reinícios); o `at` usa o relógio local ingênuo, então o DST pode dobrar ou perder
+    um disparo (§11.4).
+27. **Ensaiar um gatilho de tempo**: nunca. `at`/`every`/`after` só são avaliados com as ações
+    armadas e não têm dry-run; o caminho de ensaio do §11.4 pertence apenas ao `trigger: change`.
+28. **Disparar o caminho errado**: nunca. O `on_result` avalia só ações com `trigger: change`; os
+    gatilhos de tempo rodam uma vez por frame pós-baseline no `ActionDispatcher.on_tick`, mesmo sem
+    mudança (§11.4).
+29. **Girar em espera ocupada por um gatilho**: nunca. O `MonitorLoop` limita o `Event.wait` pelo
+    `next_deadline_delay()` (piso de 0,05 s, §3.5); sem polling/spin.
 
 ---
 
@@ -1726,7 +1792,10 @@ compare/pipeline.MODE_STAGES / ComparePipeline.compare(current) → ComparisonRe
 alerts/chain.AlertChain(notifiers, gate=...) → chain
 alerts/chain.AlertChain.dispatch(result, frame) → DispatchOutcome
 alerts/gate.AlertGate.snooze(minutes)/mute()/unmute()/status()/active() → supressão manual
-actions/dispatch.ActionDispatcher.on_result(result, frame) → rebaseline: bool
+actions/dispatch.ActionDispatcher.on_result(result, frame) → rebaseline: bool   (trigger: change)
+actions/dispatch.ActionDispatcher.on_tick(frame) → None                         (gatilhos de tempo)
+actions/dispatch.ActionDispatcher.next_deadline_delay() → float | None          (limite da espera)
+actions/triggers.evaluate(action, state, now_wall=..., now_mono=..., armed_since=...) → decisão
 
 config/loader.load_config(path) → AppConfig
 gui/session_manager.SessionManager(events, gate=..., max_sessions=...) → manager
@@ -1735,7 +1804,7 @@ persistence/selection.build_target(selection, profile, name=..., mode=..., sched
                                    action_filter=...) → TargetConfig
 app.MonitorSession(target, recorder=..., on_action=..., on_frame=..., on_compare=..., gate=...) → sink(frame)
 app.MonitorSession.acknowledge()/.awaiting_ack → controle de escalação (flags thread-safe)
-app.build_loop(target, session, on_event=..., on_error=...) → MonitorLoop
+app.build_loop(target, session, on_event=..., on_error=...) → MonitorLoop (liga o deadline provider)
 scheduler/loop.MonitorLoop.start()/.stop()/.join()
 scheduler/schedule.is_open(options, now=...) → bool; gate(options) → Callable | None
 
@@ -1753,7 +1822,8 @@ MonitorLoop._tick
       → (1º frame / re-arm) pipeline.initialize  (baseline; grava evidência)
       → pipeline.compare
       → AlertChain.dispatch            (som/popup/Telegram/log; cooldown; DispatchOutcome)
-      → ActionDispatcher.on_result     (ensaio/armado; agendador; limites; auditoria)
+      → ActionDispatcher.on_result     (trigger: change; ensaio/armado; agendador; limites; auditoria)
+      → ActionDispatcher.on_tick       (gatilhos de tempo em todo frame pós-baseline; deadlines; auditoria)
       → re-arm do baseline (outcome/rebaseline) + evidência de mudança
 ```
 
@@ -1796,6 +1866,13 @@ escolhida (`name=None` = todas/agregado).
   de cada alerta) até o `acknowledge()` re-armar o baseline; o estado vive apenas em memória.
 - **Sessão** — uma seleção monitorada com seu próprio `MonitorLoop`/thread/backend, gerenciada pelo
   `SessionManager`; a GUI pode rodar até `ui.max_sessions` simultâneas (somente GUI na v0.9.0).
+- **Gatilho (`trigger`)** — condição de disparo por ação (`when.trigger`): `change` (mudança visual
+  detectada, comportamento anterior) ou os gatilhos de tempo `at`/`every`/`after` (v0.10.0); os de
+  tempo só existem com as ações armadas.
+- **Tolerância (grace)** — janela de 60 s para um gatilho de tempo disparar após o vencimento; além
+  dela a ocorrência é registrada como `missed` e nunca executa.
+- **Missed** — ocorrência atrasada auditada (`skipped -> missed` no `logs/actions.jsonl`) de um
+  gatilho de tempo; é descartada, nunca repetida.
 
 ---
 

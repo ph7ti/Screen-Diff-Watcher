@@ -45,6 +45,11 @@ def run_actions(
         if not action.enabled:
             lines.append(f"[disabled] {action.name}")
             continue
+        if action.trigger != "change":
+            # Execucao explicita ignora o gatilho (doc, secao 11.4).
+            lines.append(
+                f"[trigger] {action.name}: trigger {action.trigger} ignored (explicit run)"
+            )
         descriptions = [describe_step(step) for step in action.steps]
         if not arming.is_armed():
             evidence: list[str] = []

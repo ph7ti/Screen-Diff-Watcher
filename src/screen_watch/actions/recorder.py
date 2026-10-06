@@ -110,6 +110,11 @@ class StepRecorder:
             "  # when:                        # descomente para refinar o gatilho\n"
             "  #   changed: true\n"
             '  #   text_any: ["erro", "falha"]\n'
+            "  #   trigger: at                # change (padrao) | at | every | after\n"
+            '  #   at: ["08:00", "18:00"]     # trigger at\n'
+            "  #   days: [mon, tue, wed, thu, fri]\n"
+            "  #   every_s: 60                # trigger every\n"
+            "  #   after_s: 300               # trigger after\n"
         )
         lines: list[str] = []
         for line in text.splitlines():

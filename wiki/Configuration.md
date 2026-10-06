@@ -272,6 +272,11 @@ Outside the time window, monitoring and alerts continue normally, but **actions*
 suspended (recorded as `suspended_schedule` in the audit). Scheduler enabled without `days`/`windows`
 does not restrict anything.
 
+The scheduler is only a **suspension gate**: it never fires actions. Firing is decided by each
+action trigger — `change` (default) or the time triggers `at`/`every`/`after`
+([Pseudo-human actions](Pseudo-Human-Actions.md)); a time trigger that comes due outside the window
+is consumed by the suspension and is **not replayed** when the window reopens.
+
 ## Evidence
 
 Configured in the `evidence:` section of the YAML **or** through the GUI checkbox (which takes precedence). Details

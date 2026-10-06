@@ -1,6 +1,6 @@
 # Roadmap — agent knowledge base
 
-Status: v0.9.1 · Scope: prioritized backlog for v1.0.0
+Status: v0.10.0 · Scope: prioritized backlog for v1.0.0
 
 Rules:
 
@@ -48,6 +48,21 @@ refactor (see `doc/releases/v0.9.1.md`).
 
 Follow-ups noted for v1.0.0+: multi-ROI in the CLI/headless flow; persistence of the monitored
 checkbox set; `alerts.jsonl` schema with channel/target/evidence path.
+
+## v0.10.0 — Action scheduler (done)
+
+Shipped as **0.10.0** (2026-10-06); details and evidence in `doc/releases/v0.10.0.md` (EN) +
+`v0.10.0.pt-BR.md`, `CHANGELOG.md` and `doc/00` §1.4/§11.4.
+
+- [x] Per-action trigger `when.trigger: change|at|every|after` (default `change`): `at` (`HH:MM` +
+      `days` reusing the `schedule` names), `every` (phase restarts on each firing), `after` (once,
+      counted from arming); strict validation (change fields, `rebaseline`, `cooldown_s >= every_s`)
+      — `doc/00` §11.4/§12.2/§12.5.
+- [x] Pure evaluator `actions/triggers.py` with injectable clocks, 60 s tolerance (`skipped ->
+      missed`, no catch-up) and `ArmingController.armed_since`; `MonitorLoop` caps its wait by
+      `ActionDispatcher.next_deadline_delay()` — `doc/00` §3.5.
+- [x] GUI editor trigger selector, `list-actions` summary, one-off notice, recorder hint and i18n in
+      both catalogs; tests with fake clocks — `doc/00` §12.5/§14/§17.
 
 ## v1.0.0 — Stabilization + platforms
 

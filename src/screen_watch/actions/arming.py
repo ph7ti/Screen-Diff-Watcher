@@ -21,6 +21,7 @@ class ArmingController:
         self._lock = threading.RLock()
         self._state = DISARMED
         self._until: float | None = None
+        self._armed_since: float | None = None
         self._abort = threading.Event()
 
     @property
@@ -29,7 +30,19 @@ class ArmingController:
             if self._state == TIMED and self._until is not None and self._clock() >= self._until:
                 self._state = DISARMED
                 self._until = None
+                self._armed_since = None
             return self._state
+
+    @property
+    def armed_since(self) -> float | None:
+        """Timestamp (monotonic) do armar atual; None desarmado/expirado.
+
+        Base da fase dos gatilhos de tempo (`every`/`after`) e do reset do
+        avaliador quando o usuario rearma (doc, secao 11.4).
+        """
+        self.state  # normaliza a expiracao do TIMED
+        with self._lock:
+            return self._armed_since if self._state != DISARMED else None
 
     def is_armed(self) -> bool:
         return self.state != DISARMED
@@ -52,12 +65,14 @@ class ArmingController:
         with self._lock:
             self._state = ARMED
             self._until = None
+            self._armed_since = self._clock()
             self._abort.clear()
 
     def disarm(self) -> None:
         with self._lock:
             self._state = DISARMED
             self._until = None
+            self._armed_since = None
 
     def toggle(self) -> str:
         if self.is_armed():
@@ -71,6 +86,7 @@ class ArmingController:
         with self._lock:
             self._state = TIMED
             self._until = self._clock() + seconds
+            self._armed_since = self._clock()
             self._abort.clear()
 
     def abort(self) -> None:

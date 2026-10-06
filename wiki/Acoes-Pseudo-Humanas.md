@@ -1,10 +1,12 @@
 # Ações pseudo-humanas (opt-in)
 [English](Pseudo-Human-Actions.md) · **Português (Brasil)**
 
-As ações são uma **reação separada dos alertas**: só são avaliadas depois de uma mudança detectada,
-**não alteram** o resultado dos alertas nem o re-arm, e são **opt-in e desarmadas por padrão** — em
-modo ensaio o app apenas registra o que faria (e grava evidência), sem clicar. A execução real exige
-**armar** (tray, hotkeys ou "Armar por N min").
+As ações são uma **reação separada dos alertas**: **não alteram** o resultado dos alertas nem o
+re-arm, e são **opt-in e desarmadas por padrão** — em modo ensaio o app apenas registra o que faria
+(e grava evidência), sem clicar. A execução real exige **armar** (tray, hotkeys ou "Armar por N min").
+Desde a **v0.10.0** cada ação tem exatamente um **gatilho**: `change` (padrão; avaliado após uma
+mudança detectada) ou um gatilho de tempo (`at`/`every`/`after`; avaliado a cada ciclo de
+monitoramento, **só com as ações armadas**, sem ensaio).
 
 - Backend de entrada: **`pynput`**, extra opcional (`pip install -e ".[input]"`). Sem ele, as ações
   permanecem em ensaio e as hotkeys globais ficam indisponíveis (a GUI avisa e fica tray-only).
@@ -43,16 +45,59 @@ profiles:
 |---|---|---|
 | `name` | — (obrigatório) | nome único no conjunto |
 | `enabled` | `true` | desabilitar sem remover |
-| `severity_min` | `1` | severidade mínima da mudança para disparar |
-| `when.severity_min` | — | tem precedência sobre `severity_min` quando presente |
-| `when.changed` | `true` | único valor suportado (`false` é erro) |
-| `when.text_any` / `text_all` / `text_regex` | vazio | filtros sobre o texto do OCR; exigem `mode: advanced` |
-| `case_sensitive` | `false` | sensibilidade dos filtros de texto |
+| `when.trigger` | `change` | `change` \| `at` \| `every` \| `after` (v0.10.0; ver abaixo) |
+| `severity_min` | `1` | severidade mínima da mudança para disparar (gatilho `change`) |
+| `when.severity_min` | — | tem precedência sobre `severity_min` quando presente (`change`) |
+| `when.changed` | `true` | único valor suportado (`false` é erro; `change`) |
+| `when.text_any` / `text_all` / `text_regex` | vazio | filtros sobre o texto do OCR; exigem `mode: advanced` (`change`) |
+| `case_sensitive` | `false` | sensibilidade dos filtros de texto (`change`) |
+| `when.at` | — | `["HH:MM", ...]` (24 h) para `trigger: at` |
+| `when.days` | todos | filtro de dias para `at` (`mon`..`sun`, igual ao `schedule.days`) |
+| `when.every_s` | — | intervalo em segundos para `trigger: every` (>= 1) |
+| `when.after_s` | — | atraso único em segundos para `trigger: after` (>= 1) |
 | `cooldown_s` | `30` | intervalo mínimo entre disparos desta ação |
 | `settle_s` | `1.5` | pausa ao final da sequência |
-| `rebaseline` | `false` | `true` re-arma o baseline após executar (o gatilho pode repetir) |
+| `rebaseline` | `false` | `true` re-arma o baseline após executar (só no gatilho `change`) |
 | `max_per_min` | `6` | teto em janela móvel de 60 s |
 | `max_per_session` | `100` | teto por sessão |
+
+## Gatilhos de tempo (v0.10.0)
+
+`when.trigger` escolhe o que dispara a ação (um gatilho por ação). Gatilhos de tempo exigem as ações
+**armadas** (sem ensaio) e também respeitam o `schedule`: uma ocorrência vencida com a janela fechada
+é registrada como `suspended_schedule` e **não** é repetida quando a janela reabre.
+
+```yaml
+actions:
+  - name: conferir_painel           # a cada 60 s enquanto armado
+    when: { trigger: every, every_s: 60 }
+    cooldown_s: 30                  # precisa ser menor que every_s
+    steps: [ ... ]
+  - name: fechamento                # às 18:00, só em dias úteis
+    when: { trigger: at, at: ["18:00"], days: [mon, tue, wed, thu, fri] }
+    steps: [ ... ]
+  - name: lembrete                  # uma vez, 5 min após armar
+    when: { trigger: after, after_s: 300 }
+    steps: [ ... ]
+```
+
+- `at`: `at: ["HH:MM", ...]` (24 h) e `days` opcional (`mon`..`sun`; ausente = todos os dias).
+  Dispara quando o horário é **cruzado com as ações armadas** — horários já passados no dia não
+  disparam, e rearmar reinicia a referência de cruzamento.
+- `every`: a fase começa ao armar e **reinicia a cada disparo** (próximo vencimento = disparo +
+  `every_s`); rearmar reinicia a fase; sem rajada.
+- `after`: contado uma única vez a partir do armar; desarmar cancela, rearmar reinicia.
+- **Tolerância (60 s)**: um vencimento atrasado mais de 60 s (sleep/suspend) vira
+  `skipped -> missed` no `logs/actions.jsonl` e **nunca executa**; não há catch-up nem repetição
+  após reiniciar o app.
+- Gatilhos de tempo não aceitam `changed`/`severity_min`/`text_*`/`case_sensitive` nem
+  `rebaseline: true`; a validação rejeita com mensagens traduzidas, e `cooldown_s >= every_s` é erro.
+- O loop acorda mais cedo quando há gatilho a vencer (`min(poll_interval_s, próximo deadline)`), o
+  que mantém o `at` pontual e permite `every_s` menor que o poll.
+- Janela minimizada/fechada = sem frame = os gatilhos de tempo pausam como o resto (retomam no
+  próximo frame capturado).
+- `test-action` e o botão **Executar ação (3s)** **ignoram** o gatilho (execução explícita; imprimem
+  `trigger ... ignored (explicit run)`) — é assim que se testa uma ação de tempo.
 
 ### Passos
 
@@ -79,6 +124,8 @@ profiles:
 - `max_per_min`/`max_per_session` são checados antes de executar (`rate_limited`).
 - Fora da janela do **agendador**, a ação é suspensa (`suspended_schedule`); monitoramento e alertas
   seguem normais.
+- Todo registro do JSONL carrega `trigger` (`change`/`at`/`every`/`after`); vencimentos atrasados são
+  auditados uma vez como `skipped -> missed` e nunca executam.
 
 ## Armar/desarmar
 
@@ -103,16 +150,19 @@ python -m screen_watch list-actions --selection painel           # confere sem i
 Em `--armed`, uma contagem de 3 s aparece no topo da tela (overlay Qt **sem roubar foco**) para você
 focar a janela-alvo; um clique no overlay cancela. O disparo automático do `run` **não** tem
 contagem. A janela tem o botão equivalente **Executar ação (3s)**, que usa o subconjunto marcado no
-checklist.
+checklist. Execuções avulsas **ignoram o gatilho** (executam os passos escolhidos e imprimem
+`trigger ... ignored (explicit run)`), o que também é a forma de testar uma ação de tempo sem
+esperar.
 
 ## Criar ações pela janela
 
 A coluna de botões ao lado do checklist tem **Nova ação…**, **Editar…** e **Remover Ação**:
 
-- **Nova ação…** abre um formulário com nome, `enabled`, `severity_min` (gatilho), `cooldown_s`,
+- **Nova ação…** abre um formulário com nome, `enabled`, **gatilho** (`change`/`at`/`every`/`after`;
+  os campos de tempo aparecem conforme a escolha), `severity_min` (gatilho), `cooldown_s`,
   `settle_s`, `rebaseline` e a lista de passos. Ao confirmar, o app valida com o **mesmo parser do
-  YAML** (`parse_actions`): cliques exigem um passo `activate` antes e filtros de texto exigem
-  `mode: advanced`; erros aparecem num diálogo traduzido.
+  YAML** (`parse_actions`): cliques exigem um passo `activate` antes, filtros de texto exigem
+  `mode: advanced` e as regras dos gatilhos de tempo valem; erros aparecem num diálogo traduzido.
 - **Ordem dos passos**: use **Subir**/**Descer**, arraste e solte, **Editar passo** (carrega o passo
   no formulário; o botão vira **Salvar alteração** com **Cancelar**) ou **Duplicar passo**.
 - **Localizar posição do mouse…** (nos passos `click`/`move`): aparece uma caixa seguindo o cursor
@@ -154,7 +204,9 @@ Fluxo padrão: contagem de 3 s (mesmo overlay sem foco) → a gravação começa
 encerra. Use `--no-countdown` para voltar ao `F9` manual (tempo para se preparar sem o overlay). Um
 clique no overlay cancela a contagem. Os cliques são convertidos de coordenadas absolutas para
 `ref: roi`/`window` (ou `screen` se caírem fora da janela) e o snippet já inclui um passo `activate`
-e o bloco `when` comentado, para você revisar antes de armar.
+e o bloco `when` comentado, para você revisar antes de armar. O snippet também traz uma dica
+comentada dos campos de gatilho de tempo (`trigger`/`at`/`days`/`every_s`/`after_s`); o gravador
+nunca grava um gatilho.
 
 A contagem roda na **thread principal**, antes de criar os listeners do `pynput`. Sem Qt/display
 (headless/Wayland), a contagem cai para o console (`3... 2... 1...`) e segue. Ressalva: em Wayland a
@@ -163,8 +215,8 @@ captura/entrada continuam limitadas; a elevação (UAC) não é contornada.
 ## Auditoria e log ao vivo
 
 - **Auditoria** (`logs/actions.jsonl`, fonte de verdade): cada linha tem `ts`, `mode`
-  (`rehearsal`/`armed`/`skipped`), `action`, `steps`, `executed`, `duration_s`, `reason` e
-  `evidence` (caminhos dos prints).
+  (`rehearsal`/`armed`/`skipped`), `action`, `trigger`, `steps`, `executed`, `duration_s`, `reason`
+  e `evidence` (caminhos dos prints).
 - **Log ao vivo**: no CLI, uma linha por gatilho
   (`[action] rehearsal|armed <nome> -> ok|failed (motivo)`); na GUI, o mesmo evento aparece no log
   (`kind: action_event`). É efêmero e respeita o `cooldown_s`; a auditoria continua sendo a fonte

@@ -67,7 +67,7 @@ A versão vive **apenas** em `src/screen_watch/__init__.py`; o `pyproject.toml` 
 
 ```python
 # src/screen_watch/__init__.py
-__version__ = "0.9.1"   # <- única fonte de verdade
+__version__ = "0.10.0"   # <- única fonte de verdade
 ```
 
 Confirme que metadados e atributo batem:
@@ -182,12 +182,12 @@ Repositório: `https://github.com/ph7ti/Screen-Diff-Watcher`.
 - **PR / `workflow_dispatch` do CI**: o job `package` do `ci.yml` monta os instaladores **sem
   publicar** (artefatos `installer-Windows` / `installer-Linux`) — pega quebra de empacotamento.
 - **Release de teste**: `workflow_dispatch` em `release.yml` com `version` = valor de `__version__`
-  (ex.: `0.9.1-rc1`) gera **só artefatos de workflow**, sem release.
+  (ex.: `0.10.0-rc1`) gera **só artefatos de workflow**, sem release.
 - **Release final**: crie a tag e faça push:
 
 ```powershell
-git tag v0.9.1          # tag sem 'v' deve ser IGUAL a __version__
-git push origin v0.9.1
+git tag v0.10.0          # tag sem 'v' deve ser IGUAL a __version__
+git push origin v0.10.0
 ```
 
 O `release.yml` builda Windows (`windows-latest` + `choco install innosetup -y`) e Linux

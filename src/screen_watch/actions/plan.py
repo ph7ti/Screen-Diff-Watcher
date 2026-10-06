@@ -13,11 +13,23 @@ from screen_watch.actions.protocol import (
     BUTTONS,
     REF_KINDS,
     STEP_KINDS,
+    TRIGGERS,
+    WEEKDAYS,
     ActionSpec,
     ActionStep,
 )
 from screen_watch.config.coerce import as_bool, as_float, as_int, as_str, as_str_list
 from screen_watch.errors import AppError
+
+_CHANGE_KEYS = (
+    "changed",
+    "severity_min",
+    "text_any",
+    "text_all",
+    "text_regex",
+    "case_sensitive",
+)
+_HHMM_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
 
 class ActionError(AppError):
@@ -121,14 +133,37 @@ def _parse_step(raw: Any, field: str) -> ActionStep:
     return ActionStep(kind="wait", ms=ms)
 
 
+def _reject_keys(raw: dict, keys: tuple[str, ...], field: str, trigger: str) -> None:
+    for key in keys:
+        if key in raw:
+            raise ActionError(
+                code="action.trigger_field_not_supported",
+                params={"field": field, "trigger": trigger, "value": key},
+            )
+
+
 def _parse_when(raw: Any, field: str) -> dict[str, Any]:
     raw = raw or {}
     if not isinstance(raw, dict):
         raise ActionError(code="action.when_not_mapping", params={"field": field})
+    trigger = _as_str(raw.get("trigger", "change"), f"{field}.trigger") or "change"
+    if trigger not in TRIGGERS:
+        raise ActionError(
+            code="action.trigger_invalid",
+            params={"field": field, "value": trigger, "valid": TRIGGERS},
+        )
+    if trigger == "change":
+        return _parse_change_when(raw, field)
+    return _parse_time_when(raw, field, trigger)
+
+
+def _parse_change_when(raw: dict, field: str) -> dict[str, Any]:
+    _reject_keys(raw, ("at", "days", "every_s", "after_s"), field, "change")
     if raw.get("changed") is False:
         raise ActionError(code="action.changed_not_supported", params={"field": field})
     regex = raw.get("text_regex")
     when: dict[str, Any] = {
+        "trigger": "change",
         "changed": _as_bool(raw.get("changed", True), f"{field}.changed"),
         "text_any": _as_str_list(raw.get("text_any"), f"{field}.text_any"),
         "text_all": _as_str_list(raw.get("text_all"), f"{field}.text_all"),
@@ -146,6 +181,54 @@ def _parse_when(raw: Any, field: str) -> dict[str, Any]:
             ) from exc
         when["text_regex"] = text_regex
     return when
+
+
+def _parse_at_when(raw: dict, field: str) -> dict[str, Any]:
+    times = _as_str_list(raw.get("at"), f"{field}.at")
+    if not times:
+        raise ActionError(code="action.trigger_at_required", params={"field": field})
+    for item in times:
+        if _HHMM_RE.match(item) is None:
+            raise ActionError(
+                code="action.trigger_at_format", params={"field": field, "value": item}
+            )
+    when: dict[str, Any] = {"trigger": "at", "at": times}
+    days_raw = raw.get("days")
+    if days_raw is not None:
+        days = _as_str_list(days_raw, f"{field}.days")
+        if not days:
+            raise ActionError(
+                code="action.trigger_days_invalid",
+                params={"field": field, "value": days_raw, "valid": WEEKDAYS},
+            )
+        seen: set[str] = set()
+        for name in days:
+            if name not in WEEKDAYS or name in seen:
+                raise ActionError(
+                    code="action.trigger_days_invalid",
+                    params={"field": field, "value": name, "valid": WEEKDAYS},
+                )
+            seen.add(name)
+        when["days"] = days
+    return when
+
+
+def _parse_time_when(raw: dict, field: str, trigger: str) -> dict[str, Any]:
+    _reject_keys(raw, _CHANGE_KEYS, field, trigger)
+    if trigger == "at":
+        _reject_keys(raw, ("every_s", "after_s"), field, trigger)
+        return _parse_at_when(raw, field)
+    if trigger == "every":
+        _reject_keys(raw, ("at", "days", "after_s"), field, trigger)
+        every_s = _as_float(raw.get("every_s", 0.0), f"{field}.every_s")
+        if every_s < 1:
+            raise ActionError(code="action.trigger_every_min", params={"field": field})
+        return {"trigger": trigger, "every_s": every_s}
+    _reject_keys(raw, ("at", "days", "every_s"), field, trigger)
+    after_s = _as_float(raw.get("after_s", 0.0), f"{field}.after_s")
+    if after_s < 1:
+        raise ActionError(code="action.trigger_after_min", params={"field": field})
+    return {"trigger": trigger, "after_s": after_s}
 
 
 def parse_action(raw: Any, index: int, prefix: str = "actions", mode: str | None = None) -> ActionSpec:
@@ -179,6 +262,11 @@ def parse_action(raw: Any, index: int, prefix: str = "actions", mode: str | None
         text_all=when.get("text_all", ()),
         text_regex=when.get("text_regex"),
         case_sensitive=when.get("case_sensitive", False),
+        trigger=when.get("trigger", "change"),
+        at=when.get("at", ()),
+        days=when.get("days", ()),
+        every_s=when.get("every_s", 0.0),
+        after_s=when.get("after_s", 0.0),
     )
     _validate_action(action, field, mode)
     return action
@@ -191,6 +279,16 @@ def _validate_action(action: ActionSpec, field: str, mode: str | None) -> None:
         raise ActionError(code="action.cooldown_min", params={"field": field})
     if action.max_per_min < 0 or action.max_per_session < 0:
         raise ActionError(code="action.max_min", params={"field": field})
+    if action.rebaseline and action.trigger != "change":
+        raise ActionError(
+            code="action.trigger_rebaseline",
+            params={"field": field, "trigger": action.trigger},
+        )
+    if action.trigger == "every" and action.cooldown_s >= action.every_s:
+        raise ActionError(
+            code="action.cooldown_exceeds_interval",
+            params={"field": field, "cooldown": action.cooldown_s, "every": action.every_s},
+        )
     has_click = any(step.kind == "click" for step in action.steps)
     has_activate = any(step.kind == "activate" for step in action.steps)
     if has_click and not has_activate:

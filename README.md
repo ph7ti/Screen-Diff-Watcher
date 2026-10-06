@@ -39,9 +39,11 @@ Runs on **Windows and Linux**, capturing pixels only (it never touches the watch
   calibration** chart (score vs threshold, CSV export).
 - **Evidence**: prints of the baseline and of each change — opt-in.
 - **Pseudo-human actions** (click, keys, text) when armed — rehearsal by default, audited in
-  `logs/actions.jsonl`.
-- **GUI with tray + full CLI**, with **profiles**, a scheduler (suspends actions outside the time
-  window) and global hotkeys.
+  `logs/actions.jsonl`; since **v0.10.0** each action also accepts a **time trigger**
+  (`at`/`every`/`after`, e.g. fire at 18:00 on weekdays or every 60 s) with a 60 s tolerance that
+  records late occurrences as `missed` instead of executing them.
+- **GUI with tray + full CLI**, with **profiles**, a scheduler (a suspension gate: it suspends
+  actions outside the time window but never fires them) and global hotkeys.
 - **Selection name and on-screen checks**: give the selection a **name** (the file is renamed to the
   slug of the name, never overwriting another), use **Highlight** to outline the ROI for ~2 s
   **without changing its pixels** (it works while monitoring) and **double-click** the list to
@@ -261,7 +263,8 @@ with pipeline and short-circuit (`advanced` gated by phash, bypassed by `text_wa
 (including the headless flow below), **Highlight** (ROI outline that never touches the
 ROI pixels), **double-click region re-edit** (Enter starts/stops), the **2×2 window layout** and
 **multiple simultaneous ROIs** (checkbox set, `ui.max_sessions`, aggregated status/tray),
-evidence, pseudo-human actions (with GUI editor and recorder), scheduler, profiles, full CLI,
+evidence, pseudo-human actions (with GUI editor — including the v0.10.0 time triggers — and
+recorder), scheduler, profiles, full CLI,
 GUI + tray with i18n (pt-BR/en-US), packaging (Inno Setup and `.deb`) and tag-driven CI/release.
 
 **Manual validation pending:** GUI/tray/overlay at 100/125/150% (doc §5.1, §9.5) and bundle details
@@ -305,7 +308,7 @@ Integration tests are opt-in (`TEST_REAL_CAPTURE`, `TEST_REAL_TELEGRAM`,
 | [**Wiki**](wiki/Home.md) | usage and feature details: CLI, GUI, config, actions, alerts, evidence, languages, DPI, build |
 | [`doc/00-Architecture_and_Specification.md`](doc/00-Architecture_and_Specification.md) | architecture and specification — **single source of truth for the design** |
 | [`doc/01-Build_and_Release.md`](doc/01-Build_and_Release.md) | installer build and release pipeline |
-| [`doc/releases/`](doc/releases/v0.9.1.md) | per-version release notes (detail file) |
+| [`doc/releases/`](doc/releases/v0.10.0.md) | per-version release notes (detail file) |
 | [`CHANGELOG.md`](CHANGELOG.md) | changes per version (semantic) |
 | [`README.pt-BR.md`](README.pt-BR.md) | este guia em português |
 

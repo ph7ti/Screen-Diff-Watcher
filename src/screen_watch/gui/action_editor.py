@@ -36,7 +36,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from screen_watch.actions.protocol import BUTTONS, REF_KINDS, STEP_KINDS
+from screen_watch.actions.protocol import BUTTONS, REF_KINDS, STEP_KINDS, TRIGGERS, WEEKDAYS
 from screen_watch.actions.steps import duplicate_step, move_step, remove_step, replace_step
 from screen_watch.actions.summary import describe_raw_step
 from screen_watch.errors import render_error
@@ -95,12 +95,15 @@ class ActionEditorDialog(QDialog):
         self._window_rect = window_rect
         self._steps: list[dict] = []
         self._param_rows: dict[str, list[QWidget]] = {}
+        self._trigger_rows: dict[str, list[QWidget]] = {}
+        self._when_extra: dict = {}
         self._help_filters: list[object] = []
         self._edit_index: int | None = None
         self._build_ui()
         if action is not None:
             self._load(action)
         self._update_param_visibility()
+        self._update_trigger_visibility()
 
     # -- construcao --------------------------------------------------------
     def _help(self, widget: QWidget, key: str) -> None:
@@ -118,6 +121,43 @@ class ActionEditorDialog(QDialog):
         self.enabled_check.setChecked(True)
         form.addRow("", self.enabled_check)
         self._help(self.enabled_check, "editor.enabled")
+
+        self.trigger_combo = QComboBox()
+        self.trigger_combo.addItems(TRIGGERS)
+        self.trigger_combo.currentTextChanged.connect(self._update_trigger_visibility)
+        self._add_param(form, "trigger", tr("editor.trigger"), self.trigger_combo, rows=self._trigger_rows)
+        self._help(self.trigger_combo, "editor.trigger")
+
+        self.at_edit = QLineEdit()
+        self.at_edit.setPlaceholderText(tr("editor.at_placeholder"))
+        self._add_param(form, "at", tr("editor.trigger_at"), self.at_edit, rows=self._trigger_rows)
+        self._help(self.at_edit, "editor.trigger_at")
+
+        self.days_widget = QWidget()
+        days_row = QHBoxLayout(self.days_widget)
+        days_row.setContentsMargins(0, 0, 0, 0)
+        self.day_checks: dict[str, QCheckBox] = {}
+        for name in WEEKDAYS:
+            check = QCheckBox(tr(f"editor.day_{name}"))
+            check.setChecked(True)
+            self.day_checks[name] = check
+            days_row.addWidget(check)
+        self._add_param(
+            form, "days", tr("editor.trigger_days"), self.days_widget, rows=self._trigger_rows
+        )
+        self._help(self.days_widget, "editor.trigger_days")
+
+        self.every_spin = self._seconds_spin()
+        self._add_param(
+            form, "every", tr("editor.trigger_every"), self.every_spin, rows=self._trigger_rows
+        )
+        self._help(self.every_spin, "editor.trigger_every")
+
+        self.after_spin = self._seconds_spin()
+        self._add_param(
+            form, "after", tr("editor.trigger_after"), self.after_spin, rows=self._trigger_rows
+        )
+        self._help(self.after_spin, "editor.trigger_after")
 
         self.severity_spin = QSpinBox()
         self.severity_spin.setRange(0, 10)
@@ -142,6 +182,16 @@ class ActionEditorDialog(QDialog):
         self.rebaseline_check = QCheckBox(tr("editor.rebaseline"))
         form.addRow("", self.rebaseline_check)
         self._help(self.rebaseline_check, "editor.rebaseline")
+        self._change_only_rows: list[QWidget] = [
+            item
+            for item in (
+                form.labelForField(self.severity_spin),
+                self.severity_spin,
+                form.labelForField(self.rebaseline_check),
+                self.rebaseline_check,
+            )
+            if item is not None
+        ]
         layout.addLayout(form)
 
         layout.addWidget(QLabel(tr("editor.steps_header")))
@@ -259,10 +309,43 @@ class ActionEditorDialog(QDialog):
         spin.setRange(low, high)
         return spin
 
-    def _add_param(self, form: QFormLayout, key: str, label: str, widget: QWidget) -> None:
+    @staticmethod
+    def _seconds_spin() -> QDoubleSpinBox:
+        spin = QDoubleSpinBox()
+        spin.setRange(1, 86400)
+        spin.setDecimals(1)
+        spin.setValue(60.0)
+        return spin
+
+    def _add_param(
+        self,
+        form: QFormLayout,
+        key: str,
+        label: str,
+        widget: QWidget,
+        rows: dict[str, list[QWidget]] | None = None,
+    ) -> None:
         form.addRow(label, widget)
         label_widget = form.labelForField(widget)
-        self._param_rows[key] = [item for item in (label_widget, widget) if item is not None]
+        store = self._param_rows if rows is None else rows
+        store[key] = [item for item in (label_widget, widget) if item is not None]
+
+    # -- gatilho -----------------------------------------------------------
+    def _update_trigger_visibility(self, *_args) -> None:
+        """Mostra so os campos do gatilho escolhido; `change` mantem os antigos."""
+        trigger = self.trigger_combo.currentText()
+        visible = {"trigger"}
+        if trigger == "at":
+            visible |= {"at", "days"}
+        elif trigger == "every":
+            visible.add("every")
+        elif trigger == "after":
+            visible.add("after")
+        for key, widgets in self._trigger_rows.items():
+            for widget in widgets:
+                widget.setVisible(key in visible)
+        for widget in self._change_only_rows:
+            widget.setVisible(trigger == "change")
 
     # -- passos ------------------------------------------------------------
     def _update_param_visibility(self, *_args) -> None:
@@ -412,25 +495,45 @@ class ActionEditorDialog(QDialog):
 
     # -- dados -------------------------------------------------------------
     def _load(self, action: dict) -> None:
+        from screen_watch.gui.action_editor_model import form_from_action  # noqa: PLC0415
+
         self.name_edit.setText(str(action.get("name", "")))
         self.enabled_check.setChecked(bool(action.get("enabled", True)))
         self.severity_spin.setValue(int(action.get("severity_min", 1)))
         self.cooldown_spin.setValue(float(action.get("cooldown_s", 30.0)))
         self.settle_spin.setValue(float(action.get("settle_s", 1.5)))
         self.rebaseline_check.setChecked(bool(action.get("rebaseline", False)))
+        form = form_from_action(action)
+        self.trigger_combo.setCurrentText(form["trigger"])
+        self.at_edit.setText(form["at"])
+        days = form["days"]
+        for name, check in self.day_checks.items():
+            check.setChecked(not days or name in days)
+        self.every_spin.setValue(form["every_s"])
+        self.after_spin.setValue(form["after_s"])
+        self._when_extra = form["when_extra"]
         self._steps = [copy.deepcopy(step) for step in (action.get("steps") or [])]
         self._refresh_steps()
+        self._update_trigger_visibility()
 
     def result_action(self) -> dict:
-        return {
-            "name": self.name_edit.text().strip(),
-            "enabled": self.enabled_check.isChecked(),
-            "severity_min": self.severity_spin.value(),
-            "cooldown_s": self.cooldown_spin.value(),
-            "settle_s": self.settle_spin.value(),
-            "rebaseline": self.rebaseline_check.isChecked(),
-            "steps": list(self._steps),
-        }
+        from screen_watch.gui.action_editor_model import action_from_form  # noqa: PLC0415
+
+        return action_from_form(
+            name=self.name_edit.text().strip(),
+            enabled=self.enabled_check.isChecked(),
+            severity_min=self.severity_spin.value(),
+            cooldown_s=self.cooldown_spin.value(),
+            settle_s=self.settle_spin.value(),
+            rebaseline=self.rebaseline_check.isChecked(),
+            trigger=self.trigger_combo.currentText(),
+            at_text_value=self.at_edit.text(),
+            days=[name for name in WEEKDAYS if self.day_checks[name].isChecked()],
+            every_s=self.every_spin.value(),
+            after_s=self.after_spin.value(),
+            when_extra=self._when_extra,
+            steps=list(self._steps),
+        )
 
     def accept(self) -> None:  # noqa: N802 - API do Qt
         from screen_watch.config.loader import ConfigError, parse_actions  # noqa: PLC0415

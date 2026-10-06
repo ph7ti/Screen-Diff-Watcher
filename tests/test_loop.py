@@ -182,3 +182,25 @@ def test_repeated_identical_errors_are_deduplicated():
     )
     _run(loop)
     assert len(errors) == 1
+
+
+def test_next_wait_capped_by_deadline_provider():
+    loop = MonitorLoop(lambda frame: None, interval_s=2.0)
+    assert loop._next_wait(0.0) == 2.0
+    assert loop._next_wait(0.5) == 1.5
+
+    loop.deadline_provider = lambda: 0.2
+    assert loop._next_wait(0.0) == 0.2
+    loop.deadline_provider = lambda: 5.0
+    assert loop._next_wait(0.0) == 2.0  # nunca estica alem do intervalo
+
+    loop.deadline_provider = lambda: 0.0
+    assert loop._next_wait(0.0) == 0.05  # piso do deadline
+
+
+def test_next_wait_ignores_deadline_provider_errors():
+    def boom():
+        raise RuntimeError("deadline")
+
+    loop = MonitorLoop(lambda frame: None, interval_s=1.0, deadline_provider=boom)
+    assert loop._next_wait(0.0) == 1.0

@@ -148,8 +148,9 @@ visão. Complementa o `compare-modes` do CLI. Os limites ficam em `defaults.comp
 
 Os botões **Nova ação…**, **Editar…** e **Remover Ação** criam/editam ações gravadas em
 `overrides.actions` do JSON da seleção — ou seja, funcionam **mesmo com config v1**, sem migração.
-Há reordenação com Subir/Descer e drag&drop, duplicação de passos e o botão **Localizar posição do
-mouse…** para preencher `x`/`y`. Passo a passo em
+O formulário inclui o seletor de **gatilho** (`change` ou os gatilhos de tempo `at`/`every`/`after`,
+com os campos aparecendo conforme a escolha). Há reordenação com Subir/Descer e drag&drop, duplicação
+de passos e o botão **Localizar posição do mouse…** para preencher `x`/`y`. Passo a passo em
 [Ações pseudo-humanas](Acoes-Pseudo-Humanas.md).
 
 ## Tray

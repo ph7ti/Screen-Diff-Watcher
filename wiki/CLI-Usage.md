@@ -107,8 +107,8 @@ During execution, each trigger prints a line `[action] rehearsal|armed <name> ->
 |---|---|
 | `test-alert --selection S [--list] [--only ID]` | fires a **synthetic** alert (severity 3); `--list` prints id/type/state/destination; `--only ID` sends to one destination (text mode, ignores `enabled`) |
 | `test-evidence --selection S` | writes an example baseline+change pair and prints the paths |
-| `test-action --selection S [--armed] [--actions ...] [--no-countdown]` | rehearses (default) or runs the actions; `--armed` shows the 3 s countdown |
-| `list-actions --selection S` | lists the resolved actions and the saved subset, without starting a session |
+| `test-action --selection S [--armed] [--actions ...] [--no-countdown]` | rehearses (default) or runs the actions; `--armed` shows the 3 s countdown; one-off runs ignore the action trigger (notice line) |
+| `list-actions --selection S` | lists the resolved actions and the saved subset, including each action trigger (`change`/`at`/`every`/`after`), without starting a session |
 | `record-actions --selection S [--name NAME] [--out FILE] [--no-countdown]` | records clicks/keys and generates an `actions:` snippet (`input` extra; `F10` ends it) |
 | `compare-modes --selection S [--delay 5] [--repeat 1] [--modes light,default,advanced]` | measures `changed`/`score`/`threshold`/`severity`/time of each mode (calibration) |
 | `probe-dpi` | prints the monitor matrix (physical mss × logical Qt × scale) and the rect of a window |

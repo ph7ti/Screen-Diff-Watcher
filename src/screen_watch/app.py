@@ -370,6 +370,10 @@ class MonitorSession:
         result = self.pipeline.compare(frame)
         if self._on_compare is not None:
             self._on_compare(result)
+        if self.actions is not None:
+            # Gatilhos de tempo (doc, secao 11.4): avalia em todo frame
+            # pos-baseline, mesmo sem mudanca; nunca no baseline.
+            self.actions.on_tick(frame)
         if not result.changed:
             return
         outcome = self.chain.dispatch(result, frame)
@@ -414,6 +418,12 @@ class MonitorSession:
         self._awaiting_ack = False
         self._pending_rebaseline = True
 
+    def next_deadline_delay(self) -> float | None:
+        """Deadline do proximo gatilho de tempo armado (doc, secao 3.5/11.4)."""
+        if self.actions is None:
+            return None
+        return self.actions.next_deadline_delay()
+
     def _record(self, method: str, frame: Frame) -> None:
         if self._recorder is None:
             return
@@ -428,4 +438,8 @@ def build_loop(target: TargetConfig, session: MonitorSession, **kwargs: object) 
         roi_relative=target.roi_relative,
         masks=target.masks,
     )
+    if "deadline_provider" not in kwargs:
+        provider = getattr(session, "next_deadline_delay", None)
+        if callable(provider):
+            kwargs["deadline_provider"] = provider
     return MonitorLoop(sink=session, interval_s=target.poll_interval_s, target=monitor_target, **kwargs)

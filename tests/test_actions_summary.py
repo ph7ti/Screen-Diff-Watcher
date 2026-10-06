@@ -83,3 +83,25 @@ def test_describe_raw_step():
     assert describe_raw_step({"key": {"keys": "ctrl+s"}}) == "key: ctrl+s"
     assert describe_raw_step({"type": {"text": "abc"}}) == "type: 3 char(s)"
     assert describe_raw_step({"wait": {"ms": 250}}) == "wait: 250ms"
+
+
+def test_time_trigger_summary_lines():
+    at = _action(
+        name="a", trigger="at", at=("08:00", "18:00"), days=("mon", "fri"), cooldown_s=0.0
+    )
+    line = format_action(at)
+    assert "trigger at" in line
+    assert "quando: às 08:00, 18:00, dias: mon, fri" in line
+    assert "sev>=" not in line
+
+    every = _action(name="b", trigger="every", every_s=60.0, cooldown_s=0.0)
+    assert "quando: a cada 60s" in format_action(every)
+
+    after = _action(name="c", trigger="after", after_s=300.0, cooldown_s=0.0)
+    assert "quando: após 300s" in format_action(after)
+
+
+def test_at_without_days_has_single_line():
+    line = format_action(_action(name="a", trigger="at", at=("08:00",), cooldown_s=0.0))
+    assert "quando: às 08:00" in line
+    assert "dias:" not in line

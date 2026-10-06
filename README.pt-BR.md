@@ -37,9 +37,11 @@ Roda no **Windows e no Linux**, capturando apenas pixels (não toca no aplicativ
   **calibração ao vivo** (score × limite, export CSV).
 - **Evidências**: prints do baseline e de cada mudança — opt-in.
 - **Ações pseudo-humanas** (clique, teclas, texto) quando armadas — ensaio por padrão e auditoria
-  em `logs/actions.jsonl`.
-- **GUI com tray + CLI completa**, com **perfis**, agendador (suspende ações fora do horário) e
-  atalhos globais.
+  em `logs/actions.jsonl`; desde a **v0.10.0** cada ação também aceita um **gatilho de tempo**
+  (`at`/`every`/`after`, ex.: disparar às 18:00 em dias úteis ou a cada 60 s), com tolerância de
+  60 s que registra vencimentos atrasados como `missed` em vez de executá-los.
+- **GUI com tray + CLI completa**, com **perfis**, agendador (um portão de suspensão: suspende as
+  ações fora do horário, mas nunca dispara nada) e atalhos globais.
 - **Nome e conferência da seleção**: dê um **nome** à seleção (o arquivo é renomeado para o slug do
   nome, sem sobrescrever outro), use **Ver local** para destacar a ROI na tela por ~2 s **sem alterar
   os pixels dela** (funciona com o monitoramento rodando) e **duplo clique** na lista para reeditar a
@@ -256,8 +258,9 @@ selecionável (MP3/M4A/OGG/FLAC…)** com **default empacotado `alert.mp3`** e o
 das seleções no CLI** (incluindo o fluxo headless abaixo), **Ver local** (realce da ROI
 sem tocar nos pixels), **reedição da região por duplo clique** (Enter inicia/para), a **janela em
 grid 2×2** e **múltiplas ROIs simultâneas** (conjunto por checkbox, `ui.max_sessions`, status/tray
-agregados), evidências, ações pseudo-humanas (com editor na GUI e gravador), agendador, perfis, CLI
-completa, GUI + tray com i18n (pt-BR/en-US), empacotamento (Inno Setup e `.deb`) e CI/release por tag.
+agregados), evidências, ações pseudo-humanas (com editor na GUI — incluindo os gatilhos de tempo da
+v0.10.0 — e gravador), agendador, perfis, CLI completa, GUI + tray com i18n (pt-BR/en-US),
+empacotamento (Inno Setup e `.deb`) e CI/release por tag.
 
 **Validação manual pendente:** GUI/tray/overlay em 100/125/150% (doc §5.1, §9.5) e detalhes do
 bundle em máquina limpa (ícone, `StartupWMClass`, tamanho do pacote, aviso do SmartScreen) —
@@ -299,7 +302,7 @@ escada de scripts e CI em [wiki/Desenvolvimento-Testes-e-CI.md](wiki/Desenvolvim
 | [**Wiki**](wiki/Home-pt-BR.md) | detalhes de uso e recursos: CLI, GUI, config, ações, alertas, evidências, idiomas, DPI, build |
 | [`doc/00-Documento_de_Arquitetura_e_Especificação.md`](doc/00-Documento_de_Arquitetura_e_Especificação.md) | arquitetura e especificação — **fonte única de verdade do design** |
 | [`doc/01-Build_e_Release.md`](doc/01-Build_e_Release.md) | pipeline de build e release dos instaladores |
-| [`doc/releases/`](doc/releases/v0.9.1.pt-BR.md) | notas de release por versão (arquivo de detalhe) |
+| [`doc/releases/`](doc/releases/v0.10.0.pt-BR.md) | notas de release por versão (arquivo de detalhe) |
 | [`CHANGELOG.md`](CHANGELOG.md) | mudanças por versão (semântico) |
 | [`README.md`](README.md) | este guia em inglês |
 

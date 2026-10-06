@@ -149,8 +149,9 @@ profile `defaults.compare_options` — see [Configuration](Configuration.md).
 
 The **New action…**, **Edit…** and **Remove Action** buttons create/edit actions written to
 `overrides.actions` of the selection JSON — that is, they work **even with config v1**, without migration.
-There is reordering with Up/Down and drag&drop, step duplication and the **Locate mouse position…**
-button to fill `x`/`y`. Step by step in
+The form includes the **trigger** selector (`change`, or the time triggers `at`/`every`/`after`, whose
+fields appear according to the choice). There is reordering with Up/Down and drag&drop, step duplication
+and the **Locate mouse position…** button to fill `x`/`y`. Step by step in
 [Pseudo-human actions](Pseudo-Human-Actions.md).
 
 ## Tray
