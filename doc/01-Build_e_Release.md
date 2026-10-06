@@ -44,7 +44,7 @@ Notas:
   do 6.11.1.
 - `simpleaudio` **não** entra no bundle de propósito (sem wheel confiável no 3.13).
 - O `.deb` é para `amd64` e exige X11; build em `ubuntu-22.04` para pegar glibc mais antiga (o CI de
-  release faz isso num container `ubuntu:22.04` justamente por isso).
+  release fixa o job Linux no **runner** `ubuntu-22.04` justamente por isso).
 
 ---
 
@@ -67,7 +67,7 @@ A versão vive **apenas** em `src/screen_watch/__init__.py`; o `pyproject.toml` 
 
 ```python
 # src/screen_watch/__init__.py
-__version__ = "0.7.1"   # <- unica fonte de verdade
+__version__ = "0.9.1"   # <- única fonte de verdade
 ```
 
 Confirme que metadados e atributo batem:
@@ -122,12 +122,12 @@ Invoke-WebRequest "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast
   "version": "5.4.0.20240606",
   "installer": {
     "url": "https://github.com/UB-Mannheim/tesseract/releases/download/v5.4.0.20240606/tesseract-ocr-w64-setup-5.4.0.20240606.exe",
-    "sha256": "<sha256 minusculo do .exe>"
+    "sha256": "<sha256 minúsculo do .exe>"
   },
   "traineddata": {
     "lang": "por",
     "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/<commit>/por.traineddata",
-    "sha256": "<sha256 minusculo do por.traineddata>",
+    "sha256": "<sha256 minúsculo do por.traineddata>",
     "dest": "tessdata/por.traineddata"
   }
 }
@@ -182,17 +182,19 @@ Repositório: `https://github.com/ph7ti/Screen-Diff-Watcher`.
 - **PR / `workflow_dispatch` do CI**: o job `package` do `ci.yml` monta os instaladores **sem
   publicar** (artefatos `installer-Windows` / `installer-Linux`) — pega quebra de empacotamento.
 - **Release de teste**: `workflow_dispatch` em `release.yml` com `version` = valor de `__version__`
-  (ex.: `0.7.1-rc1`) gera **só artefatos de workflow**, sem release.
+  (ex.: `0.9.1-rc1`) gera **só artefatos de workflow**, sem release.
 - **Release final**: crie a tag e faça push:
 
 ```powershell
-git tag v0.7.1          # tag sem 'v' deve ser IGUAL a __version__
-git push origin v0.7.1
+git tag v0.9.1          # tag sem 'v' deve ser IGUAL a __version__
+git push origin v0.9.1
 ```
 
 O `release.yml` builda Windows (`windows-latest` + `choco install innosetup -y`) e Linux
-(`ubuntu-latest` rodando dentro de um container `ubuntu:22.04`, que mantém a glibc mais antiga), gera
-`SHA256SUMS.txt` e cria o GitHub Release com `gh release create`.
+(`ubuntu-22.04`, que mantém a glibc mais antiga), gera `SHA256SUMS.txt` e cria o GitHub Release com
+`gh release create`. O job `linux` roda `Tests` com `xvfb-run`; quando o `pytest` falha, o workflow
+publica o bloco de falhas como **anotações públicas** (linhas `::error::`) — o log do job exige login,
+as anotações não.
 
 ### Publicação da wiki (runbook manual)
 
@@ -212,7 +214,9 @@ git -C Screen-Diff-Watcher.wiki push origin master
 A publicação automática (workflow com o segredo `WIKI_PUSH_TOKEN`) fica adiada até o segredo existir.
 O CI (`ci.yml`) roda, em `ubuntu-latest`/`windows-latest` × Python 3.11/3.12/3.13, `ruff`,
 `validate-i18n` e `pytest` com `--cov=screen_watch`; o artefato `coverage-xml` vem da célula
-Linux/3.13.
+Linux/3.13. Assim como no workflow de release, um `pytest` do Linux que falha publica o bloco de
+falhas como anotações públicas `::error`; o `tests/test_gui_main_window.py` se auto-pula quando o
+import do PyQt6 falha por falta de libs de sistema (ex.: `libEGL.so.1` em um runner cru).
 
 ---
 
@@ -239,7 +243,7 @@ Validação manual (não automatizada):
 - **Windows, máquina limpa sem Tesseract**: instalar → Tesseract baixado/instalado; `features` mostra
   `eng`+`por`; GUI abre; atalhos criados; opção "iniciar com o Windows" funciona; desinstalar remove
   o app e **preserva** Tesseract e app-data.
-- **Linux, container limpo**: `apt install ./screen-watch_0.7.1_amd64.deb` resolve as dependências
+- **Linux, container limpo**: `apt install ./screen-watch_<v>_amd64.deb` resolve as dependências
   (Tesseract junto); `screen-watch features --json` ok; `xvfb-run -a screen-diff-watcher-gui` abre.
 - Ícone da janela/tray no bundle, `StartupWMClass` do `.desktop`, tamanho do pacote e aviso do
   SmartScreen (`.exe` sem assinatura — fora de escopo assinar).
@@ -271,6 +275,7 @@ alsa-utils`.
 | PyInstaller falha no Python 3.13 | Atualize o extra `build` (`pyinstaller>=6.11.1`). |
 | "funciona no build, falha no pacote" (Linux) | O `/usr/bin` usa **wrapper `exec`**, não symlink: o PyInstaller resolve `_internal` pelo caminho real. Não trocar por symlink. |
 | CI: guarda de versão falha | A tag (sem `v`) precisa ser idêntica a `screen_watch.__version__`. |
+| CI Linux: `ImportError: libEGL.so.1` | O runner não tem as libs de sistema do Qt; o teste de regressão da GUI se pula. O log do job exige login — inspecione as anotações `::error` em vez dele. |
 | OCR falha no cliente | Tesseract ausente/idioma faltando; `features --json` mostra caminho e `--list-langs`. Nunca usar `TESSDATA_PREFIX`. |
 | Acentuação no console do Windows | O CLI reconfigura `stdout`/`stderr` para UTF-8 em `_configure_std_streams()`. |
 

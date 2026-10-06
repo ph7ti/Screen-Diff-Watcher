@@ -76,7 +76,7 @@ Runs on **Windows and Linux**, capturing pixels only (it never touches the watch
 target window ──► ROI ──► capture ──► mask ──► compare (light/default/advanced)
                                                      │ changed?
                                                      ▼
-                                   alerts (sound/popup/Telegram/log + webhook/HTTP POST/syslog)
+                                   alerts (sound/popup/Telegram/ntfy/SMTP/MQTT/log + webhook/HTTP POST/syslog)
                                    + actions (if armed)
 ```
 
@@ -94,11 +94,16 @@ its own `severity_min` and `cooldown_s`:
 | `webhook` | JSON POST/PUT/PATCH to a webhook URL (Teams **Workflows**, Slack, Discord, Mattermost) | [wiki/Alerts.md](wiki/Alerts.md) |
 | `http_post` | JSON POST to a host/IP + port (or a full URL) | [wiki/Alerts.md](wiki/Alerts.md) |
 | `syslog` | informational syslog message (`udp`/`tcp`) — no image | [wiki/Alerts.md](wiki/Alerts.md) |
+| `ntfy` | push to a topic on ntfy.sh (or a self-hosted server); optional ROI image | [wiki/Alerts.md](wiki/Alerts.md) |
+| `smtp` | e-mail via STARTTLS/SSL; optional ROI attachment | [wiki/Alerts.md](wiki/Alerts.md) |
+| `mqtt` | JSON publish to an MQTT topic (requires the `mqtt` extra) — no image | [wiki/Alerts.md](wiki/Alerts.md) |
 
 The alerts are configured per profile in `config.yaml` (the `alerts:` list), each with an optional stable
-`id`. Secrets never go in the YAML — the Telegram token is read from an environment variable, and the new
-channels accept `url_env`/`${env:VAR}`. Test a single channel with `test-alert --list`/`--only ID` or the
-window's **Test alert…** button. The channel map is extensible by `type`.
+`id`. Secrets never go in the YAML: the Telegram token, the ntfy token, the SMTP login and the MQTT
+credentials all come from environment variables. The MQTT channel needs the optional `mqtt` extra
+(`pip install -e ".[mqtt]"`); ntfy and SMTP use the core `httpx`/stdlib. Test a single channel with
+`test-alert --list`/`--only ID` or the window's **Test alert…** button. The channel map is extensible
+by `type`.
 
 ## What problems it solves
 
@@ -145,6 +150,10 @@ python -m screen_watch probe-dpi              # DPI matrix (mss physical × Qt l
 python -m screen_watch select --handle 12345 --name panel     # overlay: drag on screen
 python -m screen_watch select-manual --handle 12345 --roi 120 340 400 80 --name panel
 python -m screen_watch list-selections
+python -m screen_watch list-selections --json                 # scriptable inventory
+python -m screen_watch edit-selection panel --mode light --poll-interval-s 1.5
+python -m screen_watch rename-selection panel "ERP panel"
+python -m screen_watch remove-selection panel                 # clears last_selection if needed
 python -m screen_watch migrate-config --dry-run               # convert v1 YAML -> v2
 python -m screen_watch test-alert --selection panel           # synthetic alert
 python -m screen_watch test-alert --selection panel --list    # id/type/state/destination
@@ -178,6 +187,8 @@ example: `python -m screen_watch --language en-US gui`.
 - **Telegram** (optional): token via the `TELEGRAM_BOT_TOKEN` environment variable (never in the
   YAML) — step-by-step in [wiki/Telegram-Setup.md](wiki/Telegram-Setup.md).
 - **Actions and global hotkeys** (optional): the `input` extra (`pynput`).
+- **MQTT alerts** (optional, source installs): the `mqtt` extra (`paho-mqtt`) — not bundled in the
+  installers. ntfy and SMTP need no extra (`httpx`/stdlib).
 - **Sound** (optional, but included in the installers): the CLI/`run` uses **`miniaudio`**
   (WAV/MP3/OGG/FLAC); the GUI uses **Qt Multimedia** (adds M4A/AAC/WMA on Windows/macOS). On Linux
   the GUI falls back on the GStreamer plugins, and the legacy path uses `winsound` (WAV) or an
@@ -191,6 +202,7 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1          # Linux/macOS: source .venv/bin/activate
 python -m pip install -e ".[dev]"     # core + tests (ruff/pytest)
 python -m pip install -e ".[input]"   # optional: actions/hotkeys (pynput)
+python -m pip install -e ".[mqtt]"    # optional: MQTT alert channel (paho-mqtt)
 python -m pip install -e ".[sound]"   # optional: sound via simpleaudio
 ```
 

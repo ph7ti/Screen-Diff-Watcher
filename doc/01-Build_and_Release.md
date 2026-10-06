@@ -43,7 +43,7 @@ Notes:
   6.11.1 onwards.
 - `simpleaudio` does **not** go into the bundle on purpose (no reliable wheel on 3.13).
 - The `.deb` targets `amd64` and requires X11; build on `ubuntu-22.04` to get an older glibc (the
-  release CI does it in an `ubuntu:22.04` container for that reason).
+  release CI pins the Linux job to the `ubuntu-22.04` **runner** for that reason).
 
 ---
 
@@ -66,7 +66,7 @@ The version lives **only** in `src/screen_watch/__init__.py`; `pyproject.toml` i
 
 ```python
 # src/screen_watch/__init__.py
-__version__ = "0.7.1"   # <- single source of truth
+__version__ = "0.9.1"   # <- single source of truth
 ```
 
 Confirm that the metadata and the attribute match:
@@ -181,17 +181,19 @@ Repository: `https://github.com/ph7ti/Screen-Diff-Watcher`.
 - **PR / CI `workflow_dispatch`**: the `package` job in `ci.yml` builds the installers **without
   publishing** (artifacts `installer-Windows` / `installer-Linux`) — it catches packaging breakage.
 - **Test release**: `workflow_dispatch` on `release.yml` with `version` = the value of `__version__`
-  (e.g. `0.7.1-rc1`) generates **workflow artifacts only**, with no release.
+  (e.g. `0.9.1-rc1`) generates **workflow artifacts only**, with no release.
 - **Final release**: create the tag and push:
 
 ```powershell
-git tag v0.7.1          # tag without 'v' must be EQUAL to __version__
-git push origin v0.7.1
+git tag v0.9.1          # tag without 'v' must be EQUAL to __version__
+git push origin v0.9.1
 ```
 
 `release.yml` builds Windows (`windows-latest` + `choco install innosetup -y`) and Linux
-(`ubuntu-latest` running inside an `ubuntu:22.04` container, which keeps the older glibc baseline),
-generates `SHA256SUMS.txt` and creates the GitHub Release with `gh release create`.
+(`ubuntu-22.04`, which keeps the older glibc baseline), generates `SHA256SUMS.txt` and creates the
+GitHub Release with `gh release create`. The `linux` job runs `Tests` with `xvfb-run`; when `pytest`
+fails, the workflow publishes the failure block as **public annotations** (`::error::` lines) — the
+job log itself requires login, the annotations do not.
 
 ### Wiki publication (manual runbook)
 
@@ -211,7 +213,9 @@ git -C Screen-Diff-Watcher.wiki push origin master
 Automatic publication (a workflow using a `WIKI_PUSH_TOKEN` secret) is deferred until the secret
 exists. CI (`ci.yml`) runs, in `ubuntu-latest`/`windows-latest` × Python 3.11/3.12/3.13, `ruff`,
 `validate-i18n` and `pytest` with `--cov=screen_watch`; the `coverage-xml` artifact comes from the
-Linux/3.13 cell.
+Linux/3.13 cell. Like the release workflow, a failing Linux `pytest` publishes the failure block as
+public `::error` annotations; `tests/test_gui_main_window.py` skips itself when the PyQt6 import
+fails for missing system libraries (e.g. `libEGL.so.1` on a bare runner).
 
 ---
 
@@ -238,7 +242,7 @@ Manual validation (not automated):
 - **Windows, clean machine without Tesseract**: install → Tesseract downloaded/installed; `features`
   shows `eng`+`por`; the GUI opens; shortcuts created; the "start with Windows" option works;
   uninstalling removes the app and **preserves** Tesseract and app-data.
-- **Linux, clean container**: `apt install ./screen-watch_0.7.1_amd64.deb` resolves the dependencies
+- **Linux, clean container**: `apt install ./screen-watch_<v>_amd64.deb` resolves the dependencies
   (Tesseract along with it); `screen-watch features --json` ok; `xvfb-run -a screen-diff-watcher-gui` opens.
 - Window/tray icon in the bundle, the `.desktop` `StartupWMClass`, package size and the SmartScreen
   warning (unsigned `.exe` — signing is out of scope).
@@ -270,6 +274,7 @@ alsa-utils`.
 | PyInstaller fails on Python 3.13 | Update the `build` extra (`pyinstaller>=6.11.1`). |
 | "works in the build, fails in the package" (Linux) | `/usr/bin` uses an **`exec` wrapper**, not a symlink: PyInstaller resolves `_internal` through the real path. Do not replace it with a symlink. |
 | CI: version guard fails | The tag (without `v`) must be identical to `screen_watch.__version__`. |
+| CI Linux: `ImportError: libEGL.so.1` | The runner lacks Qt system libs; the GUI regression test skips itself. The job log needs login — inspect the `::error` annotations instead. |
 | OCR fails on the client | Tesseract missing/language missing; `features --json` shows the path and `--list-langs`. Never use `TESSDATA_PREFIX`. |
 | Accented characters in the Windows console | The CLI reconfigures `stdout`/`stderr` to UTF-8 in `_configure_std_streams()`. |
 

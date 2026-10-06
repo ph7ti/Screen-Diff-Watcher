@@ -292,7 +292,7 @@ Each item below is a closed decision. Format: **Decision → Reason → Rejected
     `QPainter`).
    - **Tray**: `pystray` (`gui/tray.py`) with show/hide, start/stop, arm/disarm, profile,
      **Snooze/Mute/Unmute/Acknowledge** (v0.9.0) and quit. The GUI receives events through a
-     **queue** consumed by `QTimer` (`gui/controller.py`); tray/hotkey callbacks never call Qt from
+     **queue** consumed by `QTimer` (`gui/session_manager.py`); tray/hotkey callbacks never call Qt from
      inside the listener thread.
    - **Snooze/mute/escalation controls (v0.9.0)**: the Detection and alerts group has **Snooze…**
      (durations from `ui.snooze_minutes`), **Mute/Unmute** and **Acknowledge** (enabled while a
@@ -352,14 +352,17 @@ ScreenDiffWatcher/
 ├── CHANGELOG.md
 ├── LICENSE
 ├── doc/
-│   ├── 00-Documento_de_Arquitetura_e_Especificação.md   # this document
-│   └── 01-Build_e_Release.md
+│   ├── 00-Architecture_and_Specification.md            # this document (SSoT)
+│   ├── 00-Documento_de_Arquitetura_e_Especificação.md  # PT mirror
+│   ├── 01-Build_and_Release.md                         # build/release pipeline
+│   ├── 01-Build_e_Release.md                           # PT mirror
+│   └── releases/                                       # per-version notes (EN + .pt-BR.md)
 ├── wiki/                          # GitHub Wiki pages (usage and features)
 ├── src/
 │   └── screen_watch/
 │       ├── __init__.py            # __version__ (single source)
 │       ├── __main__.py            # entry point: python -m screen_watch (main() only)
-│       ├── cli/                   # CLI: subcommands (commands.py) + parser (parser.py)
+│       ├── cli/                   # CLI: 22 subcommands (commands.py) + parser (parser.py)
 │       ├── app.py                 # orchestration: pipeline + chain + session + evidence
 │       ├── errors.py              # AppError/ConfigError + ERROR_CODES + render_error
 │       ├── naming.py              # slugify for selection file names (pure)
@@ -397,12 +400,16 @@ ScreenDiffWatcher/
 │       │   ├── sound.py           # SoundNotifier (platform/audio.py boundary)
 │       │   ├── popup.py           # PopupNotifier (plyer)
 │       │   ├── telegram.py        # TelegramNotifier (httpx; token via env)
+│       │   ├── ntfy.py            # NtfyNotifier (httpx; optional token via env; PNG PUT)
+│       │   ├── smtp.py            # SmtpNotifier (stdlib smtplib; credentials via env)
+│       │   ├── mqtt.py            # MqttNotifier (optional extra paho-mqtt; JSON payload)
 │       │   ├── log.py             # JsonlNotifier (logs/alerts.jsonl)
-│       │   ├── template.py        # ${campo}/${env:VAR} template (string.Template)
+│       │   ├── template.py        # ${field}/${env:VAR} template (string.Template)
 │       │   ├── http.py            # WebhookNotifier + HttpPostNotifier (httpx; payload template)
 │       │   ├── syslog.py          # SyslogNotifier (SysLogHandler; udp/tcp; severity_map)
 │       │   ├── test_send.py       # list_alert_targets + send_test (CLI/GUI send test)
-│       │   └── chain.py           # AlertChain + DispatchOutcome (cooldown key = uid)
+│       │   ├── gate.py            # AlertGate (thread-safe snooze/mute; state.json)
+│       │   └── chain.py           # AlertChain + DispatchOutcome (cooldown key = uid; gate)
 │       │
 │       ├── actions/               # pseudo-human actions (opt-in)
 │       │   ├── protocol.py        # ActionSpec/ActionStep (pure)
@@ -428,7 +435,8 @@ ScreenDiffWatcher/
 │       │   └── loader.py          # YAML <-> dataclasses; defaults; v1->v2 migration
 │       │
 │       ├── persistence/
-│       │   └── selection.py       # selection JSON v1/v2 + build_target (overrides) + name/rename
+│       │   └── selection.py       # selection JSON v1/v2 + build_target (overrides) +
+│       │                          #   CLI edit helpers + name/rename
 │       │
 │       ├── i18n/
 │       │   ├── __init__.py        # JSON catalog, language resolution, tr()
@@ -436,11 +444,18 @@ ScreenDiffWatcher/
 │       │   └── en-US.json
 │       │
 │       ├── gui/
-│       │   ├── main_window.py     # window (UI.txt layout)
-│       │   ├── controller.py      # event queue + QTimer
-│       │   ├── tray.py            # pystray
+│       │   ├── main_window.py     # window (UI layout; checkbox set; aggregated status)
+│       │   ├── session_manager.py # SessionManager: N sessions + events + preview/calibration
+│       │   ├── tray.py            # pystray (start/stop, snooze/mute/ack, per-selection)
 │       │   ├── overlay.py         # SelectionOverlay (one window per monitor)
 │       │   ├── overlay_geometry.py# logical<->physical conversions (pure, no Qt)
+│       │   ├── mask_overlay.py    # mask editor overlay
+│       │   ├── mask_editor_geometry.py  # mask editor geometry (pure)
+│       │   ├── preview_widget.py  # baseline/latest preview panel
+│       │   ├── preview_geometry.py# downsample/thumbnail (pure)
+│       │   ├── history_dialog.py  # alert history (logs/alerts.jsonl)
+│       │   ├── calibration_widget.py    # live calibration chart
+│       │   ├── calibration.py     # calibration helpers (pure)
 │       │   ├── countdown.py       # 3 s countdown (focusless overlay)
 │       │   ├── locator.py         # mouse position locator
 │       │   ├── action_editor.py   # selection action editor
