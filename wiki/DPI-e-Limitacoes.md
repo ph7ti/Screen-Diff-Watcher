@@ -25,6 +25,9 @@ target estiver num monitor com escala. `probe-dpi` e `scripts/probe_dpi.py` most
 - **Janela ocluída**: `mss` captura pixels da tela, não a superfície da janela. Se outra janela
   cobrir a ROI, o frame conterá a janela sobreposta. **Não é bug a corrigir** — é limitação
   fundamental das APIs de captura.
+- **Múltiplas ROIs (só na GUI)**: cada sessão tem a própria thread, backend de captura e buffers de
+  preview/calibração, e o modo `advanced` (OCR) multiplica a CPU por sessão. O `ui.max_sessions`
+  (padrão 4, faixa 1..16) limita; o `run` do CLI monitora uma única seleção.
 - **macOS e ARM fora do build**: não há instalador nem validação; o build é Windows x64 + Linux
   amd64.
 - **Tray no GNOME**: pode não aparecer sem extensão de tray; a janela continua funcional.

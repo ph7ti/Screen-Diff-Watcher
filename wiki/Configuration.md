@@ -8,7 +8,7 @@
 |---|---|
 | `config.yaml` | global config: profiles (defaults/alerts/actions), `ui`, `schedule`, `evidence` |
 | `selections/<name>.json` | ROI selections (one per target), with optional `overrides` |
-| `state.json` | lightweight state: `last_selection`, `profile`, `language`, `action_selection`, `evidence_enabled` |
+| `state.json` | lightweight state: `last_selection`, `profile`, `language`, `action_selection`, `evidence_enabled`, `alerts_muted`, `alerts_snooze_until` |
 | `logs/` | `alerts.jsonl` (alerts) and `actions.jsonl` (actions audit) |
 
 Base: `%APPDATA%\screen_watch` (Windows), `~/.config/screen_watch` (Linux),
@@ -35,6 +35,9 @@ profiles:
         jitter_px: 3
         wait_jitter_ms: 150
         seed: null               # for deterministic tests only
+      escalation:                # repeats the alert until acknowledged
+        enabled: false           # default keeps the previous behavior
+        severity_min: 2
       compare_options:
         light:    { threshold: 12.0 }
         default:  { hash_size: 8, threshold: 6 }
@@ -50,9 +53,11 @@ profiles:
   trabalho:
     defaults: { mode: "default", poll_interval_s: 1.0 }
 ui:
-  hotkeys: { arm: "<ctrl>+<alt>+a", disarm: "<ctrl>+<alt>+d", toggle: "<ctrl>+<alt>+<space>",
+  hotkeys: { arm: "<ctrl>+<alt>+a", disarm: "<ctrl>+<alt>+d", toggle: "<ctrl>+<alt>+space>",
              rearm: "<ctrl>+<alt>+r", abort: "<esc>" }
   arm_durations_min: [1, 5, 15, 30]
+  snooze_minutes: [5, 15, 30, 60]  # durations of the Snooze menu (minutes)
+  max_sessions: 4                  # simultaneous GUI sessions (1..16)
   language: auto                 # auto | pt-BR | en-US | tag discovered in i18n/*.json
 schedule: { enabled: false, days: [mon, tue, wed, thu, fri], windows: ["08:00-12:00"] }
 evidence: { enabled: false, dir: null, keep_per_target: 50, max_total_mb: 200,
@@ -67,6 +72,8 @@ evidence: { enabled: false, dir: null, keep_per_target: 50, max_total_mb: 200,
 - A missing `version` with `targets:` is treated as **legacy v1** (with a warning) and converted by
   `migrate-config`.
 - An unknown `ui.language` generates a warning and falls back to `auto` (it is not an error).
+- `ui.snooze_minutes` is the list of positive durations (minutes) offered by the Snooze menu;
+  `ui.max_sessions` (default 4, range 1..16) caps the simultaneous GUI sessions.
 - The app rewrites the YAML **without preserving comments**; the write is atomic (temp + `os.replace`)
   and leaves a `config.yaml.bak` backup.
 - Tune the thresholds (`light`/`default`) and `advanced.similarity_threshold` with the CLI
@@ -98,6 +105,19 @@ alerts:
   - type: syslog
     id: siem
     options: { host: 10.0.0.9, port: 514, protocol: udp, facility: local0 }
+  - type: ntfy                          # phone push (v0.9.0)
+    id: celular
+    options: { server: "https://ntfy.sh", topic: "meu-topico", token_env: NTFY_TOKEN,
+               priority_map: { 1: 3, 2: 4, 3: 5 }, attach_roi: true }
+  - type: smtp                          # e-mail (v0.9.0)
+    id: email
+    options: { host: "smtp.example.com", port: 587, security: starttls,
+               from_addr: "watch@example.com", to: ["oncall@example.com"],
+               username_env: SMTP_USERNAME, password_env: SMTP_PASSWORD }
+  - type: mqtt                          # optional extra `mqtt` (v0.9.0)
+    id: barramento
+    options: { host: "10.0.0.30", topic: "screen-watch/default", qos: 1, retain: false,
+               username_env: MQTT_USERNAME, password_env: MQTT_PASSWORD, tls: false }
 ```
 
 Rules (validated with a stable `config.alert_*` code):
@@ -105,7 +125,12 @@ Rules (validated with a stable `config.alert_*` code):
 - `webhook`/`http_post` require `url` or `url_env`; the URL must start with `http://`/`https://`.
 - `payload` and `payload_raw` are mutually exclusive; unknown `${...}` placeholders are an error.
 - `port` must be 1..65535; `protocol` is `udp`/`tcp`; `facility` must be a known syslog facility;
-  `method` is `POST`/`PUT`/`PATCH`.
+  `method` is `POST`/`PUT`/`PATCH`; `security` is `starttls`/`ssl`/`none`; `qos` is `0`/`1`/`2`.
+- `ntfy` requires `topic`; `smtp` requires `host`, `from_addr` and a non-empty `to`; `mqtt` requires
+  `host`/`topic` and the optional extra (`python -m pip install -e ".[mqtt]"`) — a configured channel
+  without it fails with `alert.mqtt_missing_extra`.
+- `priority_map` maps severity 1..3 to the ntfy priority 1..5 (default 3/4/5). The credentials of the
+  new channels come only from the environment (`token_env`, `username_env`/`password_env`).
 - An unknown `type` is an error (a "mute" channel no longer goes unnoticed).
 - The GUI sound picker **writes** `file:` into the active profile's `sound` alert (created if
   missing) with an atomic save + `.bak`; a v1 config must be migrated first.
@@ -117,7 +142,8 @@ Named profiles (`profiles.<name>.defaults` + `.alerts` + `.actions`) let you swi
 parameters. The switch (GUI selector, tray submenu or `--profile`) applies **on the next start** — the
 active loop does not change — and is written to `state.json.profile`.
 
-`defaults` covers `mode`, `poll_interval_s`, `rearm`, `compare_options` and `humanize` (below).
+`defaults` covers `mode`, `poll_interval_s`, `rearm`, `compare_options`, `humanize` (below) and
+`escalation` (repeats the alert until acknowledged).
 
 ### Humanization (`defaults.humanize`)
 
@@ -132,6 +158,18 @@ Used by the pseudo-human actions:
 | `seed` | `null` | fixed seed for deterministic tests |
 
 There is no UI for humanization: edit the YAML.
+
+### Escalation (`defaults.escalation`)
+
+| Key | Default | Effect |
+|---|---|---|
+| `enabled` | `false` | repeats the alert until acknowledged |
+| `severity_min` | `2` | only a `FIRED` outcome at this severity or above escalates |
+
+With it enabled, a fired alert at `severity >= severity_min` **does not advance the baseline**: the
+alert repeats at each channel's own `cooldown_s` until **Acknowledge** (GUI/tray, or the optional
+`ui.hotkeys.acknowledge`), which re-arms the baseline (manual re-arm does the same). The override
+`overrides.escalation` replaces the profile value per selection.
 
 ### Text watch (`defaults.compare_options.advanced.text_watch`)
 
@@ -163,7 +201,8 @@ compare_options:
 ## Selection JSON v2 and overrides
 
 Each selection can carry `overrides` that **replace** (do not add to) the profile values for that
-target: `mode`, `poll_interval_s`, `rearm`, `masks`, `alerts`, `actions` and `text_watch`.
+target: `mode`, `poll_interval_s`, `rearm`, `masks`, `alerts`, `actions`, `text_watch` and
+`escalation`.
 
 ```json
 {
@@ -215,6 +254,8 @@ it first). Duplicate names in v1 also abort.
 | `language` | language chosen in the GUI selector |
 | `action_selection` | per-selection subset of actions (missing key = all; empty list = none) |
 | `evidence_enabled` | toggle of the "Record captures" checkbox (takes precedence over the YAML) |
+| `alerts_muted` | mute from the GUI/tray (the next `run` inherits it) |
+| `alerts_snooze_until` | snooze deadline (epoch); an expired value is ignored on start |
 
 `state.json` is written atomically and without backup; it is disposable state (deleting it does not break).
 

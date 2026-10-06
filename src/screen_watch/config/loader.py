@@ -31,6 +31,8 @@ from screen_watch.config.schema import (
     VALID_ALERT_TYPES,
     VALID_DAYS,
     VALID_MODES,
+    VALID_MQTT_QOS,
+    VALID_SMTP_SECURITIES,
     VALID_SYSLOG_FACILITIES,
     VALID_SYSLOG_LEVELS,
     VALID_SYSLOG_PROTOCOLS,
@@ -40,13 +42,17 @@ from screen_watch.config.schema import (
     AppConfig,
     CompareOptions,
     DefaultOptions,
+    EscalationOptions,
     EvidenceOptions,
     GlobalDefaults,
     HttpPostOptions,
     HumanizeOptions,
     LightOptions,
+    MqttOptions,
+    NtfyOptions,
     ProfileOptions,
     ScheduleOptions,
+    SmtpOptions,
     SyslogOptions,
     TargetConfig,
     TextWatchOptions,
@@ -351,7 +357,154 @@ def _parse_channel_options(alert_type: str, raw: Any, field: str):
         return _parse_http_post_options(raw, field)
     if alert_type == "syslog":
         return _parse_syslog_options(raw, field)
+    if alert_type == "ntfy":
+        return _parse_ntfy_options(raw, field)
+    if alert_type == "smtp":
+        return _parse_smtp_options(raw, field)
+    if alert_type == "mqtt":
+        return _parse_mqtt_options(raw, field)
     return None
+
+
+def _as_text_list(raw: Any, field: str, code: str = "config.alerts_not_list") -> tuple[str, ...]:
+    """Lista de textos nao vazios (tags de ntfy, destinatarios de e-mail)."""
+    if raw is None:
+        return ()
+    if not isinstance(raw, (list, tuple)):
+        raise ConfigError(code=code, params={"field": field, "missing": "list"})
+    return tuple(
+        value
+        for value in (_as_str(item, f"{field}[{index}]") for index, item in enumerate(raw))
+        if value
+    )
+
+
+def _as_priority_map(raw: Any, field: str) -> tuple[tuple[int, int], ...]:
+    if raw is None:
+        return ()
+    if not isinstance(raw, dict):
+        raise ConfigError(
+            code="config.alert_invalid_priority_map", params={"field": field, "value": raw}
+        )
+    items: list[tuple[int, int]] = []
+    for key, value in raw.items():
+        try:
+            severity = int(key)
+            priority = int(value)
+        except (TypeError, ValueError):
+            severity, priority = -1, -1
+        if severity not in (0, 1, 2, 3) or not 1 <= priority <= 5:
+            raise ConfigError(
+                code="config.alert_invalid_priority_map", params={"field": field, "value": raw}
+            )
+        items.append((severity, priority))
+    return tuple(sorted(items))
+
+
+def _parse_ntfy_options(raw: Any, field: str) -> NtfyOptions:
+    if not isinstance(raw, dict):
+        raise ConfigError(code="config.alert_options_not_mapping", params={"field": field})
+    server = _as_url(raw.get("server", "https://ntfy.sh"), f"{field}.server")
+    topic = _as_str(raw.get("topic", ""), f"{field}.topic")
+    if not topic:
+        raise ConfigError(code="config.alert_missing_topic", params={"field": field})
+    title = _as_str(raw.get("title", "${message}"), f"{field}.title")
+    message = _as_str(raw.get("message", "${message}"), f"{field}.message")
+    validate_placeholders({"title": title, "message": message}, field)
+    return NtfyOptions(
+        server=server.rstrip("/") or "https://ntfy.sh",
+        topic=topic,
+        token_env=_as_str(raw.get("token_env", ""), f"{field}.token_env"),
+        title=title,
+        message=message,
+        priority_map=_as_priority_map(raw.get("priority_map"), f"{field}.priority_map"),
+        tags=_as_text_list(raw.get("tags"), f"{field}.tags"),
+        attach_roi=_as_bool(raw.get("attach_roi", False), f"{field}.attach_roi"),
+        timeout_s=_as_timeout(raw.get("timeout_s"), f"{field}.timeout_s"),
+    )
+
+
+def _parse_smtp_options(raw: Any, field: str) -> SmtpOptions:
+    if not isinstance(raw, dict):
+        raise ConfigError(code="config.alert_options_not_mapping", params={"field": field})
+    host = _as_str(raw.get("host", ""), f"{field}.host")
+    if not host:
+        raise ConfigError(code="config.alert_missing_host", params={"field": field})
+    from_addr = _as_str(raw.get("from_addr", ""), f"{field}.from_addr")
+    if not from_addr:
+        raise ConfigError(code="config.alert_missing_from", params={"field": field})
+    to = _as_text_list(raw.get("to"), field, code="config.alert_missing_to")
+    if not to:
+        raise ConfigError(code="config.alert_missing_to", params={"field": field})
+    security = (_as_str(raw.get("security", "starttls"), f"{field}.security") or "starttls").lower()
+    if security not in VALID_SMTP_SECURITIES:
+        raise ConfigError(
+            code="config.alert_invalid_security",
+            params={"field": field, "value": security, "valid": VALID_SMTP_SECURITIES},
+        )
+    subject = _as_str(
+        raw.get("subject", "[screen-diff-watcher] ${target} sev=${severity}"),
+        f"{field}.subject",
+    )
+    message = _as_str(raw.get("message", "${message}"), f"{field}.message")
+    validate_placeholders({"subject": subject, "message": message}, field)
+    return SmtpOptions(
+        host=host,
+        port=_as_port(raw.get("port"), f"{field}.port", 587),
+        security=security,
+        from_addr=from_addr,
+        to=to,
+        subject=subject,
+        message=message,
+        username_env=_as_str(raw.get("username_env", "SMTP_USERNAME"), f"{field}.username_env"),
+        password_env=_as_str(raw.get("password_env", "SMTP_PASSWORD"), f"{field}.password_env"),
+        attach_roi=_as_bool(raw.get("attach_roi", True), f"{field}.attach_roi"),
+        timeout_s=_as_timeout(raw.get("timeout_s"), f"{field}.timeout_s"),
+    )
+
+
+def _parse_mqtt_options(raw: Any, field: str) -> MqttOptions:
+    if not isinstance(raw, dict):
+        raise ConfigError(code="config.alert_options_not_mapping", params={"field": field})
+    host = _as_str(raw.get("host", ""), f"{field}.host")
+    if not host:
+        raise ConfigError(code="config.alert_missing_host", params={"field": field})
+    topic = _as_str(raw.get("topic", ""), f"{field}.topic")
+    if not topic:
+        raise ConfigError(code="config.alert_missing_topic", params={"field": field})
+    tls = _as_bool(raw.get("tls", False), f"{field}.tls")
+    default_port = 8883 if tls else 1883
+    port_raw = raw.get("port")
+    port = _as_port(port_raw, f"{field}.port", default_port) if port_raw is not None else default_port
+    qos = _as_int(raw.get("qos", 0), f"{field}.qos")
+    if qos not in VALID_MQTT_QOS:
+        raise ConfigError(
+            code="config.alert_invalid_qos",
+            params={"field": field, "value": qos, "valid": VALID_MQTT_QOS},
+        )
+    payload_raw = raw.get("payload_raw")
+    payload = raw.get("payload")
+    if payload is not None and payload_raw is not None:
+        raise ConfigError(code="config.alert_payload_conflict", params={"field": field})
+    if payload_raw is not None:
+        validate_placeholders(_as_str(payload_raw, f"{field}.payload_raw"), f"{field}.payload_raw")
+    if payload is not None:
+        payload = _as_payload(payload, f"{field}.payload")
+        validate_placeholders(payload, f"{field}.payload")
+    return MqttOptions(
+        host=host,
+        port=port,
+        topic=topic,
+        qos=qos,
+        retain=_as_bool(raw.get("retain", False), f"{field}.retain"),
+        client_id=_as_str(raw.get("client_id", "screen-diff-watcher"), f"{field}.client_id"),
+        username_env=_as_str(raw.get("username_env", "MQTT_USERNAME"), f"{field}.username_env"),
+        password_env=_as_str(raw.get("password_env", "MQTT_PASSWORD"), f"{field}.password_env"),
+        tls=tls,
+        payload=payload,
+        payload_raw=_as_str(payload_raw, f"{field}.payload_raw"),
+        timeout_s=_as_timeout(raw.get("timeout_s"), f"{field}.timeout_s"),
+    )
 
 
 def _parse_alert(raw: Any, index: int, prefix: str = "alerts") -> AlertOptions:
@@ -471,6 +624,8 @@ def parse_overrides(raw: Any) -> dict[str, Any]:
         out["actions"] = tuple(actions_raw)
     if raw.get("text_watch") is not None:
         out["text_watch"] = parse_text_watch(raw["text_watch"], "overrides.text_watch")
+    if raw.get("escalation") is not None:
+        out["escalation"] = _parse_escalation(raw["escalation"], "overrides.escalation")
     return out
 
 
@@ -560,6 +715,21 @@ def _parse_humanize(raw: Any) -> HumanizeOptions:
     return options
 
 
+def _parse_escalation(raw: Any, field: str = "defaults.escalation") -> EscalationOptions:
+    """Escalacao por perfil/override (doc, secao 11.3); default desligada."""
+    if raw is None:
+        return EscalationOptions()
+    if not isinstance(raw, dict):
+        raise ConfigError(code="config.escalation_not_mapping")
+    severity_min = _as_int(raw.get("severity_min", 2), f"{field}.severity_min")
+    if severity_min < 0:
+        raise ConfigError(code="config.escalation_severity_min")
+    return EscalationOptions(
+        enabled=_as_bool(raw.get("enabled", False), f"{field}.enabled"),
+        severity_min=severity_min,
+    )
+
+
 def _parse_defaults(raw: Any) -> GlobalDefaults:
     raw = raw or {}
     if not isinstance(raw, dict):
@@ -570,6 +740,7 @@ def _parse_defaults(raw: Any) -> GlobalDefaults:
         rearm=_as_bool(raw.get("rearm", True), "defaults.rearm"),
         compare_options=_parse_compare_options(raw.get("compare_options")),
         humanize=_parse_humanize(raw.get("humanize")),
+        escalation=_parse_escalation(raw.get("escalation")),
     )
 
 
@@ -620,6 +791,17 @@ def _parse_ui(raw: Any) -> UiOptions:
     durations = tuple(_as_int(item, "ui.arm_durations_min[]") for item in durations_raw)
     if any(item <= 0 for item in durations):
         raise ConfigError(code="config.arm_durations_positive")
+    snooze_raw = raw.get("snooze_minutes", (5, 15, 30, 60))
+    if not isinstance(snooze_raw, (list, tuple)):
+        raise ConfigError(code="config.snooze_minutes_not_list")
+    snooze_minutes = tuple(_as_int(item, "ui.snooze_minutes[]") for item in snooze_raw)
+    if any(item <= 0 for item in snooze_minutes):
+        raise ConfigError(code="config.snooze_minutes_positive")
+    max_sessions = _as_int(raw.get("max_sessions", 4), "ui.max_sessions")
+    if not 1 <= max_sessions <= 16:
+        raise ConfigError(
+            code="config.max_sessions_range", params={"value": max_sessions}
+        )
     language = _as_str(raw.get("language", "auto"), "ui.language") or "auto"
     if language != "auto":
         from screen_watch.i18n import (
@@ -635,7 +817,13 @@ def _parse_ui(raw: Any) -> UiOptions:
                 ", ".join(available_locales()),
             )
             language = "auto"
-    return UiOptions(hotkeys=hotkeys, arm_durations_min=durations, language=language)
+    return UiOptions(
+        hotkeys=hotkeys,
+        arm_durations_min=durations,
+        snooze_minutes=snooze_minutes,
+        max_sessions=max_sessions,
+        language=language,
+    )
 
 
 def _parse_window(raw: Any, field_name: str) -> str:
@@ -868,6 +1056,60 @@ def _syslog_options_to_dict(options: SyslogOptions) -> dict[str, Any]:
     return data
 
 
+def _ntfy_options_to_dict(options: NtfyOptions) -> dict[str, Any]:
+    data: dict[str, Any] = {
+        "server": options.server,
+        "topic": options.topic,
+        "token_env": options.token_env,
+        "title": options.title,
+        "message": options.message,
+        "attach_roi": options.attach_roi,
+        "timeout_s": options.timeout_s,
+    }
+    if options.priority_map:
+        data["priority_map"] = {severity: priority for severity, priority in options.priority_map}
+    if options.tags:
+        data["tags"] = list(options.tags)
+    return data
+
+
+def _smtp_options_to_dict(options: SmtpOptions) -> dict[str, Any]:
+    return {
+        "host": options.host,
+        "port": options.port,
+        "security": options.security,
+        "from_addr": options.from_addr,
+        "to": list(options.to),
+        "subject": options.subject,
+        "message": options.message,
+        "username_env": options.username_env,
+        "password_env": options.password_env,
+        "attach_roi": options.attach_roi,
+        "timeout_s": options.timeout_s,
+    }
+
+
+def _mqtt_options_to_dict(options: MqttOptions) -> dict[str, Any]:
+    data: dict[str, Any] = {
+        "host": options.host,
+        "topic": options.topic,
+        "qos": options.qos,
+        "retain": options.retain,
+        "client_id": options.client_id,
+        "username_env": options.username_env,
+        "password_env": options.password_env,
+        "tls": options.tls,
+        "timeout_s": options.timeout_s,
+    }
+    if options.port:
+        data["port"] = options.port
+    if options.payload is not None:
+        data["payload"] = options.payload
+    if options.payload_raw:
+        data["payload_raw"] = options.payload_raw
+    return data
+
+
 def _alert_to_dict(alert: AlertOptions) -> dict[str, Any]:
     data: dict[str, Any] = {
         "type": alert.type,
@@ -895,6 +1137,12 @@ def _alert_to_dict(alert: AlertOptions) -> dict[str, Any]:
         data["options"] = _http_post_options_to_dict(alert.options)
     elif alert.type == "syslog" and isinstance(alert.options, SyslogOptions):
         data["options"] = _syslog_options_to_dict(alert.options)
+    elif alert.type == "ntfy" and isinstance(alert.options, NtfyOptions):
+        data["options"] = _ntfy_options_to_dict(alert.options)
+    elif alert.type == "smtp" and isinstance(alert.options, SmtpOptions):
+        data["options"] = _smtp_options_to_dict(alert.options)
+    elif alert.type == "mqtt" and isinstance(alert.options, MqttOptions):
+        data["options"] = _mqtt_options_to_dict(alert.options)
     return data
 
 
@@ -950,6 +1198,8 @@ def _default_ui_dict() -> dict[str, Any]:
             "abort": "<esc>",
         },
         "arm_durations_min": [1, 5, 15, 30],
+        "snooze_minutes": [5, 15, 30, 60],
+        "max_sessions": 4,
         "language": "auto",
     }
 
@@ -992,6 +1242,10 @@ def _defaults_dict(defaults: GlobalDefaults) -> dict[str, Any]:
         "rearm": defaults.rearm,
         "humanize": humanize_dict,
         "compare_options": _compare_options_to_dict(defaults.compare_options),
+        "escalation": {
+            "enabled": defaults.escalation.enabled,
+            "severity_min": defaults.escalation.severity_min,
+        },
     }
 
 

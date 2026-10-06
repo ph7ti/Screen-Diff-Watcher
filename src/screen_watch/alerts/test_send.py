@@ -43,6 +43,19 @@ def _describe_destination(alert) -> str:
         port = getattr(options, "port", 514)
         protocol = getattr(options, "protocol", "udp")
         return f"{protocol}://{host}:{port}"
+    if alert.type == "ntfy":
+        server = getattr(options, "server", "") or "https://ntfy.sh"
+        topic = getattr(options, "topic", "") or "<topic>"
+        return f"{server}/{topic}"
+    if alert.type == "smtp":
+        host = getattr(options, "host", "") or "<host>"
+        to = ", ".join(getattr(options, "to", ()) or ()) or "<to>"
+        return f"{to}@{host}"
+    if alert.type == "mqtt":
+        host = getattr(options, "host", "") or "<host>"
+        topic = getattr(options, "topic", "") or "<topic>"
+        port = getattr(options, "port", 0) or (8883 if getattr(options, "tls", False) else 1883)
+        return f"{topic}@{host}:{port}"
     if alert.type == "telegram":
         if alert.chat_id:
             return f"chat_id={alert.chat_id}"
@@ -133,6 +146,10 @@ def send_test(target, alert_id: str, frame: Frame | None = None) -> TestOutcome:
         return TestOutcome(
             False, f"alert {alert_id!r} (telegram): {alert.bot_token_env} not set"
         )
+
+    if alert.type == "ntfy" and not getattr(notifier, "token_present", True):
+        token_env = getattr(getattr(alert, "options", None), "token_env", "NTFY_TOKEN")
+        return TestOutcome(False, f"alert {alert_id!r} (ntfy): {token_env} not set")
 
     if frame is None:
         frame = _synthetic_frame(target)

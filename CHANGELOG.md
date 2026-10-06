@@ -3,6 +3,72 @@
 Todas as mudanças relevantes deste projeto. Formato inspirado em "Keep a Changelog";
 versionamento semântico. Versão: `screen_watch.__version__` (fonte única).
 
+## [0.9.0] — 2026-10-06
+
+Detalhes e exemplos: [`doc/releases/v0.9.0.md`](doc/releases/v0.9.0.md)
+([PT](doc/releases/v0.9.0.pt-BR.md)).
+
+### Adicionado
+
+- **Canais de alerta ntfy, e-mail (SMTP) e MQTT**: `ntfy` publica texto ou o PNG da ROI no tópico
+  (`Title`/`Priority`/`Tags`, token opcional via env); `smtp` envia e-mail via stdlib
+  (`starttls`/`ssl`/`none`, anexo opcional, credenciais só em env); `mqtt` publica JSON em tópico com
+  QoS/retain/TLS pelo extra opcional `paho-mqtt` (`pip install -e ".[mqtt]"`; sem o extra o canal
+  configurado falha visível com `alert.mqtt_missing_extra`). Segredos apenas em variáveis de
+  ambiente; erros saneados.
+- **Soneca e silenciar alertas**: novo `AlertGate` compartilhado (thread-safe) com **Soneca…**
+  (durações de `ui.snooze_minutes`), **Silenciar/Reativar** na GUI e no tray; o estado persiste em
+  `state.json` (`alerts_snooze_until`, `alerts_muted`) e vale também para um `run` headless. Enquanto
+  ativo, o outcome é `SUPPRESSED_MANUAL` e a mudança pendente continua valendo quando expirar.
+- **Escalação até reconhecer**: `defaults.escalation`/`overrides.escalation`
+  (`enabled`, `severity_min`); com o alerta disparado (`FIRED`) acima do mínimo, o baseline não
+  avança e o alerta **repete na cadência do `cooldown_s` de cada canal** até **Ciente**
+  (`acknowledge()`) — botão na GUI, item no tray e hotkey opcional `acknowledge`, com status
+  "aguardando reconhecimento".
+- **Ciclo de vida de seleções no CLI (fluxo headless)**: `remove-selection NAME...` (limpa o
+  `last_selection` removido), `rename-selection OLD NAME` (reusa slug/rollback da GUI),
+  `edit-selection NAME` (`--mode`, `--roi`, `--mask`/`--clear-masks`, `--poll-interval-s`,
+  `--rearm/--no-rearm`, `--text-watch`/`--clear-text-watch`, `--clear-override`) e
+  `list-selections --json`. O fluxo `list-windows → select-manual → edit-selection →
+  validate-config --selections → run` cobre a seleção inteira sem overlay (item "Radar" do README
+  resolvido).
+- **Múltiplas ROIs na GUI**: novo `SessionManager` roda N sessões simultâneas (uma thread/backend e
+  buffers de preview/calibração por sessão); lista com **checkboxes** (Iniciar marca o conjunto;
+  sem nenhum marcado, inicia a linha destacada), status agregado, linhas ativas com `▶`, logs/eventos
+  prefixados com `[seleção]`, preview/calibração/ações seguindo a linha destacada, start/stop
+  individual no tray e limite `ui.max_sessions` (padrão 4, faixa 1..16). O CLI `run` continua
+  single-seleção.
+- `features --json` passou a reportar se o extra `mqtt` está instalado.
+
+### Mudado
+
+- **Evidências de mudança atreladas à tentativa real**: `record_change` só grava quando o
+  `AlertChain` de fato tentou entregar (`FIRED`/`FAILED`); mudanças suprimidas por cooldown,
+  soneca/silêncio ou abaixo do mínimo não geram mais um print por tick. A escalação registra um
+  print por disparo repetido.
+- **`MonitorController` foi substituído por `gui/session_manager.py::SessionManager`** (sem shim de
+  depreciação). Eventos da GUI agora carregam `session` e o Start aceita várias seleções; remover
+  uma seleção em execução para apenas a sessão afetada.
+- `AlertChain.dispatch` consulta o gate antes dos canais e ganhou o outcome `SUPPRESSED_MANUAL`;
+  `MonitorSession` ganhou `acknowledge()`/`awaiting_ack` e aceita `gate=` (repassado a
+  `build_alert_chain`).
+- `edit-selection --roi` reancora `origin_at_selection` na janela atual e limpa **os dois** campos
+  de máscara (regra de reedição de região); `--mode` atualiza `overrides.mode` quando existe.
+
+### Notas
+
+- Novos códigos de erro i18n nos dois catálogos (`config.alert_missing_topic`,
+  `config.alert_invalid_priority_map`, `config.alert_missing_from`, `config.alert_missing_to`,
+  `config.alert_invalid_security`, `config.alert_invalid_qos`, `config.alert_*smtp/ntfy/mqtt`,
+  `config.snooze_minutes_*`, `config.escalation_*`, `config.max_sessions_range`,
+  `runtime.session_already_running`, `runtime.session_limit`) e chaves de GUI/tray/help
+  (`main.btn_snooze`, `status.snoozed/muted/escalating`, `tray.snooze/mute/unmute/acknowledge/selection`,
+  `help.window.snooze/mute/ack`); `validate-i18n` verde.
+- Extras: `pyproject.toml` ganhou `mqtt = ["paho-mqtt>=2.1"]` (não entra nos instaladores).
+- Módulos novos: `alerts/gate.py`, `alerts/ntfy.py`, `alerts/smtp.py`, `alerts/mqtt.py`,
+  `gui/session_manager.py`; removido `gui/controller.py`.
+- 685 testes unitários (64 novos); `ruff` e `validate-i18n` verdes.
+
 ## [0.8.0] — 2026-10-05
 
 Detalhes e exemplos: [`doc/releases/v0.8.0.md`](doc/releases/v0.8.0.md)

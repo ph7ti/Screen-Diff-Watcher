@@ -26,8 +26,13 @@ VALID_ALERT_TYPES = (
     "webhook",
     "http_post",
     "syslog",
+    "ntfy",
+    "smtp",
+    "mqtt",
 )
 VALID_ALERT_METHODS = ("POST", "PUT", "PATCH")
+VALID_SMTP_SECURITIES = ("starttls", "ssl", "none")
+VALID_MQTT_QOS = (0, 1, 2)
 VALID_SYSLOG_PROTOCOLS = ("udp", "tcp")
 VALID_SYSLOG_FACILITIES = (
     "kern",
@@ -158,7 +163,58 @@ class SyslogOptions:
     append_nul: bool = False
 
 
-AlertChannelOptions = WebhookOptions | HttpPostOptions | SyslogOptions
+@dataclass(frozen=True)
+class NtfyOptions:
+    """Opcoes do canal `ntfy` (push HTTP; token opcional via env)."""
+
+    server: str = "https://ntfy.sh"
+    topic: str = ""
+    token_env: str = ""  # vazio = topico anonimo; defina NTFY_TOKEN para usar token
+    title: str = "${message}"
+    message: str = "${message}"
+    # Severidade (0..3) -> prioridade ntfy (1..5); default 1->3, 2->4, 3->5.
+    priority_map: tuple[tuple[int, int], ...] = ((1, 3), (2, 4), (3, 5))
+    tags: tuple[str, ...] = ()
+    attach_roi: bool = False
+    timeout_s: float = 5.0
+
+
+@dataclass(frozen=True)
+class SmtpOptions:
+    """Opcoes do canal `smtp` (stdlib; credenciais via env)."""
+
+    host: str = ""
+    port: int = 587
+    security: str = "starttls"
+    from_addr: str = ""
+    to: tuple[str, ...] = ()
+    subject: str = "[screen-diff-watcher] ${target} sev=${severity}"
+    message: str = "${message}"
+    username_env: str = "SMTP_USERNAME"
+    password_env: str = "SMTP_PASSWORD"
+    attach_roi: bool = True
+    timeout_s: float = 10.0
+
+
+@dataclass(frozen=True)
+class MqttOptions:
+    """Opcoes do canal `mqtt` (extra `paho-mqtt`; sem imagem)."""
+
+    host: str = ""
+    port: int = 0  # 0 = default (1883, ou 8883 com `tls`)
+    topic: str = ""
+    qos: int = 0
+    retain: bool = False
+    client_id: str = "screen-diff-watcher"
+    username_env: str = "MQTT_USERNAME"
+    password_env: str = "MQTT_PASSWORD"
+    tls: bool = False
+    payload: dict[str, Any] | None = None
+    payload_raw: str = ""
+    timeout_s: float = 5.0
+
+
+AlertChannelOptions = WebhookOptions | HttpPostOptions | SyslogOptions | NtfyOptions | SmtpOptions | MqttOptions
 
 
 @dataclass(frozen=True)
@@ -191,6 +247,18 @@ class HumanizeOptions:
 
 
 @dataclass(frozen=True)
+class EscalationOptions:
+    """Escalacao: repete o alerta ate o usuario reconhecer (doc, secao 11.3).
+
+    A cadencia de repeticao e o `cooldown_s` de cada alerta; nao ha intervalo
+    proprio. Desligada por default para nao mudar o comportamento historico.
+    """
+
+    enabled: bool = False
+    severity_min: int = 2
+
+
+@dataclass(frozen=True)
 class GlobalDefaults:
     """Valores padrao de um perfil (doc, secao 12.2)."""
 
@@ -199,6 +267,7 @@ class GlobalDefaults:
     rearm: bool = True
     compare_options: CompareOptions = field(default_factory=CompareOptions)
     humanize: HumanizeOptions = field(default_factory=HumanizeOptions)
+    escalation: EscalationOptions = field(default_factory=EscalationOptions)
 
 
 @dataclass(frozen=True)
@@ -225,6 +294,10 @@ class EvidenceOptions:
 class UiOptions:
     hotkeys: tuple[tuple[str, str], ...] = ()
     arm_durations_min: tuple[int, ...] = (1, 5, 15, 30)
+    # Duracoes do menu "Snooze" (minutos) na GUI/tray.
+    snooze_minutes: tuple[int, ...] = (5, 15, 30, 60)
+    # Limite de sessoes simultaneas na GUI (doc, secao 3.5/16).
+    max_sessions: int = 4
     # Idioma da GUI: "auto" (locale do SO) ou uma tag descoberta em i18n/*.json.
     language: str = "auto"
 
@@ -257,6 +330,7 @@ class TargetConfig:
     alerts: tuple[AlertOptions, ...] = ()
     actions: tuple[ActionSpec, ...] = ()
     humanize: HumanizeOptions = field(default_factory=HumanizeOptions)
+    escalation: EscalationOptions = field(default_factory=EscalationOptions)
     schedule: ScheduleOptions = field(default_factory=ScheduleOptions)
     # Nome de exibicao da selecao (a GUI grava; `name` continua sendo o arquivo).
     label: str = ""

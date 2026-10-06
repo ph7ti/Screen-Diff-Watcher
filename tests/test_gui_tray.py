@@ -74,6 +74,34 @@ def test_tray_menu_publishes_events(monkeypatch):
     assert icon.stopped is True
 
 
+def test_tray_gate_and_selection_menus(monkeypatch):
+    monkeypatch.setitem(sys.modules, "pystray", _fake_pystray())
+    events: queue.Queue = queue.Queue()
+
+    icon = start_tray(events, snooze_minutes=(7,), selections=("demo",))
+    assert icon is not None
+    items = _menu_by_text(icon.menu)
+
+    snooze_items = _menu_by_text(items[tr("tray.snooze")].action)
+    snooze_items[tr("main.snooze_minutes", minutes=7)].action(None, None)
+    assert events.get_nowait() == {"kind": "gate", "action": "snooze", "minutes": 7}
+
+    for key, action in (
+        ("tray.mute", "mute"),
+        ("tray.unmute", "unmute"),
+        ("tray.acknowledge", "acknowledge"),
+    ):
+        items[tr(key)].action(None, None)
+        assert events.get_nowait() == {"kind": "gate", "action": action}
+
+    selection_items = _menu_by_text(items[tr("tray.selection")].action)
+    start_stop = _menu_by_text(selection_items["demo"].action)
+    start_stop[tr("main.btn_start")].action(None, None)
+    assert events.get_nowait() == {"kind": "target", "action": "start", "name": "demo"}
+    start_stop[tr("main.btn_stop")].action(None, None)
+    assert events.get_nowait() == {"kind": "target", "action": "stop", "name": "demo"}
+
+
 def test_tray_without_pystray(monkeypatch):
     monkeypatch.setitem(sys.modules, "pystray", None)
     assert start_tray(queue.Queue()) is None

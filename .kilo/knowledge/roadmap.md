@@ -1,6 +1,6 @@
 # Roadmap — agent knowledge base
 
-Status: v0.8.0 · Scope: prioritized backlog for v0.9.0 → v1.0.0
+Status: v0.9.0 · Scope: prioritized backlog for v1.0.0
 
 Rules:
 
@@ -26,31 +26,26 @@ Shipped as **0.8.0** (2026-10-05); details and evidence in `doc/releases/v0.8.0.
 Follow-up noted for v0.9.0+: the log record has no channel/target/evidence path, so richer history
 needs an `alerts.jsonl` schema decision.
 
-## v0.9.0 — Reach: alerts + selections + multiple ROIs
+## v0.9.0 — Reach: alerts + selections + multiple ROIs (done)
 
-Risks: channel secrets must stay in env; snooze/escalation changes `DispatchOutcome` semantics;
-multi-ROI resource limits and aggregated UI/tray behavior.
+Shipped as **0.9.0** (2026-10-06); details and evidence in `doc/releases/v0.9.0.md` (EN) +
+`v0.9.0.pt-BR.md`, `CHANGELOG.md` and `doc/00` §1.4.
 
-1. **New channels** `ntfy`, `smtp` (stdlib `smtplib`, password via env) and `mqtt` (extra
-   `paho-mqtt`), following the extensible map by `type` + i18n error codes + tests + wiki.
-   - Acceptance: each channel with a mocked test and i18n codes.
-   - `doc/00`: §3.6, §11.2, §12.1.
-2. **Snooze/mute** (temporary, `state.json` + tray/GUI) and **escalation** (repeat until
-   acknowledged) — revisit the `DispatchOutcome`/cooldown/re-arm semantics.
-   - Acceptance: decision recorded in `doc/00` §11.3; `DispatchOutcome` tests.
-   - `doc/00`: §11.3.
-3. **Selection CLI** — `remove-selection`, `rename-selection` (reuse
-   `persistence/selection.py::plan_rename`/`rename_selection`), edit mode/masks/overrides; complete
-   headless flow (the README "Radar" item).
-   - Affects: `cli/parser.py`, `cli/commands.py`, `persistence/selection.py`, wiki.
-   - Acceptance: commands tested and documented; "Radar" resolved.
-   - `doc/00`: §7.3, §12.3.
-4. **Multiple ROIs** — `SessionManager` running N `MonitorLoop`s (today `MonitorController._session`
-   is single); aggregated UI/tray; resource limits; decision recorded in `doc/00`.
-   - Affects: `gui/controller.py`, new session manager, `app.py`, tray/main window.
-   - Acceptance: 2+ concurrent sessions stable (per-thread isolation for `mss` already exists),
-     aggregated UI/tray, limits documented.
-   - `doc/00`: §3.5, §16.
+- [x] New channels `ntfy`, `smtp` (stdlib `smtplib`, password via env) and `mqtt` (extra
+      `paho-mqtt`), following the extensible map by `type` + i18n error codes + tests + wiki.
+      `doc/00` §3.6/§11.2/§12.1/§15.
+- [x] Snooze/mute (temporary, `state.json` + tray/GUI) and escalation (repeat until acknowledged) —
+      `DispatchOutcome.SUPPRESSED_MANUAL` added, `AlertGate` + `acknowledge()` + evidence tied to
+      delivery attempts; `doc/00` §11.3/§11.5.
+- [x] Selection CLI — `remove-selection`, `rename-selection` (reusing `plan_rename`/
+      `rename_selection`), `edit-selection` (mode/ROI/masks/overrides) and `list-selections --json`;
+      headless flow documented (the README "Radar" item is resolved). `doc/00` §7.3/§12.3.
+- [x] Multiple ROIs — `gui/session_manager.py::SessionManager` runs N `MonitorLoop`s (replacing
+      `MonitorController`), checkbox set + aggregated status/tray + per-selection tray start/stop,
+      `ui.max_sessions` (default 4) documented; CLI `run` stays single-selection. `doc/00` §3.5/§3.7/§16.
+
+Follow-ups noted for v1.0.0+: multi-ROI in the CLI/headless flow; persistence of the monitored
+checkbox set; `alerts.jsonl` schema with channel/target/evidence path.
 
 ## v1.0.0 — Stabilization + platforms
 

@@ -73,7 +73,12 @@ Optional extras:
 | `pip install -e ".[input]"` | pseudo-human actions and global hotkeys (`pynput`) |
 | `pip install -e ".[sound]"` | sound via `simpleaudio` (no reliable wheel on Python 3.13; optional) |
 | `pip install -e ".[ocr-preproc]"` | OCR preprocessing experiments (`opencv-python`) |
+| `pip install -e ".[mqtt]"` | MQTT alert channel (`paho-mqtt`; not bundled in the installers) |
 | `pip install -e ".[build]"` | build installers (`pyinstaller`) |
+
+The **ntfy** and **SMTP** alert channels need no extra (the core `httpx` and the stdlib `smtplib`);
+only **MQTT** requires the `mqtt` extra. Credentials for every channel (Telegram, ntfy, SMTP, MQTT)
+come from **environment variables**, never from the YAML.
 
 Then:
 

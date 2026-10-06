@@ -6,6 +6,7 @@ import argparse
 
 from screen_watch.cli.commands import (
     _cmd_compare_modes,
+    _cmd_edit_selection,
     _cmd_features,
     _cmd_gui,
     _cmd_init_config,
@@ -15,6 +16,8 @@ from screen_watch.cli.commands import (
     _cmd_migrate_config,
     _cmd_probe_dpi,
     _cmd_record_actions,
+    _cmd_remove_selection,
+    _cmd_rename_selection,
     _cmd_run,
     _cmd_select,
     _cmd_select_manual,
@@ -57,7 +60,51 @@ def build_parser() -> argparse.ArgumentParser:
     p_val.set_defaults(func=_cmd_validate_config)
 
     p_sel = sub.add_parser("list-selections", help="list the selections in app-data")
+    p_sel.add_argument("--json", action="store_true", help="JSON output (for scripting)")
     p_sel.set_defaults(func=_cmd_list_selections)
+
+    p_rm = sub.add_parser("remove-selection", help="delete one or more selection JSON files")
+    p_rm.add_argument("names", nargs="+", metavar="NAME")
+    p_rm.set_defaults(func=_cmd_remove_selection)
+
+    p_rn = sub.add_parser(
+        "rename-selection", help="rename a selection (new slug + display name)"
+    )
+    p_rn.add_argument("old", metavar="OLD", help="current name or path")
+    p_rn.add_argument("name", metavar="NAME", help="new display name (the file uses its slug)")
+    p_rn.set_defaults(func=_cmd_rename_selection)
+
+    p_edit = sub.add_parser(
+        "edit-selection",
+        help="edit a selection JSON headless (mode/ROI/masks/overrides)",
+    )
+    p_edit.add_argument("name", metavar="NAME", help="selection name or path")
+    p_edit.add_argument("--mode", choices=("light", "default", "advanced"))
+    p_edit.add_argument("--roi", type=int, nargs=4, metavar=("X", "Y", "W", "H"))
+    p_edit.add_argument(
+        "--mask",
+        type=int,
+        nargs=4,
+        action="append",
+        metavar=("X", "Y", "W", "H"),
+        help="repeatable; replaces the effective masks",
+    )
+    p_edit.add_argument("--clear-masks", action="store_true")
+    p_edit.add_argument("--poll-interval-s", type=float, dest="poll_interval_s", metavar="SECONDS")
+    p_edit.add_argument("--rearm", dest="rearm", action="store_true", default=None)
+    p_edit.add_argument("--no-rearm", dest="rearm", action="store_false")
+    p_edit.add_argument("--text-watch", dest="text_watch", metavar="TEXT")
+    p_edit.add_argument(
+        "--text-expect", choices=("appears", "disappears"), default="appears"
+    )
+    p_edit.add_argument("--clear-text-watch", action="store_true")
+    p_edit.add_argument(
+        "--clear-override",
+        action="append",
+        choices=("mode", "poll_interval_s", "rearm", "masks", "text_watch"),
+        metavar="KEY",
+    )
+    p_edit.set_defaults(func=_cmd_edit_selection)
 
     p_mig = sub.add_parser("migrate-config", help="convert YAML v1 (targets) to v2 + selections")
     p_mig.add_argument("--path", default=str(config_path()))

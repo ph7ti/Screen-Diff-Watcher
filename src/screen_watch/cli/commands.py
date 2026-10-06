@@ -91,9 +91,9 @@ def _validate_selections() -> int:
     return 1 if failures else 0
 
 
-def _cmd_list_selections(_args: argparse.Namespace) -> int:
+def _cmd_list_selections(args: argparse.Namespace) -> int:
     from screen_watch.errors import ConfigError
-    from screen_watch.persistence.selection import load_selection
+    from screen_watch.persistence.selection import effective_masks, load_selection
     from screen_watch.platform.paths import load_state, selections_dir
 
     last = str(load_state().get("last_selection") or "")
@@ -101,11 +101,16 @@ def _cmd_list_selections(_args: argparse.Namespace) -> int:
     if not paths:
         print("no selection found (use 'select' or 'select-manual')")
         return 0
+    as_json = bool(getattr(args, "json", False))
+    rows: list[dict[str, object]] = []
     for path in paths:
         marker = "  (last)" if path.name == last else ""
         try:
             selection = load_selection(path)
         except (ConfigError, OSError, ValueError) as exc:
+            if as_json:
+                rows.append({"file": path.name, "error": str(exc), "last": path.name == last})
+                continue
             print(f"{path.name}  unreadable ({exc}){marker}")
             continue
         name = (
@@ -114,8 +119,173 @@ def _cmd_list_selections(_args: argparse.Namespace) -> int:
             or selection.window_title_hint
             or path.stem
         )
+        if as_json:
+            rows.append(
+                {
+                    "file": path.name,
+                    "name": selection.name,
+                    "label": name,
+                    "window_handle": selection.window_handle,
+                    "roi_relative": list(selection.roi_relative),
+                    "mode": selection.mode,
+                    "masks": len(effective_masks(selection)),
+                    "overrides": sorted((selection.overrides or {}).keys()),
+                    "last": path.name == last,
+                }
+            )
+            continue
         x, y, w, h = selection.roi_relative
         print(f"{path.name}  {name} — {x},{y} {w}x{h} — {selection.mode}{marker}")
+    if as_json:
+        print(json.dumps(rows, indent=2, ensure_ascii=False))
+    return 0
+
+
+def _cmd_remove_selection(args: argparse.Namespace) -> int:
+    """Remove selecoes por nome/caminho; limpa `last_selection` quando apontava para elas."""
+    from screen_watch.config.loader import ConfigError
+    from screen_watch.persistence.selection import forget_last_selection
+
+    removed = 0
+    failures = 0
+    for value in args.names:
+        try:
+            path = _resolve_selection_path(value)
+        except (ConfigError, OSError) as exc:
+            print(f"error: {exc}")
+            failures += 1
+            continue
+        try:
+            path.unlink()
+        except OSError as exc:
+            print(f"error: could not remove {path}: {exc}")
+            failures += 1
+            continue
+        forget_last_selection(path.name)
+        print(f"removed: {path}")
+        removed += 1
+    print(f"removed {removed} selection(s)")
+    return 1 if failures else 0
+
+
+def _cmd_rename_selection(args: argparse.Namespace) -> int:
+    """Renomeia (slug + nome de exibicao) reusando a logica validada da GUI."""
+    from screen_watch.config.loader import ConfigError
+    from screen_watch.persistence.selection import plan_rename, rename_selection
+    from screen_watch.platform.paths import ensure_dirs, selections_dir
+
+    try:
+        old = _resolve_selection_path(args.old)
+        ensure_dirs()
+        destination = plan_rename(selections_dir(), old, args.name)
+        selection = rename_selection(old, destination, name=args.name)
+    except (ConfigError, OSError) as exc:
+        print(f"error: {exc}")
+        return 1
+    print(f"renamed: {old.name} -> {destination.name} ({selection.name!r})")
+    return 0
+
+
+def _cmd_edit_selection(args: argparse.Namespace) -> int:
+    """Edita uma selecao headless (modo/ROI/mascaras/overrides), sem tocar no YAML."""
+    from dataclasses import replace as dataclass_replace
+
+    from screen_watch.config.loader import (
+        MIN_POLL_INTERVAL_S,
+        ConfigError,
+        parse_text_watch,
+    )
+    from screen_watch.persistence.selection import (
+        clear_masks,
+        clear_override,
+        dump_selection,
+        load_selection,
+        set_masks,
+        set_mode_where_lives,
+        set_override,
+        set_override_text_watch,
+    )
+    from screen_watch.platform.window import find_window_by_handle
+
+    edits = (
+        args.mode
+        or args.roi
+        or args.mask
+        or args.clear_masks
+        or args.poll_interval_s is not None
+        or args.rearm is not None
+        or args.text_watch
+        or args.clear_text_watch
+        or args.clear_override
+    )
+    if not edits:
+        print("nothing to edit: pass at least one option (see --help)")
+        return 2
+    if args.mask and args.clear_masks:
+        print("error: use either --mask or --clear-masks, not both")
+        return 1
+    if args.text_watch and args.clear_text_watch:
+        print("error: use either --text-watch or --clear-text-watch, not both")
+        return 1
+
+    try:
+        path = _resolve_selection_path(args.name)
+        selection = load_selection(path)
+    except (ConfigError, OSError, ValueError) as exc:
+        print(f"error: {exc}")
+        return 1
+
+    if args.mode:
+        selection = set_mode_where_lives(selection, args.mode)
+    if args.roi:
+        x, y, w, h = (int(value) for value in args.roi)
+        if w < MIN_ROI_SIDE or h < MIN_ROI_SIDE:
+            print(f"invalid ROI: {w}x{h}; minimum {MIN_ROI_SIDE}x{MIN_ROI_SIDE}")
+            return 1
+        origin = selection.origin_at_selection
+        try:
+            info = find_window_by_handle(selection.window_handle)
+        except RuntimeError:
+            info = None
+        if info is not None:
+            origin = (info.rect[0], info.rect[1])
+        selection = dataclass_replace(
+            selection, roi_relative=(x, y, w, h), origin_at_selection=origin
+        )
+        # Regra doc/00 §12.3: a regiao mudou; as mascaras eram relativas a ROI antiga.
+        selection = clear_masks(selection)
+    if args.clear_masks:
+        selection = clear_masks(selection)
+    elif args.mask is not None:
+        selection = set_masks(
+            selection, [tuple(int(value) for value in item) for item in args.mask]
+        )
+    if args.clear_text_watch:
+        selection = set_override_text_watch(selection, None)
+    elif args.text_watch:
+        watch = parse_text_watch(
+            {"text": args.text_watch, "expect": args.text_expect}, "overrides.text_watch"
+        )
+        selection = set_override_text_watch(selection, watch)
+    if args.poll_interval_s is not None:
+        if args.poll_interval_s < MIN_POLL_INTERVAL_S:
+            print(
+                f"invalid --poll-interval-s: {args.poll_interval_s} "
+                f"(minimum {MIN_POLL_INTERVAL_S})"
+            )
+            return 1
+        selection = set_override(selection, "poll_interval_s", float(args.poll_interval_s))
+    if args.rearm is not None:
+        selection = set_override(selection, "rearm", bool(args.rearm))
+    for key in args.clear_override or ():
+        selection = clear_override(selection, key)
+
+    try:
+        dump_selection(path, selection)
+    except OSError as exc:
+        print(f"error: could not write {path}: {exc}")
+        return 1
+    print(f"selection updated: {path}")
     return 0
 
 
@@ -313,10 +483,14 @@ def _cmd_run(args: argparse.Namespace) -> int:
     info = find_window_by_handle(target.window_handle)
     _check_monitor_scales(info.rect if info is not None else None)
 
+    from screen_watch.alerts.gate import load_gate
     from screen_watch.app import evidence_recorder
 
     recorder = evidence_recorder(_load_config_or_none(args.config))
-    session = MonitorSession(target, recorder=recorder, on_action=_print_action_event)
+    # Snooze/mute gravados pela GUI valem tambem para um `run` headless ate expirar.
+    session = MonitorSession(
+        target, recorder=recorder, on_action=_print_action_event, gate=load_gate()
+    )
     loop = build_loop(target, session, on_event=_print_event, on_error=_print_error)
     display = target.label or target.name
     print(f"monitoring {display!r} (handle={target.window_handle}) every {target.poll_interval_s}s")
@@ -843,6 +1017,13 @@ def collect_features() -> dict[str, object]:
     except Exception:
         tray_available = False
 
+    try:
+        import paho.mqtt.client  # noqa: F401, PLC0415
+
+        mqtt_available = True
+    except Exception:
+        mqtt_available = False
+
     config_file = paths.config_path()
     return {
         "version": __version__,
@@ -858,6 +1039,7 @@ def collect_features() -> dict[str, object]:
         "sound": audio.backend_info(),
         "sounds_dir": str(paths.sounds_dir()),
         "tray": {"pystray": tray_available},
+        "mqtt": {"available": mqtt_available},
         "monitors": _monitors_info(),
     }
 
@@ -895,6 +1077,9 @@ def _print_features(info: dict[str, object]) -> None:
 
     tray = "available" if info["tray"]["pystray"] else "unavailable"
     print(f"tray (pystray): {tray}")
+
+    mqtt = "available" if info["mqtt"]["available"] else "unavailable (extra 'mqtt')"
+    print(f"mqtt (paho-mqtt): {mqtt}")
 
     monitors = info["monitors"]
     if monitors is None:

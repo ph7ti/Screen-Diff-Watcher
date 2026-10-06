@@ -7,7 +7,7 @@
 |---|---|
 | `config.yaml` | config global: perfis (defaults/alertas/ações), `ui`, `schedule`, `evidence` |
 | `selections/<nome>.json` | seleções de ROI (uma por alvo), com `overrides` opcionais |
-| `state.json` | estado leve: `last_selection`, `profile`, `language`, `action_selection`, `evidence_enabled` |
+| `state.json` | estado leve: `last_selection`, `profile`, `language`, `action_selection`, `evidence_enabled`, `alerts_muted`, `alerts_snooze_until` |
 | `logs/` | `alerts.jsonl` (alertas) e `actions.jsonl` (auditoria de ações) |
 
 Base: `%APPDATA%\screen_watch` (Windows), `~/.config/screen_watch` (Linux),
@@ -39,6 +39,7 @@ profiles:
         default:  { hash_size: 8, threshold: 6 }
         advanced: { similarity_threshold: 0.92, psm: 6, lang: "por+eng", upscale: 2,
                     tesseract_cmd: null }
+      escalation: { enabled: false, severity_min: 2 }   # repete até o Ciente
     alerts:
       - { type: "sound",    enabled: true, severity_min: 1, cooldown_s: 30, file: "alert.mp3" }
       - { type: "popup",    enabled: true, severity_min: 1, cooldown_s: 30 }
@@ -50,8 +51,10 @@ profiles:
     defaults: { mode: "default", poll_interval_s: 1.0 }
 ui:
   hotkeys: { arm: "<ctrl>+<alt>+a", disarm: "<ctrl>+<alt>+d", toggle: "<ctrl>+<alt>+<space>",
-             rearm: "<ctrl>+<alt>+r", abort: "<esc>" }
+             rearm: "<ctrl>+<alt>+r", abort: "<esc>" }   # acknowledge é opcional
   arm_durations_min: [1, 5, 15, 30]
+  snooze_minutes: [5, 15, 30, 60]  # menu Soneca da GUI/tray (minutos positivos)
+  max_sessions: 4                  # sessões simultâneas na GUI (1..16)
   language: auto                 # auto | pt-BR | en-US | tag descoberta em i18n/*.json
 schedule: { enabled: false, days: [mon, tue, wed, thu, fri], windows: ["08:00-12:00"] }
 evidence: { enabled: false, dir: null, keep_per_target: 50, max_total_mb: 200,
@@ -66,6 +69,9 @@ evidence: { enabled: false, dir: null, keep_per_target: 50, max_total_mb: 200,
 - `version` ausente com `targets:` é tratado como **v1 legado** (com aviso) e convertido por
   `migrate-config`.
 - `ui.language` desconhecido gera aviso e volta para `auto` (não é erro).
+- `ui.snooze_minutes` exige uma lista de inteiros positivos (`config.snooze_minutes_not_list`/
+  `config.snooze_minutes_positive`); `ui.max_sessions` aceita 1..16 (`config.max_sessions_range`).
+- `ui.hotkeys.acknowledge` (Ciente) é opcional; sem ele o reconhecimento fica no botão/tray.
 - O app regrava o YAML **sem preservar comentários**; a escrita é atômica (temp + `os.replace`) e
   deixa um backup `config.yaml.bak`.
 - Ajuste os limites (`light`/`default`) e o `advanced.similarity_threshold` com o `compare-modes` do
@@ -76,7 +82,7 @@ evidence: { enabled: false, dir: null, keep_per_target: 50, max_total_mb: 200,
 Cada item de `alerts:` aceita `type`, `enabled`, `severity_min`, `cooldown_s` e um **`id`** opcional
 (default `type`; `type#n` quando repetido). O `id` é a **chave de cooldown** e o nome usado na seleção do
 teste de envio. Os quatro tipos originais (`sound`/`popup`/`telegram`/`log`) usam **campos planos**; os
-novos usam um bloco aninhado **`options:`**:
+demais (`webhook`, `http_post`, `syslog`, `ntfy`, `smtp` e `mqtt`) usam um bloco aninhado **`options:`**:
 
 ```yaml
 alerts:
@@ -97,11 +103,31 @@ alerts:
   - type: syslog
     id: siem
     options: { host: 10.0.0.9, port: 514, protocol: udp, facility: local0 }
+  - type: ntfy
+    id: celular
+    options: { server: "https://ntfy.sh", topic: "meu-topico", token_env: NTFY_TOKEN,
+               attach_roi: true }
+  - type: smtp
+    id: email
+    options: { host: "smtp.example.com", port: 587, security: starttls,
+               from_addr: "watch@example.com", to: ["oncall@example.com"],
+               username_env: SMTP_USERNAME, password_env: SMTP_PASSWORD }
+  - type: mqtt
+    id: barramento
+    options: { host: "10.0.0.30", topic: "screen-watch/default", qos: 1,
+               username_env: MQTT_USERNAME, password_env: MQTT_PASSWORD }
 ```
 
 Regras (validadas com código estável `config.alert_*`):
 
 - `webhook`/`http_post` exigem `url` ou `url_env`; a URL deve começar com `http://`/`https://`.
+- `ntfy` exige `topic`; `server` default `https://ntfy.sh`; `token_env` é opcional (vazio = tópico
+  anônimo).
+- `smtp` exige `host`, `from_addr` e `to` (lista não vazia); `security` é `starttls` (default),
+  `ssl` ou `none`; as credenciais vêm só de `username_env`/`password_env`.
+- `mqtt` exige `host` e `topic`; `port` default 1883 (8883 com `tls: true`); `qos` é 0/1/2;
+  `payload` XOR `payload_raw`. Sem o extra `mqtt` (`pip install -e ".[mqtt]"`) o canal falha com
+  `alert.mqtt_missing_extra`.
 - `payload` e `payload_raw` são mutuamente exclusivos; placeholder `${...}` desconhecido é erro.
 - `port` deve ser 1..65535; `protocol` é `udp`/`tcp`; `facility` precisa ser uma facility syslog
   conhecida; `method` é `POST`/`PUT`/`PATCH`.
@@ -116,7 +142,8 @@ Perfis nomeados (`profiles.<nome>.defaults` + `.alerts` + `.actions`) permitem a
 parâmetros. A troca (seletor da GUI, submenu do tray ou `--profile`) vale **no próximo start** — o
 loop ativo não muda — e é gravada em `state.json.profile`.
 
-`defaults` cobre `mode`, `poll_interval_s`, `rearm`, `compare_options` e `humanize` (abaixo).
+`defaults` cobre `mode`, `poll_interval_s`, `rearm`, `compare_options`, `humanize` (abaixo) e
+`escalation`.
 
 ### Humanização (`defaults.humanize`)
 
@@ -131,6 +158,19 @@ Usada pelas ações pseudo-humanas:
 | `seed` | `null` | semente fixa para testes determinísticos |
 
 Não há UI para humanização: edite o YAML.
+
+### Escalação (`defaults.escalation`)
+
+Repete o alerta até o reconhecimento (**Ciente**); vale por seleção via `overrides.escalation`:
+
+| Chave | Default | Efeito |
+|---|---|---|
+| `enabled` | `false` | liga a escalação (desligada preserva o comportamento anterior) |
+| `severity_min` | 2 | só escala mudanças com severidade >= este valor |
+
+Com um `fired` que atenda o `severity_min`, o baseline **não** avança e o alerta repete na cadência
+do `cooldown_s` de cada canal até o Ciente, que re-arma o baseline. Detalhes em
+[Alertas](Alertas.md).
 
 ### Verificação de texto (`defaults.compare_options.advanced.text_watch`)
 
@@ -162,7 +202,7 @@ compare_options:
 ## Seleção JSON v2 e overrides
 
 Cada seleção pode trazer `overrides` que **substituem** (não somam) os valores do perfil para aquele
-alvo: `mode`, `poll_interval_s`, `rearm`, `masks`, `alerts`, `actions` e `text_watch`.
+alvo: `mode`, `poll_interval_s`, `rearm`, `masks`, `alerts`, `actions`, `text_watch` e `escalation`.
 
 ```json
 {
@@ -214,6 +254,8 @@ primeiro). Nomes duplicados no v1 também abortam.
 | `language` | idioma escolhido no seletor da GUI |
 | `action_selection` | subconjunto de ações por seleção (chave ausente = todas; lista vazia = nenhuma) |
 | `evidence_enabled` | toggle do checkbox "Gravar prints" (tem precedência sobre o YAML) |
+| `alerts_muted` | silêncio dos alertas (Silenciar/Reativar na GUI/tray) |
+| `alerts_snooze_until` | fim da soneca (epoch); expirado é ignorado no start |
 
 O `state.json` é gravado de forma atômica e sem backup; é estado descartável (apagar não quebra).
 

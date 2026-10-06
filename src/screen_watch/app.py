@@ -10,6 +10,7 @@ from collections.abc import Callable
 from dataclasses import replace
 
 from screen_watch.alerts.chain import AlertChain, DispatchOutcome
+from screen_watch.alerts.gate import AlertGate
 from screen_watch.alerts.protocol import Notifier
 from screen_watch.capture.frame import Frame
 from screen_watch.compare.pipeline import MODE_STAGES, ComparePipeline
@@ -179,15 +180,55 @@ def _build_notifier(options: AlertOptions, target_name: str) -> Notifier | None:
             cooldown_s=options.cooldown_s,
             target_name=target_name,
         )
+    if options.type == "ntfy":
+        from screen_watch.alerts.ntfy import NtfyNotifier  # noqa: PLC0415
+        from screen_watch.config.schema import NtfyOptions  # noqa: PLC0415
+
+        channel = options.options if isinstance(options.options, NtfyOptions) else NtfyOptions()
+        return NtfyNotifier(
+            channel,
+            enabled=options.enabled,
+            severity_min=options.severity_min,
+            cooldown_s=options.cooldown_s,
+            target_name=target_name,
+        )
+    if options.type == "smtp":
+        from screen_watch.alerts.smtp import SmtpNotifier  # noqa: PLC0415
+        from screen_watch.config.schema import SmtpOptions  # noqa: PLC0415
+
+        channel = options.options if isinstance(options.options, SmtpOptions) else SmtpOptions()
+        return SmtpNotifier(
+            channel,
+            enabled=options.enabled,
+            severity_min=options.severity_min,
+            cooldown_s=options.cooldown_s,
+            target_name=target_name,
+        )
+    if options.type == "mqtt":
+        from screen_watch.alerts.mqtt import MqttNotifier  # noqa: PLC0415
+        from screen_watch.config.schema import MqttOptions  # noqa: PLC0415
+
+        channel = options.options if isinstance(options.options, MqttOptions) else MqttOptions()
+        return MqttNotifier(
+            channel,
+            enabled=options.enabled,
+            severity_min=options.severity_min,
+            cooldown_s=options.cooldown_s,
+            target_name=target_name,
+        )
     log.warning("unknown alert type ignored: %s", options.type)
     return None
 
 
-def build_alert_chain(alerts: tuple[AlertOptions, ...], target_name: str = "") -> AlertChain:
+def build_alert_chain(
+    alerts: tuple[AlertOptions, ...],
+    target_name: str = "",
+    gate: AlertGate | None = None,
+) -> AlertChain:
     notifiers = [
         n for n in (build_notifier(a, target_name) for a in alerts) if n is not None
     ]
-    return AlertChain(notifiers)
+    return AlertChain(notifiers, gate=gate)
 
 
 def default_alerts() -> tuple[AlertOptions, ...]:
@@ -284,22 +325,31 @@ class MonitorSession:
         on_action: Callable[[dict], None] | None = None,
         on_frame: FrameCallback | None = None,
         on_compare: CompareCallback | None = None,
+        gate: AlertGate | None = None,
     ) -> None:
         self.target = target
         self.pipeline = build_pipeline(target.mode, target.compare_options)
-        self.chain = build_alert_chain(target.alerts, target.name)
+        self.chain = build_alert_chain(target.alerts, target.name, gate=gate)
         self.rearm = bool(target.rearm)
+        self.escalation = target.escalation
         self._on_result = on_result
         self._recorder = recorder
         self._on_frame = on_frame
         self._on_compare = on_compare
         self._initialized = False
         self._pending_rebaseline = False
+        # Escalacao (doc, secao 11.3): FIRED mantem o baseline ate acknowledge().
+        self._awaiting_ack = False
         if actions is None:
             from screen_watch.actions.dispatch import build_dispatcher  # noqa: PLC0415
 
             actions = build_dispatcher(target, recorder=recorder, on_event=on_action)
         self.actions = actions
+
+    @property
+    def awaiting_ack(self) -> bool:
+        """True enquanto uma escalacao disparada espera o reconhecimento do usuario."""
+        return self._awaiting_ack
 
     def __call__(self, frame: Frame) -> None:
         is_baseline = self._pending_rebaseline or not self._initialized
@@ -307,6 +357,7 @@ class MonitorSession:
             self._on_frame(frame, is_baseline)
         if self._pending_rebaseline:
             self._pending_rebaseline = False
+            self._awaiting_ack = False
             self.pipeline.initialize(frame)
             self._initialized = True
             self._record("record_baseline", frame)
@@ -322,23 +373,45 @@ class MonitorSession:
         if not result.changed:
             return
         outcome = self.chain.dispatch(result, frame)
+        if (
+            outcome is DispatchOutcome.FIRED
+            and self.escalation.enabled
+            and result.severity >= self.escalation.severity_min
+        ):
+            self._awaiting_ack = True
         if self._on_result is not None:
             self._on_result(result, outcome)
-        self._record("record_change", frame)
+        # Evidencia atrelada a tentativa real de alerta: evita um print por tick
+        # durante cooldown/snooze/escalacao (doc, secao 11.3/11.5).
+        if outcome in (DispatchOutcome.FIRED, DispatchOutcome.FAILED):
+            self._record("record_change", frame)
         rebaseline = False
         if self.actions is not None:
             rebaseline = bool(self.actions.on_result(result, frame))
-        if rebaseline or (self.rearm and outcome in _REARM_OUTCOMES):
+        if rebaseline:
+            self._awaiting_ack = False
+            self.pipeline.initialize(frame)
+        elif self._awaiting_ack:
+            # Escalando: o baseline so avanca no acknowledge (ou no re-arm manual).
+            return
+        elif self.rearm and outcome in _REARM_OUTCOMES:
             self.pipeline.initialize(frame)
 
     def rebaseline_now(self, frame: Frame) -> None:
         """Re-arma o baseline manualmente (tray/botao/hotkey re-arm)."""
+        self._awaiting_ack = False
         self.pipeline.initialize(frame)
         if self._on_frame is not None:
             self._on_frame(frame, True)
 
     def request_rebaseline(self) -> None:
         """Pede re-baseline no proximo frame (thread-safe; chamado pela GUI)."""
+        self._awaiting_ack = False
+        self._pending_rebaseline = True
+
+    def acknowledge(self) -> None:
+        """Reconhece a escalacao: zera o estado e re-arma o baseline (thread-safe)."""
+        self._awaiting_ack = False
         self._pending_rebaseline = True
 
     def _record(self, method: str, frame: Frame) -> None:

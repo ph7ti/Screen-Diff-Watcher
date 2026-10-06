@@ -16,6 +16,9 @@ An alert fires when the comparison confirms a **change** (`changed: true`) and t
 | `webhook` | POST/PUT/PATCH JSON to a webhook URL (Teams **Workflows**, Slack, Discord, Mattermost) | `options:` (`url`/`url_env`, `method`, `headers`, `payload`/`payload_raw`, `timeout_s`, `verify_tls`) |
 | `http_post` | POST JSON to a host/IP + port (or a full URL) | `options:` (`url`/`url_env`, `scheme`, `host`, `port`, `path`, `method`, `headers`, `payload`/`payload_raw`, `verify_tls`) |
 | `syslog` | informational syslog message (host/port, `udp`/`tcp`) — no image | `options:` (`host`, `port`, `protocol`, `facility`, `app_name`, `payload_raw`, `severity_map`, `timeout_s`) |
+| `ntfy` | phone push (HTTP) | `options:` (`server`, `topic`, `token_env`, `title`/`message`, `priority_map`, `tags`, `attach_roi`, `timeout_s`) |
+| `smtp` | sends an e-mail (stdlib `smtplib`) | `options:` (`host`, `port`, `security`, `from_addr`, `to`, `subject`/`message`, `username_env`/`password_env`, `attach_roi`, `timeout_s`) |
+| `mqtt` | publishes a JSON payload to an MQTT broker (optional extra `mqtt`) — no image | `options:` (`host`, `topic`, `port`, `qos`, `retain`, `client_id`, `username_env`/`password_env`, `tls`, `payload`/`payload_raw`, `timeout_s`) |
 
 The four first types keep **flat fields**; the new ones use a nested **`options:`** block. All accept
 `enabled`, `severity_min`, `cooldown_s` and the optional **`id`** (default `type`; `type#n` when repeated
@@ -124,6 +127,95 @@ log** (Telegram requires `chat_id`, so it does not enter the default).
   `app_name` becomes the syslog **tag** (`ident`).
 - **UDP does not confirm delivery** (fire-and-forget) — prefer `tcp` when delivery must be confirmed.
 
+### ntfy
+
+- Plain-text `POST` to `{server}/{topic}` with the `Title`, `Priority` and `Tags` headers;
+  `attach_roi: true` switches to a PNG `PUT` (`Filename: roi.png`, the rendered text goes in the
+  `Message` header).
+- `server` defaults to `https://ntfy.sh`; `topic` is **required**.
+- `token_env` is **optional** and empty by default (anonymous topic); when set to a variable that is
+  missing, the notifier logs and skips. The token **never** appears in the YAML.
+- `priority_map` maps severity 1..3 to the ntfy priority 1..5 (default 3/4/5); `title`/`message`
+  accept the same `${...}` templates as the other channels.
+- Errors (`alert.ntfy_unavailable`, `alert.ntfy_status`) carry only the redacted server
+  (`scheme://host/…`).
+
+```yaml
+- type: ntfy
+  id: celular
+  severity_min: 1
+  cooldown_s: 60
+  options:
+    server: "https://ntfy.sh"          # default
+    topic: "meu-topico"                # required
+    token_env: NTFY_TOKEN              # optional; empty = anonymous
+    priority_map: { 1: 3, 2: 4, 3: 5 } # default
+    tags: ["warning"]                  # optional
+    attach_roi: false                  # true = PUT the ROI PNG
+    timeout_s: 5
+```
+
+### SMTP
+
+- Stdlib `smtplib` + `EmailMessage`; `security` is `starttls` (default), `ssl` or `none`.
+- `host` and `from_addr` are **required**; `to` is a **non-empty list**; `port` defaults to `587`.
+- `subject`/`message` are templates with the same `${...}` rules.
+- `username_env`/`password_env` (defaults `SMTP_USERNAME`/`SMTP_PASSWORD`) log in **only when the
+  user variable is set**; secrets never appear in errors/logs.
+- `attach_roi: true` (default) attaches the ROI PNG (`image/png`).
+- Errors: `alert.smtp_unavailable` (connect/TLS), `alert.smtp_auth_failed` (login),
+  `alert.smtp_send_failed` (message rejected).
+
+```yaml
+- type: smtp
+  id: email
+  severity_min: 2
+  cooldown_s: 300
+  options:
+    host: "smtp.example.com"        # required
+    port: 587                       # default
+    security: starttls              # starttls | ssl | none
+    from_addr: "watch@example.com"  # required
+    to: ["oncall@example.com"]      # non-empty list
+    subject: "[screen-diff-watcher] ${target} sev=${severity}"
+    username_env: SMTP_USERNAME     # login only if the variable is set
+    password_env: SMTP_PASSWORD
+    attach_roi: true                # attach the ROI PNG
+    timeout_s: 10
+```
+
+### MQTT
+
+- Optional extra: `python -m pip install -e ".[mqtt]"` (`paho-mqtt`, lazy import; the installers do
+  not bundle it). A configured channel without the extra raises the visible
+  `alert.mqtt_missing_extra` — never a silent skip. `features --json` reports whether the extra is
+  installed.
+- `host`/`topic` are **required**; `port` defaults to `1883` (`8883` with `tls: true`); `qos` is
+  `0`/`1`/`2`; `retain`, `client_id` (`screen-diff-watcher` by default) and
+  `username_env`/`password_env` (defaults `MQTT_USERNAME`/`MQTT_PASSWORD`) follow the broker setup.
+- The payload is a template mapping (default `text`/`target`/`severity`/`strategy`/`score`/
+  `threshold`/`timestamp`) or `payload_raw`; using both is a config error.
+- **No image/ROI**.
+- Errors: `alert.mqtt_unavailable` (connect), `alert.mqtt_publish_failed` (publish rejected).
+
+```yaml
+- type: mqtt
+  id: barramento
+  severity_min: 1
+  cooldown_s: 60
+  options:
+    host: "10.0.0.30"              # required
+    topic: "screen-watch/default"  # required
+    port: 1883                     # default; 8883 with tls
+    qos: 1                         # 0 | 1 | 2
+    retain: false
+    client_id: "screen-diff-watcher"
+    tls: false
+    username_env: MQTT_USERNAME
+    password_env: MQTT_PASSWORD
+    # payload: { text: "${message}", severity: "${severity}" }   # or payload_raw: "..."
+    timeout_s: 5
+```
 
 ## Severity
 
@@ -142,6 +234,26 @@ severity 2+).
   change alarms once. In cooldown or failure, the baseline is kept: the pending change alarms
   when the cooldown expires.
 - Manual re-arm: tray, the window's **Re-arm baseline** button or the `rearm` hotkey (`<ctrl>+<alt>+r`).
+
+## Snooze, mute and escalation
+
+- **Snooze…** silences the alerts for the chosen duration; the menu offers `ui.snooze_minutes`
+  (default `[5, 15, 30, 60]`). **Mute/Unmute** silences until unmuted, and **Acknowledge** stops an
+  escalation — all in the Detection and alerts group and in the tray; `acknowledge` also has the
+  optional `ui.hotkeys.acknowledge`.
+- The gate is shared by every session and persisted in `state.json` (`alerts_snooze_until`,
+  `alerts_muted`), so a later `run` inherits it until the snooze expires (an expired timestamp is
+  ignored on start). An explicit `test-alert` ignores the gate.
+- While suppressed, `dispatch` returns `SUPPRESSED_MANUAL` before trying any channel and the
+  baseline is kept: the pending change alarms when the snooze expires or the mute is lifted. Risk:
+  if the ROI returns to the baseline before the snooze ends, the pending change is dropped.
+- **Escalation** (`defaults.escalation`, or `overrides.escalation` per selection): `enabled` (default
+  `false`) and `severity_min` (default `2`). With it enabled and a `FIRED` outcome at
+  `severity >= severity_min`, the baseline does not advance and the alert **repeats at each
+  channel's own `cooldown_s` until Acknowledge**, which re-arms the baseline (manual re-arm does the
+  same). The status shows "awaiting acknowledgement".
+- **Change evidence follows the delivery attempts**: prints are written only on `FIRED`/`FAILED`
+  (plus each escalation firing), instead of once per tick while the change is pending.
 
 ## Test
 

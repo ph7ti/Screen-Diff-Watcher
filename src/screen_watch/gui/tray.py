@@ -31,7 +31,13 @@ def _icon_image():
     return image
 
 
-def start_tray(events, arm_durations=(1, 5, 15, 30), profiles=("default",)) -> object | None:
+def start_tray(
+    events,
+    arm_durations=(1, 5, 15, 30),
+    profiles=("default",),
+    snooze_minutes=(5, 15, 30, 60),
+    selections=(),
+) -> object | None:
     """Sobe o tray em thread separada. Devolve o Icon ou None se indisponivel."""
     try:
         import pystray  # noqa: PLC0415
@@ -53,6 +59,18 @@ def start_tray(events, arm_durations=(1, 5, 15, 30), profiles=("default",)) -> o
 
         return _callback
 
+    def push_gate(action: str, **extra):
+        def _callback(_icon, _item):
+            events.put({"kind": "gate", "action": action, **extra})
+
+        return _callback
+
+    def push_target(action: str, name: str):
+        def _callback(_icon, _item):
+            events.put({"kind": "target", "action": action, "name": name})
+
+        return _callback
+
     arm_menu = pystray.Menu(
         *[
             pystray.MenuItem(
@@ -60,6 +78,16 @@ def start_tray(events, arm_durations=(1, 5, 15, 30), profiles=("default",)) -> o
                 push_action("arm_for", minutes=minutes),
             )
             for minutes in arm_durations
+        ]
+    )
+
+    snooze_menu = pystray.Menu(
+        *[
+            pystray.MenuItem(
+                tr("main.snooze_minutes", minutes=minutes),
+                push_gate("snooze", minutes=minutes),
+            )
+            for minutes in snooze_minutes
         ]
     )
 
@@ -72,7 +100,7 @@ def start_tray(events, arm_durations=(1, 5, 15, 30), profiles=("default",)) -> o
     profile_menu = pystray.Menu(
         *[pystray.MenuItem(name, push_profile(name)) for name in profiles]
     )
-    menu = pystray.Menu(
+    items = [
         pystray.MenuItem(tr("tray.toggle"), push_tray("toggle")),
         pystray.MenuItem(tr("main.btn_minimize"), push_tray("minimize")),
         pystray.MenuItem(tr("main.btn_start"), push_tray("start")),
@@ -82,10 +110,30 @@ def start_tray(events, arm_durations=(1, 5, 15, 30), profiles=("default",)) -> o
         pystray.MenuItem(tr("main.btn_disarm"), push_action("disarm")),
         pystray.MenuItem(tr("main.btn_arm_for"), arm_menu),
         pystray.MenuItem(tr("tray.rearm_baseline"), push_action("rearm")),
-        pystray.MenuItem(tr("tray.profile"), profile_menu),
         pystray.Menu.SEPARATOR,
-        pystray.MenuItem(tr("tray.quit"), push_tray("quit")),
-    )
+        pystray.MenuItem(tr("tray.snooze"), snooze_menu),
+        pystray.MenuItem(tr("tray.mute"), push_gate("mute")),
+        pystray.MenuItem(tr("tray.unmute"), push_gate("unmute")),
+        pystray.MenuItem(tr("tray.acknowledge"), push_gate("acknowledge")),
+        pystray.Menu.SEPARATOR,
+        pystray.MenuItem(tr("tray.profile"), profile_menu),
+    ]
+    if selections:
+        selection_menu = pystray.Menu(
+            *[
+                pystray.MenuItem(
+                    name,
+                    pystray.Menu(
+                        pystray.MenuItem(tr("main.btn_start"), push_target("start", name)),
+                        pystray.MenuItem(tr("main.btn_stop"), push_target("stop", name)),
+                    ),
+                )
+                for name in selections
+            ]
+        )
+        items.append(pystray.MenuItem(tr("tray.selection"), selection_menu))
+    items.extend([pystray.Menu.SEPARATOR, pystray.MenuItem(tr("tray.quit"), push_tray("quit"))])
+    menu = pystray.Menu(*items)
     icon = pystray.Icon("screen_watch", _icon_image(), "Screen Diff Watcher", menu)
     thread = threading.Thread(target=icon.run, name="screen-watch-tray", daemon=True)
     thread.start()

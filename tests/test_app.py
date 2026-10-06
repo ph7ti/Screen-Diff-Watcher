@@ -4,7 +4,7 @@ import numpy as np
 
 from screen_watch.alerts.chain import DispatchOutcome
 from screen_watch.app import MonitorSession
-from screen_watch.config.schema import TargetConfig
+from screen_watch.config.schema import EscalationOptions, TargetConfig
 
 
 def _target(**extra) -> TargetConfig:
@@ -136,3 +136,96 @@ def test_rearm_false_never_moves_baseline(make_frame, solid):
     session(make_frame(solid(250), sequence=2))
     session(make_frame(solid(250), sequence=3))
     assert dispatch.calls == 2
+
+
+# -- escalacao (v0.9.0) ----------------------------------------------------
+
+
+def test_escalation_repeats_until_acknowledge(make_frame, solid):
+    target = _target(escalation=EscalationOptions(enabled=True, severity_min=3))
+    session = MonitorSession(target)
+    dispatch = _RecordingDispatch(DispatchOutcome.FIRED)
+    session.chain.dispatch = dispatch
+
+    session(make_frame(solid(100), sequence=1))
+    session(make_frame(solid(250), sequence=2))  # severidade 3
+    assert dispatch.calls == 1
+    assert session.awaiting_ack is True
+
+    session(make_frame(solid(250), sequence=3))
+    assert dispatch.calls == 2  # baseline mantido: repete a cada tick
+
+    session.acknowledge()
+    session(make_frame(solid(250), sequence=4))  # re-arma sem alertar
+    assert dispatch.calls == 2
+    assert session.awaiting_ack is False
+
+    session(make_frame(solid(250), sequence=5))
+    assert dispatch.calls == 2
+
+
+def test_escalation_disabled_rearms_on_fired(make_frame, solid):
+    session = MonitorSession(_target(escalation=EscalationOptions(enabled=True, severity_min=3)))
+    dispatch = _RecordingDispatch(DispatchOutcome.FIRED)
+    session.chain.dispatch = dispatch
+
+    session(make_frame(solid(100), sequence=1))
+    session(make_frame(solid(116), sequence=2))  # severidade 2 < minimo 3
+    assert session.awaiting_ack is False
+    session(make_frame(solid(116), sequence=3))
+    assert dispatch.calls == 1  # re-armou normalmente
+
+
+def test_escalation_manual_rearm_clears_state(make_frame, solid):
+    target = _target(escalation=EscalationOptions(enabled=True, severity_min=3))
+    session = MonitorSession(target)
+    session.chain.dispatch = _RecordingDispatch(DispatchOutcome.FIRED)
+
+    session(make_frame(solid(100), sequence=1))
+    session(make_frame(solid(250), sequence=2))
+    assert session.awaiting_ack is True
+
+    session.request_rebaseline()
+    assert session.awaiting_ack is False
+    session(make_frame(solid(250), sequence=3))
+    assert session.awaiting_ack is False
+
+
+# -- evidencia atrelada a tentativa (v0.9.0) -------------------------------
+
+
+class _EvidenceRecorder:
+    def __init__(self):
+        self.baselines = 0
+        self.changes = 0
+
+    def record_baseline(self, frame, name):
+        self.baselines += 1
+
+    def record_change(self, frame, name):
+        self.changes += 1
+
+
+def test_change_evidence_only_on_delivery_attempt(make_frame, solid):
+    recorder = _EvidenceRecorder()
+    session = MonitorSession(_target(), recorder=recorder)
+    session.chain.dispatch = _RecordingDispatch(DispatchOutcome.SUPPRESSED_COOLDOWN)
+
+    session(make_frame(solid(100), sequence=1))
+    session(make_frame(solid(250), sequence=2))
+    session(make_frame(solid(250), sequence=3))
+    assert recorder.changes == 0  # sem tentativa real: sem print por tick
+
+    session.chain.dispatch = _RecordingDispatch(DispatchOutcome.FIRED)
+    session(make_frame(solid(250), sequence=4))
+    assert recorder.changes == 1
+
+
+def test_change_evidence_on_failed_attempt(make_frame, solid):
+    recorder = _EvidenceRecorder()
+    session = MonitorSession(_target(), recorder=recorder)
+    session.chain.dispatch = _RecordingDispatch(DispatchOutcome.FAILED)
+
+    session(make_frame(solid(100), sequence=1))
+    session(make_frame(solid(250), sequence=2))
+    assert recorder.changes == 1

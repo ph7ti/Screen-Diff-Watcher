@@ -125,3 +125,37 @@ def test_last_errors_exposes_failures_even_when_another_fires(make_frame):
     boom.enabled = False
     assert chain.dispatch(_result(make_frame), _frame(make_frame)) is DispatchOutcome.FIRED
     assert chain.last_errors == []
+
+
+def test_gate_snooze_suppresses_without_trying_notifiers(make_frame):
+    from screen_watch.alerts.gate import AlertGate
+
+    gate = AlertGate(snooze_until=9_999_999_999.0)
+    notifier = FakeNotifier()
+    chain = AlertChain([notifier], gate=gate)
+
+    outcome = chain.dispatch(_result(make_frame), _frame(make_frame))
+    assert outcome is DispatchOutcome.SUPPRESSED_MANUAL
+    assert notifier.calls == 0
+    assert chain.last_errors == []
+
+
+def test_gate_expired_snooze_allows_dispatch(make_frame):
+    from screen_watch.alerts.gate import AlertGate
+
+    gate = AlertGate(snooze_until=1.0)  # epoch antigo = expirado
+    notifier = FakeNotifier()
+    chain = AlertChain([notifier], gate=gate)
+
+    assert chain.dispatch(_result(make_frame), _frame(make_frame)) is DispatchOutcome.FIRED
+    assert notifier.calls == 1
+
+
+def test_gate_mute_suppresses_even_with_no_enabled(make_frame):
+    from screen_watch.alerts.gate import AlertGate
+
+    gate = AlertGate(muted=True)
+    chain = AlertChain([FakeNotifier(enabled=False)], gate=gate)
+
+    # O gate tem precedencia: a GUI mostra "muted" mesmo sem canal habilitado.
+    assert chain.dispatch(_result(make_frame), _frame(make_frame)) is DispatchOutcome.SUPPRESSED_MANUAL

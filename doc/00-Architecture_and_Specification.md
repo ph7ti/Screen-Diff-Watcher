@@ -4,7 +4,7 @@
 
 > **Purpose of this document**: to serve as the **single source of truth for the design** so that
 > another AI (or developer) can continue the project without having to reconstruct decisions, and to
-> record **what is implemented** (reference: v0.8.0). Every decision recorded here was made
+> record **what is implemented** (reference: v0.9.0). Every decision recorded here was made
 > deliberately; where there are alternatives, they are listed as "rejected" with the reason.
 >
 > **Maintenance rule**: do not replace a recorded decision with a "more modern" alternative
@@ -30,7 +30,8 @@ A **cross-platform Python desktop application** that:
 2. **Monitors that ROI periodically** (configurable interval, minimum 1 s).
 3. Detects **visual changes** according to a comparison mode (Light / Default / Advanced).
 4. **Emits alerts** when the change is confirmed: local sound, local popup, JSONL log and/or remote
-   webhook (Telegram initially).
+   channels (Telegram, ntfy push, e-mail/SMTP, MQTT, generic webhook/HTTP POST, syslog), with
+   snooze/mute and optional escalation until acknowledged (§11).
 5. Optionally, **executes pseudo-human actions** (click/keys/text) when **armed** — by default in
    rehearsal (dry-run), with auditing in `logs/actions.jsonl` (§11.4).
 6. Offers a **GUI with tray** (PyQt6 + pystray) and a **full CLI**, with profiles, scheduler and i18n
@@ -45,7 +46,8 @@ paths (audio/paths), but is **not a build or validation target** (§15).
 - It is not document OCR (OCR only serves to detect text change).
 - It does not capture occluded windows (fundamental limitation of the capture API — see §7.5).
 - It does not bypass DRM, anti-cheat or protected windows.
-- It does not depend on any proprietary cloud service (the only optional remote channel is Telegram).
+- It does not depend on any proprietary cloud service: every remote channel (Telegram, ntfy, SMTP,
+  MQTT, webhook) is optional and user-configured, with credentials in environment variables.
 - It does not support **Wayland** (§3.2) or **ARM**; it does not digitally sign the installers.
 - It is not a generic RPA: the actions are an opt-in and deliberate subsystem (§11.4).
 
@@ -56,7 +58,7 @@ alert the user when that panel undergoes a visual change, without requiring the 
 looking at the screen. Natural extension: react to the change with a simple action (e.g., click
 "Refresh") when that is explicitly armed.
 
-### 1.4 Implementation status (v0.8.0)
+### 1.4 Implementation status (v0.9.0)
 
 Implemented and covered by tests: platform boundary, capture/anchoring (Model B), the three
 comparison modes, pipeline with short-circuit (`advanced` gated by phash and bypassed by
@@ -81,6 +83,16 @@ active profile's YAML** (atomic + `.bak`, config v1 refused), **frame preview** 
 downsampled thumbnails), **alert history** over `logs/alerts.jsonl` (date/severity/strategy filters,
 best-effort evidence print) and **live calibration** (score vs threshold, CSV export); CI now runs
 Python 3.11/3.12/3.13 with a coverage artifact and the wiki has a manual publication runbook.
+
+**v0.9.0 additions**: three alert channels (**ntfy**, **SMTP** via stdlib, **MQTT** via the optional
+`mqtt` extra) following the `options:` schema and stable error codes; **snooze/mute** via the shared
+thread-safe `AlertGate` persisted in `state.json` (GUI/tray, `SUPPRESSED_MANUAL` outcome) and
+**escalation** (repeat until acknowledged, `acknowledge()` + per-alert cooldown pacing, change
+evidence tied to delivery attempts); the **selection lifecycle in the CLI** (`remove-selection`,
+`rename-selection`, `edit-selection`, `list-selections --json`) completing the headless flow (the
+README "Radar" item); and **multiple simultaneous ROIs** in the GUI (`SessionManager` running N
+`MonitorLoop`s with per-session preview/calibration, checkbox set, `ui.max_sessions`, aggregated
+status/tray, per-selection tray start/stop).
 
 Pending **manual validation** items (not automatable in CI):
 
@@ -184,9 +196,17 @@ Each item below is a closed decision. Format: **Decision → Reason → Rejected
 - **Decision**: `threading.Thread` + `threading.Event.wait(timeout)` as the main loop.
 - **Reason**: immediate cancellation, no extra dependency, simple to reason about. `wait` subtracts
   the work time from the interval, guaranteeing a stable cadence.
+- **Multiple sessions (v0.9.0)**: the GUI runs **N `MonitorLoop`s** — one thread, one `mss` backend
+  and one `MonitorSession` per target — coordinated by `gui/session_manager.SessionManager`. The
+  per-thread isolation of `mss` (§3.2, §14.16) is what makes it safe; each session keeps its own
+  preview/calibration buffers and the snooze/mute `AlertGate` is shared. `ui.max_sessions` (default
+  4, range 1..16) bounds the GUI set; OCR in `advanced` multiplies CPU per session (documented).
+  The CLI `run` intentionally stays single-selection (multi-ROI headless is out of scope for now).
 - **Rejected alternatives**:
   - `asyncio` — unnecessary overhead; `mss`/`pywinctl` are synchronous and blocking.
   - `APScheduler` — over-engineering for a single loop.
+  - One process per session — duplicated config/state/alert gate and heavier packaging, no benefit
+    for the scope.
 
 ### 3.6 Alerts
 
@@ -199,13 +219,19 @@ Each item below is a closed decision. Format: **Decision → Reason → Rejected
   - **Local popup** (`plyer.notification`).
   - **Telegram Bot webhook** (`httpx`, `sendPhoto`/`sendMessage`, 5 s timeout; token via
     environment variable).
+  - **ntfy** (`httpx`; plain-text POST to `server/topic`, optional PNG PUT with `attach_roi`,
+    `Title`/`Priority`/`Tags` headers; token via environment variable, anonymous when unset).
+  - **E-mail (SMTP)** (stdlib `smtplib`; STARTTLS/SSL/none, credentials via environment variables,
+    optional PNG attachment).
+  - **MQTT** (optional extra `paho-mqtt`; JSON payload publish with QoS/retain/TLS, credentials via
+    environment variables, no image).
   - **JSONL log** (`app-data/logs/alerts.jsonl`).
 - **Reason**: Telegram is free, reliable, allows attaching an image of the ROI in the alert (essential
-  to validate false positives), and requires no server setup. The JSONL log gives local auditing;
-  the popup/sound cover offline use.
+  to validate false positives), and requires no server setup. ntfy covers phone push without a bot;
+  SMTP covers corporate e-mail; MQTT covers user-owned automation buses. All three keep the
+  credentials in environment variables and follow the same chain/cooldown contract. The JSONL log
+  gives local auditing; the popup/sound cover offline use.
 - **Rejected alternatives**:
-  - `ntfy.sh` — equally valid, but Telegram allows image + text in a single message with less
-    friction.
   - Pushover — paid.
   - FCM — disproportionate setup complexity.
   - `simpleaudio` as the only sound route — no reliable wheel for Python 3.13; it became an optional
@@ -257,9 +283,23 @@ Each item below is a closed decision. Format: **Decision → Reason → Rejected
     A **Calibration** widget plots `score` vs `threshold` from a bounded per-session ring buffer fed
     by **every** comparison (not only changed frames) with CSV export; no extra dependency (custom
     `QPainter`).
-  - **Tray**: `pystray` (`gui/tray.py`) with show/hide, start/stop, arm/disarm, profile
-    and quit. The GUI receives events through a **queue** consumed by `QTimer` (`gui/controller.py`);
-    tray/hotkey callbacks never call Qt from inside the listener thread.
+   - **Tray**: `pystray` (`gui/tray.py`) with show/hide, start/stop, arm/disarm, profile,
+     **Snooze/Mute/Unmute/Acknowledge** (v0.9.0) and quit. The GUI receives events through a
+     **queue** consumed by `QTimer` (`gui/controller.py`); tray/hotkey callbacks never call Qt from
+     inside the listener thread.
+   - **Snooze/mute/escalation controls (v0.9.0)**: the Detection and alerts group has **Snooze…**
+     (durations from `ui.snooze_minutes`), **Mute/Unmute** and **Acknowledge** (enabled while a
+     session escalates), plus a label with the remaining snooze/mute time; the same actions are in
+     the tray. Snooze/mute persist in `state.json` and apply to every session sharing the gate
+     (§11.3).
+   - **Multiple ROIs (v0.9.0)**: the selection list has **checkboxes**; Start starts every checked
+     selection (none checked = the highlighted one) through `SessionManager`, up to
+     `ui.max_sessions`. Rows of running sessions are prefixed with `▶`, the status line aggregates
+     the count (`status.monitoring_multi`), the log/result lines are prefixed with `[selection]`
+     when 2+ run, and preview/calibration/actions follow the **highlighted** running row (else the
+     first running one). Stop stops every session; Remove stops the affected ones first; the tray
+     menu has aggregated start/stop plus a per-selection start/stop submenu. (`MonitorController`
+     was replaced by `gui/session_manager.SessionManager`; §3.5.)
   - **Languages**: the GUI goes through i18n (JSON catalog in the package); CLI/log stay in English (§12.6).
   - **Help**: 2 s hover shows the purpose + example of each control (`gui/help.py` +
     `gui/hover_help.py`).
@@ -616,6 +656,19 @@ selections still load without `overrides`/`app_name`/`name` (§12.3). `window_ti
 human hint; the lookup uses `window_handle`. `roi_relative` is the source of truth for reconstructing
 the ROI on each tick. `name` is the display name (shown as a prefix in the GUI label and in `run`);
 the **file name** is the slug of the name (`naming.slugify`), which is what `--selection` uses.
+
+**Headless lifecycle (v0.9.0)**: the whole selection lifecycle is CLI-driven, with no overlay:
+`list-windows` → `select-manual --handle H --roi X Y W H [--name N]` → `edit-selection N ...`
+(mode/ROI/masks/overrides) → `validate-config --selections` → `run --selection N`. `list-selections`
+lists the files and `--json` emits the scriptable form; `rename-selection OLD NAME` reuses
+`plan_rename`/`rename_selection`; `remove-selection NAME...` deletes and clears `state.json` when
+`last_selection` pointed to a removed file. `edit-selection` writes atomically (`dump_selection`) and
+follows the same rules as the GUI: `--mode` updates `overrides.mode` when it exists, else `mode`;
+`--roi` re-anchors `origin_at_selection` and clears **both** mask fields (relative to the old ROI);
+`--mask` uses the effective-location rule (`set_masks`); `--clear-masks` empties both fields;
+`--poll-interval-s`/`--rearm` write into `overrides`; `--clear-override KEY` removes one of the five
+override keys. Errors are English, exit code 1 (2 for a missing edit option), and the file is left
+untouched on failure.
 
 ### 7.4 Capture loop — implemented skeleton
 
@@ -1067,6 +1120,34 @@ class Notifier(Protocol):
   (e.g. `chat not found`), without URL/token — `httpx` would include the token (which lives in
   the URL) in the error message, leaking it into the chain log.
 
+**ntfy (`ntfy.py`, v0.9.0)**:
+- Plain-text `POST {server}/{topic}` with headers `Title`, `Priority` (severity→1..5 mapping,
+  default `1→3`, `2→4`, `3→5`) and optional `Tags`; `attach_roi: true` switches to an image `PUT`
+  (`Filename: roi.png`, the `Message` header carries the rendered text).
+- `token_env` is **optional** and empty by default (anonymous topic); when set to a variable name
+  that is missing, the notifier logs and skips (same rule as Telegram). Errors
+  (`alert.ntfy_unavailable`, `alert.ntfy_status`) carry only the redacted server
+  (`scheme://host/…`).
+
+**E-mail / SMTP (`smtp.py`, v0.9.0)**:
+- Stdlib `smtplib` + `email.message.EmailMessage`; `security` is `starttls` (default), `ssl` or
+  `none`. `subject`/`message` are templates (same `${...}` rules, §11.2 webhook); `attach_roi`
+  adds the ROI PNG as `image/png`.
+- `host`, `from_addr` and a non-empty `to` list are required at config load. `username_env` /
+  `password_env` (defaults `SMTP_USERNAME`/`SMTP_PASSWORD`) log in only when the user variable is
+  set; secrets never appear in errors/logs.
+- Errors: `alert.smtp_unavailable` (connect/TLS), `alert.smtp_auth_failed` (login),
+  `alert.smtp_send_failed` (message rejected); server text is sanitized of credentials.
+
+**MQTT (`mqtt.py`, v0.9.0)**:
+- Optional extra `mqtt` (`paho-mqtt`); the import is lazy. A configured channel without the extra
+  raises `alert.mqtt_missing_extra` (visible `FAILED`, never a silent skip).
+- `host`/`topic` required; `port` defaults to 1883 (8883 when `tls`), `qos` 0/1/2, `retain`,
+  `client_id`, `username_env`/`password_env` (same defaults as SMTP). The payload is a template
+  mapping (default `text`/`target`/`severity`/`strategy`/`score`/`threshold`/`timestamp`) or
+  `payload_raw`. **No image**.
+- Errors: `alert.mqtt_unavailable` (connect), `alert.mqtt_publish_failed` (publish rejected).
+
 **Log (`log.py`)**:
 - `JsonlNotifier`: one JSON line per firing in `app-data/logs/alerts.jsonl` (or the path
   configured in `path`). Fields: `ts`, `strategy`, `changed`, `score`, `threshold`, `severity`,
@@ -1108,7 +1189,9 @@ keeps a defensive `log.warning` + `None`.
 
 ```python
 class AlertChain:
+    def __init__(self, notifiers, gate: AlertGate | None = None): ...
     def dispatch(self, result: ComparisonResult, frame: Frame) -> DispatchOutcome:
+        # gate active (snooze/mute) -> SUPPRESSED_MANUAL (no notifier is tried)
         # no enabled notifiers -> NONE_ENABLED
         # none with severity >= severity_min -> BELOW_MIN
         # for each eligible one outside the cooldown: notify; a failure does not stop the others
@@ -1116,18 +1199,37 @@ class AlertChain:
         #      SUPPRESSED_COOLDOWN (all in cooldown)
 ```
 
-**Outcomes** (`DispatchOutcome`): `FIRED`, `SUPPRESSED_COOLDOWN`, `BELOW_MIN`, `NONE_ENABLED`,
-`FAILED`. `MonitorSession` uses the outcome for the **edge-triggered re-arm**:
+**Outcomes** (`DispatchOutcome`): `FIRED`, `SUPPRESSED_COOLDOWN`, `SUPPRESSED_MANUAL`, `BELOW_MIN`,
+`NONE_ENABLED`, `FAILED`. `MonitorSession` uses the outcome for the **edge-triggered re-arm**:
 
 - With `rearm: true` (default), the baseline advances after `FIRED`, `BELOW_MIN` or `NONE_ENABLED` — a
   sustained change alarms once, and a new change re-arms.
-- On `SUPPRESSED_COOLDOWN` and `FAILED` the baseline is **kept**: the pending change alarms when the
-  cooldown expires, and failures are retried respecting the cooldown (backoff) — without hammering on
-  every tick.
+- On `SUPPRESSED_COOLDOWN`, `SUPPRESSED_MANUAL` and `FAILED` the baseline is **kept**: the pending
+  change alarms when the cooldown/snooze expires or the mute is lifted, and failures are retried
+  respecting the cooldown (backoff) — without hammering on every tick.
 - A failure in one notifier records the attempt (`_last_attempt`) and does not prevent the others;
   each has its own `try`.
 - Manual re-arm: tray/"Re-arm baseline" button/hotkey `rearm`, via `MonitorSession.request_rebaseline()`
   (thread-safe) or `rebaseline_now(frame)`.
+
+**Manual suppression (`AlertGate`, v0.9.0)**: a thread-safe gate shared by the sessions holds
+`snooze_until` (epoch) and `muted`, initialized from `state.json` (`alerts_snooze_until`,
+`alerts_muted`) and persisted on every GUI/tray change. While active, `dispatch` returns
+`SUPPRESSED_MANUAL` before looking at the notifiers and the baseline is kept, so the pending change is
+reported when the snooze expires or the mute is lifted. An explicit `test-alert` ignores the gate.
+A snooze can outlive a transient change: if the screen returns to the baseline before it expires, the
+pending change is dropped (documented risk of snoozing).
+
+**Escalation (repeat until acknowledged, v0.9.0)**: `defaults.escalation` (or `overrides.escalation`)
+has `enabled` (default false) and `severity_min` (default 2). With it enabled and a `FIRED` outcome at
+`severity >= severity_min`, the baseline is **not** advanced; `MonitorSession.awaiting_ack` becomes
+true and every following tick dispatches again — the repeat cadence is each alert's `cooldown_s`
+(there is no separate escalation interval). `acknowledge()` (GUI button, tray item, optional
+`ui.hotkeys.acknowledge`) clears the state and re-arms the baseline on the next frame, stopping the
+repeats; manual `rearm` does the same. If the change disappears on its own the escalation still waits
+for an explicit acknowledgement. Evidence: `record_change` is written **only when the chain actually
+attempted a delivery** (`FIRED`/`FAILED`) — a change suppressed by cooldown/snooze/mute or below the
+minimum no longer writes a print every tick (§11.5).
 
 ### 11.4 Pseudo-human actions (opt-in, `actions/`)
 
@@ -1208,6 +1310,9 @@ and of each detected change, for visual auditing.
 - **On/off**: `evidence.enabled` in the YAML v2 **or** the runtime toggle
   `state.json["evidence_enabled"]` ("Record prints" checkbox in the GUI), which has **precedence** and
   also works with config v1. `app.effective_evidence_options()` does the composition.
+- **Change prints are tied to delivery attempts (v0.9.0)**: `record_change` runs only when the chain
+  outcome is `FIRED`/`FAILED`; a change kept pending by cooldown/snooze/mute/below-min does not write
+  a print per tick (baseline prints are unchanged). During escalation the prints follow each firing.
 - **One-off flows**: `test-evidence` and the `run_actions` path (`test-action --armed` and the
   "Execute action (3s)" button) record with `force_enabled=True`, respecting `per_step` (print per step)
   and registering the paths in the action audit.
@@ -1261,6 +1366,21 @@ profiles:
       - type: syslog
         id: siem
         options: { host: "10.0.0.9", port: 514, protocol: udp, facility: local0 }
+      - type: ntfy                     # phone push (v0.9.0)
+        id: celular
+        options: { server: "https://ntfy.sh", topic: "meu-topico-secreto",
+                   token_env: NTFY_TOKEN, priority_map: { 1: 3, 2: 4, 3: 5 },
+                   attach_roi: true }
+      - type: smtp                     # e-mail (v0.9.0)
+        id: email
+        options: { host: "smtp.example.com", port: 587, security: starttls,
+                   from_addr: "watch@example.com", to: ["oncall@example.com"],
+                   username_env: SMTP_USERNAME, password_env: SMTP_PASSWORD }
+      - type: mqtt                     # optional extra `mqtt` (v0.9.0)
+        id: barramento
+        options: { host: "10.0.0.30", topic: "screen-watch/default",
+                   qos: 1, retain: false, username_env: MQTT_USERNAME,
+                   password_env: MQTT_PASSWORD, tls: false }
     actions: []                  # see §11.4
   trabalho:
     defaults: { mode: "default", poll_interval_s: 1.0 }
@@ -1277,8 +1397,9 @@ evidence: { enabled: false, dir: null, keep_per_target: 50, max_total_mb: 200,
 **Rules**:
 - Tokens and secrets **never** in the YAML. Use environment variables (`bot_token_env`, `url_env`,
   `${env:VAR}` in `headers`/`payload`); errors/logs never expose the resolved URL or the variable values.
-- Alert `type`: `sound`/`popup`/`telegram`/`log` keep **flat fields**; `webhook`/`http_post`/`syslog`
-  use a nested **`options:`** block. An unknown `type` is `ConfigError` (`config.alert_unknown_type`).
+- Alert `type`: `sound`/`popup`/`telegram`/`log` keep **flat fields**; `webhook`/`http_post`/
+  `syslog`/`ntfy`/`smtp`/`mqtt` use a nested **`options:`** block. An unknown `type` is `ConfigError`
+  (`config.alert_unknown_type`).
 - Every alert has an optional **`id`** (default `type`; `type#n` when repeated) used as the **cooldown
   key** and for the send test. `payload` XOR `payload_raw`; unknown `${...}` → `ConfigError`.
 - The GUI sound picker edits the active profile's `sound` alert **on disk** through
@@ -1298,8 +1419,11 @@ Named profiles (`profiles.<name>.defaults` + `.alerts` + `.actions`) allow switc
 with `--profile` (CLI) or the GUI/tray selector. The switch **applies on the next start** (not live).
 The active profile is also written to `state.json.profile`.
 
-`defaults` covers: `mode`, `poll_interval_s` (>= 1.0), `rearm`, `compare_options` and `humanize`
-(§11.4). `humanize` has no UI of its own: edit the YAML (the GUI creates actions, not humanization).
+`defaults` covers: `mode`, `poll_interval_s` (>= 1.0), `rearm`, `compare_options`, `humanize`
+(§11.4) and `escalation` (`enabled`/`severity_min`, §11.3; also overrideable per selection).
+`humanize` has no UI of its own: edit the YAML (the GUI creates actions, not humanization).
+`ui.snooze_minutes` lists the durations offered by the Snooze menu (GUI + tray); `ui.max_sessions`
+(default 4, range 1..16) limits the simultaneous GUI sessions (§3.5).
 
 ### 12.3 Selection JSON and overrides
 
@@ -1350,6 +1474,10 @@ existing `overrides.masks` is updated, else non-empty `selection.masks` is updat
 other field silently, and saving with the same empty masks is a no-op when neither field had content.
 Saving uses the atomic `dump_selection` (§12.4).
 
+**Selection lifecycle CLI (v0.9.0)**: `edit-selection`, `rename-selection` and `remove-selection`
+apply the same precedence rules from the command line (details in §7.3); `list-selections --json`
+exposes the resolved file/mode/effective-mask count/override keys for scripting.
+
 ### 12.4 State, app-data and writing
 
 `platform/paths.py` centralizes `app_home()`, `config_path()`, `selections_dir()`, `logs_dir()`,
@@ -1360,9 +1488,11 @@ Base: `%APPDATA%\screen_watch` on Windows, `~/.config/screen_watch` on Linux,
 `~/Library/Application Support/screen_watch` on macOS, or the `SCREEN_WATCH_HOME` override.
 
 `state.json` stores `{"last_selection": "...", "profile": "...", "language": "...",
-"action_selection": {"<selection>": ["action-name", ...]}, "evidence_enabled": true|false}` and is
-updated on a successful `run`/GUI start (the `action_selection` and `evidence_enabled` keys are
-optional and backward compatible).
+"action_selection": {"<selection>": ["action-name", ...]}, "evidence_enabled": true|false,
+"alerts_muted": false, "alerts_snooze_until": 0.0}` and is updated on a successful `run`/GUI start
+(the `action_selection`, `evidence_enabled`, `alerts_muted` and `alerts_snooze_until` keys are
+optional and backward compatible). The two alert-gate keys feed `AlertGate` on the next GUI/`run`
+start (§11.3); an expired `alerts_snooze_until` is simply ignored.
 
 The YAML is rewritten atomically (temp + `os.replace`) with a `config.yaml.bak` backup **without
 preserving comments**; `state.json` is atomic, without backup; the selection JSON (`dump_selection`)
@@ -1533,6 +1663,7 @@ Pinned in `pyproject.toml`. Organized by layer (mandatory core):
 | `input` | `pynput>=1.7` | pseudo-human actions and global hotkeys |
 | `ocr-preproc` | `opencv-python>=4.8` | OCR preprocessing experiments (not required) |
 | `logging` | `structlog>=24.1` | optional structured logging |
+| `mqtt` | `paho-mqtt>=2.1` | MQTT alert channel (v0.9.0); not bundled in the installers |
 | `dev` | `pytest>=8.0`, `pytest-cov>=5.0`, `ruff==0.16.9` | development and CI |
 | `build` | `pyinstaller>=6.11.1` | packaging (supports 3.13 from this version on) |
 
@@ -1566,13 +1697,18 @@ compare/protocol.CompareStrategy.initialize(baseline: Frame)
 compare/protocol.CompareStrategy.compare(current: Frame) → ComparisonResult
 compare/pipeline.MODE_STAGES / ComparePipeline.compare(current) → ComparisonResult
 
+alerts/chain.AlertChain(notifiers, gate=...) → chain
 alerts/chain.AlertChain.dispatch(result, frame) → DispatchOutcome
+alerts/gate.AlertGate.snooze(minutes)/mute()/unmute()/status()/active() → manual suppression
 actions/dispatch.ActionDispatcher.on_result(result, frame) → rebaseline: bool
 
 config/loader.load_config(path) → AppConfig
+gui/session_manager.SessionManager(events, gate=..., max_sessions=...) → manager
+SessionManager.start(target, recorder=...) → name; .stop(name|None)/.names()/.running/.actions(name)
 persistence/selection.build_target(selection, profile, name=..., mode=..., schedule=...,
                                    action_filter=...) → TargetConfig
-app.MonitorSession(target, recorder=..., on_action=..., on_frame=..., on_compare=...) → sink(frame)
+app.MonitorSession(target, recorder=..., on_action=..., on_frame=..., on_compare=..., gate=...) → sink(frame)
+app.MonitorSession.acknowledge()/.awaiting_ack → escalation control (thread-safe flags)
 app.build_loop(target, session, on_event=..., on_error=...) → MonitorLoop
 scheduler/loop.MonitorLoop.start()/.stop()/.join()
 scheduler/schedule.is_open(options, now=...) → bool; gate(options) → Callable | None
@@ -1598,7 +1734,12 @@ MonitorLoop._tick
 `MonitorSession` optional callbacks (v0.8.0): `on_frame(frame, is_baseline)` runs on every tick
 (before the comparison) and `on_compare(result)` runs on every comparison, including
 `changed == False`; both default to `None`. The GUI controller uses them for the preview thumbnails
-and the calibration ring buffer (`gui/controller.py`), never touching Qt from the loop thread.
+and the calibration ring buffer (`gui/session_manager.py`), never touching Qt from the loop thread.
+
+`SessionManager` (v0.9.0) builds one such pair per running selection in the GUI and funnels the
+callbacks into the same event queue with a `session` key; `preview(name)`/`calibration(name)` read
+the per-session buffers and `actions(name)`/`acknowledge(name)`/`rebaseline(name)` route to the
+chosen session (`name=None` = all/aggregate).
 
 ---
 
@@ -1622,7 +1763,13 @@ and the calibration ring buffer (`gui/controller.py`), never touching Qt from th
 - **Evidence** — print (baseline/change/per step) saved by the `EvidenceRecorder` for visual
   auditing.
 - **Outcome (`DispatchOutcome`)** — result of a `dispatch` (`FIRED`, `SUPPRESSED_COOLDOWN`,
-  `BELOW_MIN`, `NONE_ENABLED`, `FAILED`) used by the edge-triggered re-arm.
+  `SUPPRESSED_MANUAL`, `BELOW_MIN`, `NONE_ENABLED`, `FAILED`) used by the edge-triggered re-arm.
+- **Snooze / mute** — manual suppression in `AlertGate`: snooze expires after N minutes, mute lasts
+  until unmuted; both persist in `state.json` and keep the pending change.
+- **Escalation / acknowledge** — with `escalation.enabled`, a `FIRED` alert repeats (at each alert's
+  cooldown) until `acknowledge()` re-arms the baseline; the state lives only in memory.
+- **Session** — one monitored selection with its own `MonitorLoop`/thread/backend, managed by
+  `SessionManager`; the GUI can run up to `ui.max_sessions` simultaneously (GUI-only in v0.9.0).
 
 ---
 

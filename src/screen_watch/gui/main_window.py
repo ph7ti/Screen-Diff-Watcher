@@ -1,7 +1,8 @@
 """Janela principal da GUI minima (doc 13.9, P3/P6/P10; layout do UI.txt).
 
 Nao faz I/O de rede nem toca no loop: apenas reflete a config/selecoes, dispara
-iniciar/parar no `MonitorController` e consome eventos da fila via `QTimer`.
+iniciar/parar no `SessionManager` (N sessoes, v0.9.0) e consome eventos da fila
+via `QTimer`.
 """
 
 from __future__ import annotations
@@ -38,15 +39,16 @@ from PyQt6.QtWidgets import (
 
 from screen_watch.actions.arming import ARMED, TIMED
 from screen_watch.errors import AppError, ConfigError, render_error
-from screen_watch.gui.controller import MonitorController, new_event_queue
 from screen_watch.gui.hover_help import attach_help
 from screen_watch.gui.labels import selection_label
 from screen_watch.gui.preview_widget import PreviewPanel
+from screen_watch.gui.session_manager import SessionManager, new_event_queue
 from screen_watch.i18n import available_locales, current_language, locale_meta, tr
 
 POLL_MS = 200
 TARGET_ROLE = 1
 ACTION_NAME_ROLE = 2
+LABEL_ROLE = 3
 MODES = ("light", "default", "advanced")
 SOUND_FILTER = (
     "Audio (*.wav *.mp3 *.m4a *.aac *.ogg *.oga *.flac *.wma);;All files (*)"
@@ -68,7 +70,7 @@ def _window_icon() -> QIcon | None:
 
 class MainWindow(QMainWindow):
     def __init__(
-        self, controller: MonitorController, config_path, profile: str | None = None, on_quit=None
+        self, controller: SessionManager, config_path, profile: str | None = None, on_quit=None
     ) -> None:
         super().__init__()
         self.setWindowTitle(tr("main.title"))
@@ -279,6 +281,21 @@ class MainWindow(QMainWindow):
         sound_buttons.addStretch(1)
         alerts_layout.addLayout(sound_buttons)
         alerts_layout.addWidget(QLabel(tr("main.sound_note")))
+
+        gate_row = QHBoxLayout()
+        self.btn_snooze = QPushButton(tr("main.btn_snooze"))
+        self._snooze_menu = QMenu(self.btn_snooze)
+        self.btn_snooze.setMenu(self._snooze_menu)
+        self.btn_mute = QPushButton(tr("main.btn_mute"))
+        self.btn_ack = QPushButton(tr("main.btn_ack"))
+        self.btn_ack.setEnabled(False)
+        gate_row.addWidget(self.btn_snooze)
+        gate_row.addWidget(self.btn_mute)
+        gate_row.addWidget(self.btn_ack)
+        gate_row.addStretch(1)
+        alerts_layout.addLayout(gate_row)
+        self.gate_label = QLabel("")
+        alerts_layout.addWidget(self.gate_label)
         upper_layout.addWidget(alerts_group, 1, 1)
 
         lower = QGroupBox(tr("main.status_label"))
@@ -364,6 +381,8 @@ class MainWindow(QMainWindow):
         self.btn_sound_choose.clicked.connect(self._choose_sound)
         self.btn_sound_play.clicked.connect(self._play_sound)
         self.btn_sound_copy.clicked.connect(self._copy_sound_snippet)
+        self.btn_mute.clicked.connect(self._toggle_mute)
+        self.btn_ack.clicked.connect(self._acknowledge)
         self.text_watch_edit.textEdited.connect(self._mark_text_watch_edited)
         self.text_watch_edit.editingFinished.connect(self._commit_text_watch)
         self.expect_combo.currentIndexChanged.connect(self._save_text_watch)
@@ -402,6 +421,9 @@ class MainWindow(QMainWindow):
         self._help(self.btn_sound_choose, "window.sound_choose")
         self._help(self.btn_sound_play, "window.sound_play")
         self._help(self.btn_sound_copy, "window.sound_copy")
+        self._help(self.btn_snooze, "window.snooze")
+        self._help(self.btn_mute, "window.mute")
+        self._help(self.btn_ack, "window.ack")
         self._help(self.text_watch_edit, "window.text_watch")
         self._help(self.expect_combo, "window.text_watch_expect")
         self._help(self.case_check, "window.text_watch_case")
@@ -440,14 +462,19 @@ class MainWindow(QMainWindow):
             self._append("warning: legacy v1 YAML (targets); run 'migrate-config' for v2")
         self._sync_evidence_toggle()
         self._populate_arm_menu()
+        self._populate_snooze_menu()
         self._populate_languages()
 
         for path in sorted(selections_dir().glob("*.json")):
             self._entries.append(("selection", path))
 
         for kind, value in self._entries:
-            item = QListWidgetItem(self._label_for(kind, value))
+            label = self._label_for(kind, value)
+            item = QListWidgetItem(label)
             item.setData(TARGET_ROLE, (kind, value))
+            item.setData(LABEL_ROLE, label)
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(Qt.CheckState.Unchecked)
             self.list.addItem(item)
 
         self._populate_profiles()
@@ -469,6 +496,14 @@ class MainWindow(QMainWindow):
                 lambda _checked=False, value=minutes: self._handle_action(
                     {"action": "arm_for", "minutes": value}
                 )
+            )
+
+    def _populate_snooze_menu(self) -> None:
+        self._snooze_menu.clear()
+        for minutes in self.snooze_minutes():
+            action = self._snooze_menu.addAction(tr("main.snooze_minutes", minutes=minutes))
+            action.triggered.connect(
+                lambda _checked=False, value=minutes: self._snooze(value)
             )
 
     def _populate_languages(self) -> None:
@@ -552,6 +587,11 @@ class MainWindow(QMainWindow):
             return (1, 5, 15, 30)
         return self._config.ui.arm_durations_min or (1, 5, 15, 30)
 
+    def snooze_minutes(self) -> tuple[int, ...]:
+        if self._config is None or self._config.legacy:
+            return (5, 15, 30, 60)
+        return self._config.ui.snooze_minutes or (5, 15, 30, 60)
+
     def _label_for(self, _kind: str, value) -> str:
         from screen_watch.persistence.selection import load_selection
 
@@ -565,6 +605,35 @@ class MainWindow(QMainWindow):
         item = self.list.currentItem()
         return item.data(TARGET_ROLE) if item is not None else None
 
+    def _checked_entries(self) -> list:
+        """Entradas marcadas com o checkbox (conjunto a iniciar no Start)."""
+        entries = []
+        for row in range(self.list.count()):
+            item = self.list.item(row)
+            if item.checkState() == Qt.CheckState.Checked:
+                data = item.data(TARGET_ROLE)
+                if data is not None:
+                    entries.append(data)
+        return entries
+
+    def selection_names(self) -> tuple[str, ...]:
+        return tuple(Path(value).stem for _kind, value in self._entries)
+
+    def max_sessions(self) -> int:
+        if self._config is None or self._config.legacy:
+            return 4
+        return self._config.ui.max_sessions or 4
+
+    def _focused_session(self) -> str | None:
+        """Sessao em foco: a linha selecionada (se ativa), senao a primeira ativa."""
+        selected = self._selected()
+        if selected is not None:
+            name = Path(selected[1]).stem
+            if self._controller.is_running(name):
+                return name
+        names = self._controller.names()
+        return names[0] if names else None
+
     def _entry_mode(self, entry) -> str:
         if entry is None:
             return self.mode_combo.currentText() or MODES[-1]
@@ -576,11 +645,10 @@ class MainWindow(QMainWindow):
         except (ConfigError, OSError, ValueError):
             return MODES[-1]
 
-    def _resolve_target(self, mode: str):
-        selected = self._selected()
-        if selected is None:
+    def _resolve_entry_target(self, entry, mode: str):
+        if entry is None:
             return None
-        _kind, value = selected
+        _kind, value = entry
         from screen_watch.app import profile_from_config
         from screen_watch.persistence.selection import build_target, load_selection
 
@@ -597,6 +665,9 @@ class MainWindow(QMainWindow):
             schedule=schedule,
             action_filter=self._checked_action_names(),
         )
+
+    def _resolve_target(self, mode: str):
+        return self._resolve_entry_target(self._selected(), mode)
 
     # -- nome da selecao ---------------------------------------------------
     def _populate_selection_name(self) -> None:
@@ -1447,40 +1518,69 @@ class MainWindow(QMainWindow):
             self._append("run not completed")
 
     def _start(self) -> None:
-        if self._controller.running:
-            return
-        try:
-            target = self._resolve_target(self.mode_combo.currentText())
-        except Exception as exc:
-            QMessageBox.warning(
-                self, tr("main.title"), tr("dialog.load_failed", error=render_error(exc))
-            )
-            return
-        if target is None:
+        # Checkboxes definem o conjunto; sem nenhuma marcada, inicia a linha selecionada.
+        entries = self._checked_entries()
+        if not entries:
+            selected = self._selected()
+            entries = [selected] if selected is not None else []
+        self._start_entries(entries)
+
+    def _start_entries(self, entries) -> None:
+        if not entries:
             QMessageBox.information(self, tr("main.title"), tr("dialog.select_selection"))
             return
+        started: list[str] = []
+        errors: list[str] = []
         try:
             from screen_watch.app import evidence_recorder
 
             recorder = evidence_recorder(self._config)
-            self._controller.start(target, recorder=recorder)
-        except Exception as exc:
+        except Exception as exc:  # pragma: no cover - defensivo
             QMessageBox.critical(
                 self, tr("main.title"), tr("dialog.start_failed", error=render_error(exc))
             )
             return
-        self._active_name = target.name
+        for entry in entries:
+            try:
+                target = self._resolve_entry_target(entry, self.mode_combo.currentText())
+                if target is None:
+                    continue
+                self._controller.start(target, recorder=recorder)
+                started.append(target.name)
+            except Exception as exc:
+                errors.append(render_error(exc))
+        if errors:
+            QMessageBox.warning(
+                self,
+                tr("main.title"),
+                tr("dialog.start_failed", error="\n".join(errors)),
+            )
+        if not started:
+            return
+        self._active_name = started[-1]
         from screen_watch.platform.paths import update_state
 
-        fields: dict[str, object] = {"last_selection": f"{target.name}.json"}
+        fields: dict[str, object] = {}
+        if len(started) == 1:
+            fields["last_selection"] = f"{started[0]}.json"
         if self._profile:
             fields["profile"] = self._profile
-        update_state(**fields)
-        self.status.setText(
-            tr("status.monitoring", name=target.label or target.name, mode=target.mode)
-        )
+        if fields:
+            update_state(**fields)
+        self._update_running_status()
         self._set_running(True)
         self._print_action_summary()
+
+    def _update_running_status(self) -> None:
+        names = self._controller.names()
+        if not names:
+            self.status.setText(tr("status.stopped"))
+        elif len(names) == 1:
+            self.status.setText(tr("status.monitoring_short", name=names[0]))
+        else:
+            self.status.setText(
+                tr("status.monitoring_multi", count=len(names), names=", ".join(names))
+            )
 
     def _stop(self) -> None:
         self._controller.stop()
@@ -1493,6 +1593,47 @@ class MainWindow(QMainWindow):
             return
         self._controller.rebaseline()
         self._append("baseline re-armed (next frame)")
+
+    # -- snooze/mute/escalation (doc, secao 11.3) --------------------------
+    def _snooze(self, minutes: int) -> None:
+        if minutes <= 0:
+            return
+        self._controller.snooze(minutes)
+        self._append(f"alerts snoozed for {minutes} min")
+        self._update_gate_status()
+
+    def _toggle_mute(self) -> None:
+        if self._controller.gate.muted:
+            self._controller.unmute()
+            self._append("alerts unmuted")
+        else:
+            self._controller.mute()
+            self._append("alerts muted")
+        self._update_gate_status()
+
+    def _acknowledge(self) -> None:
+        if not self._controller.escalating:
+            return
+        self._controller.acknowledge()
+        self._append("escalation acknowledged")
+        self._update_gate_status()
+
+    def _update_gate_status(self) -> None:
+        parts: list[str] = []
+        status = self._controller.gate_status()
+        if status == "muted":
+            parts.append(tr("status.muted"))
+        elif status == "snoozed":
+            remaining = self._controller.gate_remaining_s()
+            minutes = max(1, int((remaining + 59) // 60))
+            parts.append(tr("status.snoozed", minutes=minutes))
+        if self._controller.escalating:
+            parts.append(tr("status.escalating"))
+        self.gate_label.setText(" — ".join(parts))
+        self.btn_mute.setText(
+            tr("main.btn_unmute") if status == "muted" else tr("main.btn_mute")
+        )
+        self.btn_ack.setEnabled(self._controller.escalating)
 
     def _start_hotkeys(self) -> None:
         if self._config is None or self._config.legacy:
@@ -1526,8 +1667,13 @@ class MainWindow(QMainWindow):
             return
 
         remove_names = {Path(value).stem for _kind, value in entries}
-        if self._controller.running and self._active_name in remove_names:
-            self._stop()
+        for name in sorted(remove_names):
+            if self._controller.is_running(name):
+                self._controller.stop(name)
+        if self._active_name in remove_names or not self._controller.running:
+            self._active_name = ""
+        self._update_running_status()
+        self._set_running(self._controller.running)
 
         removed = 0
         errors: list[str] = []
@@ -1674,7 +1820,7 @@ class MainWindow(QMainWindow):
         close_button = QPushButton(tr("history.close"))
         close_button.clicked.connect(dialog.accept)
         layout.addWidget(close_button)
-        widget.set_samples(self._controller.calibration())
+        widget.set_samples(self._controller.calibration(self._focused_session()))
         self._calibration_dialog = (dialog, widget)
         dialog.finished.connect(self._calibration_closed)
         dialog.exec()
@@ -1686,11 +1832,11 @@ class MainWindow(QMainWindow):
         if self._calibration_dialog is None:
             return
         _dialog, widget = self._calibration_dialog
-        widget.set_samples(self._controller.calibration())
+        widget.set_samples(self._controller.calibration(self._focused_session()))
 
     # -- eventos -----------------------------------------------------------
     def _arming_text(self) -> str:
-        dispatcher = self._controller.actions
+        dispatcher = self._controller.actions(self._focused_session())
         if dispatcher is None:
             return tr("arming.none")
         arming = dispatcher.arming
@@ -1701,12 +1847,15 @@ class MainWindow(QMainWindow):
         return tr("arming.armed") if state == ARMED else tr("arming.disarmed")
 
     def _update_arming_buttons(self) -> None:
-        active = self._controller.running and self._controller.actions is not None
+        active = (
+            self._controller.running
+            and self._controller.actions(self._focused_session()) is not None
+        )
         for button in (self.btn_arm, self.btn_disarm, self.btn_arm_for):
             button.setEnabled(active)
 
     def _set_running(self, running: bool) -> None:
-        self.btn_start.setEnabled(not running)
+        self.btn_start.setEnabled(len(self._controller.names()) < self.max_sessions())
         self.btn_stop.setEnabled(running)
         self.btn_rearm.setEnabled(running)
         self.btn_run_action.setEnabled(not running)
@@ -1720,6 +1869,7 @@ class MainWindow(QMainWindow):
 
     def _drain(self) -> None:
         self._update_action_status()
+        self._update_gate_status()
         self._update_preview()
         self._update_calibration()
         while True:
@@ -1730,46 +1880,82 @@ class MainWindow(QMainWindow):
             self._handle(event)
 
     def _update_preview(self) -> None:
-        latest, baseline = self._controller.preview()
+        name = self._focused_session()
+        if name is None:
+            self.preview.clear()
+            return
+        latest, baseline = self._controller.preview(name)
         self.preview.update_frames(latest, baseline)
+
+    def _session_tag(self, event: dict) -> str:
+        """Prefixo `[sessao]` quando ha mais de uma sessao ativa."""
+        session = event.get("session")
+        if session and len(self._controller.names()) > 1:
+            return f"[{session}] "
+        return ""
 
     def _handle(self, event: dict) -> None:
         kind = event.get("kind")
         if kind == "started":
-            self.status.setText(tr("status.monitoring_short", name=event.get("target")))
+            self._update_running_status()
             self._set_running(True)
         elif kind == "stopped":
-            self.status.setText(tr("status.stopped"))
-            self._set_running(False)
-            self.preview.clear()
+            if self._controller.running:
+                self._update_running_status()
+            else:
+                self.status.setText(tr("status.stopped"))
+                self._set_running(False)
+                self.preview.clear()
         elif kind == "result":
-            self.last.setText(
-                tr(
-                    "status.last",
-                    strategy=event["strategy"],
-                    score=f"{event['score']:.3f}",
-                    severity=event["severity"],
-                    outcome=event["outcome"],
-                )
+            line = tr(
+                "status.last",
+                strategy=event["strategy"],
+                score=f"{event['score']:.3f}",
+                severity=event["severity"],
+                outcome=event["outcome"],
             )
+            self.last.setText(f"{self._session_tag(event)}{line}")
         elif kind == "error":
-            self._append(f"error: {event.get('message')}")
+            self._append(f"{self._session_tag(event)}error: {event.get('message')}")
         elif kind == "event":
             name = event.get("name")
             self.status.setText(
                 tr("status.state", name=name, payload=event.get("payload") or "").strip()
             )
-            self._append(f"event: {name} {event.get('payload') or ''}")
+            self._append(
+                f"{self._session_tag(event)}event: {name} {event.get('payload') or ''}"
+            )
         elif kind == "tray":
             self._handle_tray(event.get("action"))
+        elif kind == "target":
+            self._handle_target(event)
+        elif kind == "gate":
+            self._handle_gate(event)
         elif kind == "action":
             self._handle_action(event)
         elif kind == "action_event":
-            self._handle_action_event(event.get("payload") or {})
+            self._handle_action_event(event.get("payload") or {}, self._session_tag(event))
         elif kind == "profile":
             self._select_profile(str(event.get("name") or ""))
 
-    def _handle_action_event(self, payload: dict) -> None:
+    def _handle_target(self, event: dict) -> None:
+        """Start/stop individual vindo do menu do tray."""
+        action = event.get("action")
+        name = str(event.get("name") or "")
+        if not name:
+            return
+        if action == "start":
+            entry = next(
+                (item for item in self._entries if Path(item[1]).stem == name), None
+            )
+            if entry is not None:
+                self._start_entries([entry])
+        elif action == "stop":
+            self._controller.stop(name)
+            self._update_running_status()
+            self._set_running(self._controller.running)
+
+    def _handle_action_event(self, payload: dict, tag: str = "") -> None:
         action = payload.get("action") or "?"
         mode = payload.get("mode") or "?"
         if mode == "armed":
@@ -1778,10 +1964,28 @@ class MainWindow(QMainWindow):
             status = "rehearsal"
         else:
             status = payload.get("reason") or "?"
-        self._append(f"actions: {mode} {action} -> {status}")
+        self._append(f"{tag}actions: {mode} {action} -> {status}")
+
+    def _handle_gate(self, event: dict) -> None:
+        action = event.get("action")
+        if action == "snooze":
+            self._snooze(int(event.get("minutes") or 0))
+        elif action == "mute":
+            self._controller.mute()
+            self._append("alerts muted")
+            self._update_gate_status()
+        elif action == "unmute":
+            self._controller.unmute()
+            self._append("alerts unmuted")
+            self._update_gate_status()
+        elif action == "acknowledge":
+            self._acknowledge()
 
     def _handle_action(self, event: dict) -> None:
-        dispatcher = self._controller.actions
+        if event.get("action") == "acknowledge":
+            self._acknowledge()
+            return
+        dispatcher = self._controller.actions(self._focused_session())
         if dispatcher is None:
             self._append("no actions configured for this selection")
             return
@@ -1807,7 +2011,7 @@ class MainWindow(QMainWindow):
         self._update_action_status()
 
     def _update_action_status(self) -> None:
-        dispatcher = self._controller.actions
+        dispatcher = self._controller.actions(self._focused_session())
         text = self._arming_text()
         self.arming_label.setText(text)
         self._update_arming_buttons()
@@ -1872,10 +2076,17 @@ def run_gui(config_path, profile: str | None = None) -> int:
 
         logging.getLogger(__name__).debug("Qt sound player unavailable; using miniaudio/legacy")
     events = new_event_queue()
-    controller = MonitorController(events)
+    from screen_watch.alerts.gate import load_gate
+
+    controller = SessionManager(events, gate=load_gate())
     window = MainWindow(controller, config_path, profile=profile, on_quit=app.quit)
+    controller.set_max_sessions(window.max_sessions())
     tray = start_tray(
-        events, arm_durations=window.arm_durations(), profiles=window.profile_names()
+        events,
+        arm_durations=window.arm_durations(),
+        profiles=window.profile_names(),
+        snooze_minutes=window.snooze_minutes(),
+        selections=window.selection_names(),
     )
     window.show()
     try:

@@ -26,6 +26,9 @@ target window is on a monitor with scaling. `probe-dpi` and `scripts/probe_dpi.p
 - **Occluded window**: `mss` captures screen pixels, not the window surface. If another window
   covers the ROI, the frame will contain the overlapping window. **It is not a bug to fix** — it is a
   fundamental limitation of the capture APIs.
+- **Multiple ROIs (GUI only)**: each session is its own thread, capture backend and preview/calibration
+  buffers, and `advanced` mode (OCR) multiplies CPU per session. `ui.max_sessions` (default 4, range
+  1..16) caps it; the CLI `run` monitors a single selection.
 - **macOS and ARM out of the build**: there is no installer or validation; the build is Windows x64 + Linux
   amd64.
 - **Tray on GNOME**: may not appear without a tray extension; the window keeps working.

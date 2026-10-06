@@ -294,6 +294,231 @@ def test_migrate_config_command(monkeypatch, tmp_path, capsys):
     assert (tmp_path / "config.yaml.bak").exists()
 
 
+# -- selecoes headless: list --json / remove / rename / edit (v0.9.0) -------
+
+
+def _edit_args(**extra) -> argparse.Namespace:
+    fields: dict = {
+        "name": "demo",
+        "mode": None,
+        "roi": None,
+        "mask": None,
+        "clear_masks": False,
+        "poll_interval_s": None,
+        "rearm": None,
+        "text_watch": None,
+        "text_expect": "appears",
+        "clear_text_watch": False,
+        "clear_override": None,
+    }
+    fields.update(extra)
+    return argparse.Namespace(**fields)
+
+
+def test_list_selections_json(monkeypatch, tmp_path, capsys):
+    import json
+
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    (tmp_path / "selections").mkdir()
+    _write_selection(
+        tmp_path / "selections" / "demo.json",
+        name="Meu Painel",
+        masks=((1, 1, 2, 2),),
+        overrides={"rearm": False, "masks": [[0, 0, 5, 5]]},
+    )
+
+    assert cli._cmd_list_selections(argparse.Namespace(json=True)) == 0
+
+    rows = json.loads(capsys.readouterr().out)
+    assert rows[0]["file"] == "demo.json"
+    assert rows[0]["label"] == "Meu Painel"
+    assert rows[0]["masks"] == 1  # efetivas (override vence)
+    assert rows[0]["overrides"] == ["masks", "rearm"]
+
+
+def test_remove_selection_deletes_and_clears_last(monkeypatch, tmp_path, capsys):
+    from screen_watch.platform.paths import load_state, update_state
+
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    (tmp_path / "selections").mkdir()
+    _write_selection(tmp_path / "selections" / "demo.json")
+    _write_selection(tmp_path / "selections" / "outra.json")
+    update_state(last_selection="demo.json")
+
+    assert cli._cmd_remove_selection(argparse.Namespace(names=["demo", "outra"])) == 0
+    assert not list((tmp_path / "selections").glob("*.json"))
+    assert load_state().get("last_selection") == ""
+    out = capsys.readouterr().out
+    assert "removed: " in out
+    assert "removed 2 selection(s)" in out
+
+    # Nome inexistente: exit 1 sem derrubar os demais.
+    assert cli._cmd_remove_selection(argparse.Namespace(names=["fantasma"])) == 1
+
+
+def test_rename_selection_moves_file_and_updates_last(monkeypatch, tmp_path, capsys):
+    from screen_watch.platform.paths import load_state, update_state
+
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    (tmp_path / "selections").mkdir()
+    _write_selection(tmp_path / "selections" / "demo.json")
+    update_state(last_selection="demo.json")
+
+    assert cli._cmd_rename_selection(argparse.Namespace(old="demo", name="Meu Painel")) == 0
+
+    assert not (tmp_path / "selections" / "demo.json").exists()
+    renamed = tmp_path / "selections" / "meu-painel.json"
+    assert renamed.exists()
+    assert load_selection(renamed).name == "Meu Painel"
+    assert load_state().get("last_selection") == "meu-painel.json"
+    assert "meu-painel.json" in capsys.readouterr().out
+
+
+def test_rename_selection_conflict_and_invalid(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    (tmp_path / "selections").mkdir()
+    _write_selection(tmp_path / "selections" / "demo.json")
+    _write_selection(tmp_path / "selections" / "outra.json")
+
+    assert cli._cmd_rename_selection(argparse.Namespace(old="demo", name="Outra")) == 1
+    assert (tmp_path / "selections" / "demo.json").exists()
+    assert (tmp_path / "selections" / "outra.json").exists()
+    assert "already exists" in capsys.readouterr().out
+
+    assert cli._cmd_rename_selection(argparse.Namespace(old="demo", name="!!!")) == 1
+    assert (tmp_path / "selections" / "demo.json").exists()
+
+
+def test_edit_selection_mode_masks_and_overrides(monkeypatch, tmp_path):
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    (tmp_path / "selections").mkdir()
+    _write_selection(tmp_path / "selections" / "demo.json")
+
+    code = cli._cmd_edit_selection(
+        _edit_args(
+            mode="advanced",
+            mask=[(1, 1, 5, 5), (2, 2, 3, 3)],
+            poll_interval_s=1.5,
+            rearm=False,
+            text_watch="CONCLUIDO",
+            text_expect="disappears",
+        )
+    )
+
+    assert code == 0
+    selection = load_selection(tmp_path / "selections" / "demo.json")
+    assert selection.mode == "advanced"
+    assert selection.overrides["poll_interval_s"] == 1.5
+    assert selection.overrides["rearm"] is False
+    assert selection.overrides["masks"] == [[1, 1, 5, 5], [2, 2, 3, 3]]
+    assert selection.overrides["text_watch"]["expect"] == "disappears"
+
+
+def test_edit_selection_roi_reanchors_and_clears_masks(monkeypatch, tmp_path):
+    from screen_watch.platform.paths import update_state
+
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    monkeypatch.setattr(
+        "screen_watch.platform.window.find_window_by_handle", lambda handle: _FakeWindow()
+    )
+    (tmp_path / "selections").mkdir()
+    _write_selection(
+        tmp_path / "selections" / "demo.json",
+        masks=((1, 1, 2, 2),),
+        overrides={"masks": [[0, 0, 5, 5]], "rearm": False},
+    )
+    update_state(last_selection="demo.json")
+
+    assert cli._cmd_edit_selection(_edit_args(roi=[5, 6, 40, 30])) == 0
+
+    selection = load_selection(tmp_path / "selections" / "demo.json")
+    assert selection.roi_relative == (5, 6, 40, 30)
+    assert selection.origin_at_selection == (10, 20)  # janela fake
+    assert selection.masks == ()
+    assert selection.overrides == {"rearm": False}  # overrides.masks removido
+
+
+def test_edit_selection_clear_masks_and_clear_override(monkeypatch, tmp_path):
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    (tmp_path / "selections").mkdir()
+    _write_selection(
+        tmp_path / "selections" / "demo.json",
+        masks=((1, 1, 2, 2),),
+        overrides={"rearm": False, "poll_interval_s": 3.0},
+    )
+
+    assert cli._cmd_edit_selection(_edit_args(clear_masks=True)) == 0
+    selection = load_selection(tmp_path / "selections" / "demo.json")
+    assert selection.masks == ()
+
+    assert (
+        cli._cmd_edit_selection(
+            _edit_args(clear_override=["rearm", "poll_interval_s"])
+        )
+        == 0
+    )
+    selection = load_selection(tmp_path / "selections" / "demo.json")
+    assert selection.overrides is None
+
+
+def test_edit_selection_requires_option_and_rejects_conflicts(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    (tmp_path / "selections").mkdir()
+    _write_selection(tmp_path / "selections" / "demo.json")
+
+    assert cli._cmd_edit_selection(_edit_args()) == 2
+    assert cli._cmd_edit_selection(_edit_args(mask=[(1, 1, 2, 2)], clear_masks=True)) == 1
+    assert (
+        cli._cmd_edit_selection(_edit_args(text_watch="X", clear_text_watch=True)) == 1
+    )
+
+
+def test_edit_selection_invalid_poll_interval_keeps_file(monkeypatch, tmp_path):
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    (tmp_path / "selections").mkdir()
+    _write_selection(tmp_path / "selections" / "demo.json")
+
+    assert cli._cmd_edit_selection(_edit_args(poll_interval_s=0.1)) == 1
+    assert load_selection(tmp_path / "selections" / "demo.json").overrides is None
+
+
+def test_headless_selection_flow(monkeypatch, tmp_path, capsys):
+    """Radar: list-windows -> select-manual -> edit -> validate -> run (target resolvido)."""
+    from screen_watch.config.loader import default_config_dict
+
+    monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
+    monkeypatch.setattr(
+        "screen_watch.platform.window.find_window_by_handle", lambda handle: _FakeWindow()
+    )
+    config_path = tmp_path / "config.yaml"
+    save_config(config_path, default_config_dict())
+
+    assert (
+        cli._cmd_select_manual(
+            argparse.Namespace(roi=[5, 5, 40, 30], handle=7, title="", mode="advanced", name="radar")
+        )
+        == 0
+    )
+    assert (
+        cli._cmd_edit_selection(
+            _edit_args(name="radar", poll_interval_s=1.5, mask=[(1, 1, 5, 5)])
+        )
+        == 0
+    )
+    assert (
+        cli._cmd_validate_config(
+            argparse.Namespace(config=str(config_path), selections=True)
+        )
+        == 0
+    )
+    target = cli._resolve_run_target(
+        argparse.Namespace(selection="radar", config=str(config_path), profile=None)
+    )
+    assert target.name == "radar"
+    assert target.poll_interval_s == 1.5
+    assert target.masks == ((1, 1, 5, 5),)
+
+
 def test_migrate_config_dry_run_writes_nothing(monkeypatch, tmp_path, capsys):
     monkeypatch.setenv("SCREEN_WATCH_HOME", str(tmp_path))
     config_path = tmp_path / "config.yaml"
@@ -663,7 +888,7 @@ def test_run_starts_and_stops_loop(monkeypatch, tmp_path, capsys):
 
     monkeypatch.setattr(
         "screen_watch.app.MonitorSession",
-        lambda target, recorder=None, on_action=None: object(),
+        lambda target, recorder=None, on_action=None, gate=None: object(),
     )
     monkeypatch.setattr("screen_watch.app.build_loop", lambda target, session, **kw: FakeLoop())
 

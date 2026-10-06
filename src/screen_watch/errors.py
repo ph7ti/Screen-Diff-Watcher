@@ -51,6 +51,13 @@ _EN: dict[str, str] = {
     "config.hotkeys_not_mapping": "ui.hotkeys must be a mapping",
     "config.arm_durations_not_list": "ui.arm_durations_min must be a list of minutes",
     "config.arm_durations_positive": "ui.arm_durations_min must contain only positive minutes",
+    "config.snooze_minutes_not_list": "ui.snooze_minutes must be a list of minutes",
+    "config.snooze_minutes_positive": "ui.snooze_minutes must contain only positive minutes",
+    "config.max_sessions_range": "ui.max_sessions must be between 1 and 16 (got {value!r})",
+    "config.escalation_not_mapping": "defaults.escalation must be a mapping",
+    "config.escalation_severity_min": (
+        "defaults.escalation.severity_min must be an integer >= 0"
+    ),
     "config.window_format": "{field} must be 'HH:MM-HH:MM' (got {value!r})",
     "config.window_invalid_time": "{field} has an invalid hour/minute: {value!r}",
     "config.schedule_not_mapping": "schedule must be a mapping",
@@ -99,12 +106,32 @@ _EN: dict[str, str] = {
         "invalid {field}.severity_map: {value!r}; use keys 0..3 and levels {valid}"
     ),
     "config.alert_duplicate_id": "duplicate alert id {id!r} in {field}",
+    "config.alert_missing_topic": "{field} requires 'topic'",
+    "config.alert_invalid_priority_map": (
+        "invalid {field}.priority_map: {value!r}; use keys 1..3 and priorities 1..5"
+    ),
+    "config.alert_missing_from": "{field} requires 'from_addr'",
+    "config.alert_missing_to": "{field}.to must be a non-empty list of addresses",
+    "config.alert_invalid_security": (
+        "invalid {field}.security: {value!r}; use one of {valid}"
+    ),
+    "config.alert_invalid_qos": "invalid {field}.qos: {value!r}; use one of {valid}",
     # -- alerts (runtime) -----------------------------------------------------
     "alert.http_status": "http request failed: status {status} ({url})",
     "alert.http_unreachable": "could not reach {url}",
     "alert.syslog_unavailable": (
         "syslog unavailable at {host}:{port} (check host/port/protocol)"
     ),
+    "alert.ntfy_status": "ntfy request failed: status {status} ({url})",
+    "alert.ntfy_unavailable": "could not reach the ntfy server {url}",
+    "alert.smtp_unavailable": "could not connect to SMTP {host}:{port}",
+    "alert.smtp_auth_failed": "SMTP authentication failed for user {user} at {host}",
+    "alert.smtp_send_failed": "SMTP rejected the message at {host}: {error}",
+    "alert.mqtt_missing_extra": (
+        "MQTT alerts require the optional extra: pip install 'screen-watch[mqtt]'"
+    ),
+    "alert.mqtt_unavailable": "could not connect to the MQTT broker {host}:{port}",
+    "alert.mqtt_publish_failed": "MQTT publish failed at {host}: {error}",
     # -- actions --------------------------------------------------------------
     "action.not_integer": "{field} must be an integer (got {value!r})",
     "action.not_number": "{field} must be a number (got {value!r})",
@@ -171,6 +198,11 @@ _EN: dict[str, str] = {
         "ROI {roi} does not fit inside window {window}; select a region fully inside the window"
     ),
     "runtime.already_running": "a target is already running",
+    "runtime.session_already_running": "selection {name!r} is already being monitored",
+    "runtime.session_limit": (
+        "session limit reached ({max}); stop a session before starting {name!r} "
+        "(ui.max_sessions in the YAML)"
+    ),
 }
 
 ERROR_CODES: tuple[str, ...] = tuple(_EN)

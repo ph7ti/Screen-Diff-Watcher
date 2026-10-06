@@ -616,6 +616,72 @@ def test_syslog_parses_defaults_and_round_trips():
     assert again == alert
 
 
+def test_ntfy_parses_and_round_trips():
+    from screen_watch.config.loader import _alert_to_dict
+
+    alert = _parse_one(
+        {
+            "type": "ntfy",
+            "id": "celular",
+            "options": {
+                "server": "https://ntfy.example",
+                "topic": "meu-topico",
+                "priority_map": {1: 1, 3: 5},
+                "tags": ["eye"],
+                "attach_roi": True,
+            },
+        }
+    )
+    assert alert.options.server == "https://ntfy.example"
+    assert alert.options.priority_map == ((1, 1), (3, 5))
+    assert alert.options.tags == ("eye",)
+    assert alert.options.attach_roi is True
+
+    again = _parse_one(_alert_to_dict(alert))
+    assert again == alert
+
+
+def test_smtp_parses_and_round_trips():
+    from screen_watch.config.loader import _alert_to_dict
+
+    alert = _parse_one(
+        {
+            "type": "smtp",
+            "options": {
+                "host": "smtp.example.com",
+                "from_addr": "watch@example.com",
+                "to": ["oncall@example.com", "boss@example.com"],
+                "security": "ssl",
+            },
+        }
+    )
+    assert alert.options.to == ("oncall@example.com", "boss@example.com")
+    assert alert.options.security == "ssl"
+    assert alert.options.attach_roi is True
+
+    again = _parse_one(_alert_to_dict(alert))
+    assert again == alert
+
+
+def test_mqtt_parses_defaults_and_round_trips():
+    from screen_watch.config.loader import _alert_to_dict
+
+    alert = _parse_one({"type": "mqtt", "options": {"host": "10.0.0.30", "topic": "t"}})
+    assert alert.options.port == 1883
+    assert alert.options.qos == 0
+    assert alert.options.tls is False
+
+    again = _parse_one(_alert_to_dict(alert))
+    assert again == alert
+
+
+def test_mqtt_tls_defaults_port_8883():
+    alert = _parse_one(
+        {"type": "mqtt", "options": {"host": "10.0.0.30", "topic": "t", "tls": True}}
+    )
+    assert alert.options.port == 8883
+
+
 def test_alert_id_defaults_and_suffix_on_repeat():
     from screen_watch.config.loader import parse_alerts
 
@@ -696,11 +762,131 @@ def test_alert_error_branches_by_code():
             {"type": "syslog", "options": {"host": "h", "severity_map": {9: "error"}}},
             "config.alert_invalid_severity_map",
         ),
+        ({"type": "ntfy"}, "config.alert_options_not_mapping"),
+        ({"type": "ntfy", "options": {}}, "config.alert_missing_topic"),
+        (
+            {"type": "ntfy", "options": {"topic": "t", "priority_map": {1: 9}}},
+            "config.alert_invalid_priority_map",
+        ),
+        ({"type": "smtp", "options": {}}, "config.alert_missing_host"),
+        ({"type": "smtp", "options": {"host": "h"}}, "config.alert_missing_from"),
+        (
+            {"type": "smtp", "options": {"host": "h", "from_addr": "a@x"}},
+            "config.alert_missing_to",
+        ),
+        (
+            {
+                "type": "smtp",
+                "options": {
+                    "host": "h",
+                    "from_addr": "a@x",
+                    "to": ["b@x"],
+                    "security": "tls",
+                },
+            },
+            "config.alert_invalid_security",
+        ),
+        ({"type": "mqtt", "options": {}}, "config.alert_missing_host"),
+        ({"type": "mqtt", "options": {"host": "h"}}, "config.alert_missing_topic"),
+        (
+            {"type": "mqtt", "options": {"host": "h", "topic": "t", "qos": 5}},
+            "config.alert_invalid_qos",
+        ),
+        (
+            {
+                "type": "mqtt",
+                "options": {"host": "h", "topic": "t", "payload": {}, "payload_raw": "x"},
+            },
+            "config.alert_payload_conflict",
+        ),
+        (
+            {"type": "mqtt", "options": {"host": "h", "topic": "t", "payload": {"a": "${nope}"}}},
+            "config.alert_unknown_placeholder",
+        ),
     ]
     for alert, code in cases:
         with pytest.raises(ConfigError) as excinfo:
             parse_alerts([alert], "alerts")
         assert excinfo.value.code == code, (alert, excinfo.value.code)
+
+
+# -- escalation e snooze (v0.9.0) ------------------------------------------
+
+
+def test_escalation_parsed_in_defaults():
+    from screen_watch.config.schema import EscalationOptions
+
+    config = config_from_dict(
+        _v2_dict(defaults={"mode": "advanced", "escalation": {"enabled": True, "severity_min": 3}})
+    )
+    assert config.profiles["default"].defaults.escalation == EscalationOptions(
+        enabled=True, severity_min=3
+    )
+
+
+def test_escalation_defaults_are_disabled():
+    config = config_from_dict(_v2_dict())
+    escalation = config.profiles["default"].defaults.escalation
+    assert escalation.enabled is False
+    assert escalation.severity_min == 2
+
+
+def test_escalation_parsed_in_overrides():
+    from screen_watch.config.loader import parse_overrides
+    from screen_watch.config.schema import EscalationOptions
+
+    out = parse_overrides({"escalation": {"enabled": True}})
+    assert out["escalation"] == EscalationOptions(enabled=True, severity_min=2)
+
+
+def test_escalation_invalid_raises():
+    with pytest.raises(ConfigError) as excinfo:
+        config_from_dict(_v2_dict(defaults={"escalation": 3}))
+    assert excinfo.value.code == "config.escalation_not_mapping"
+
+    with pytest.raises(ConfigError) as excinfo:
+        config_from_dict(_v2_dict(defaults={"escalation": {"severity_min": -1}}))
+    assert excinfo.value.code == "config.escalation_severity_min"
+
+
+def test_ui_snooze_minutes_parsed_and_validated():
+    raw = _v2_dict()
+    raw["ui"] = {"snooze_minutes": [10, 20]}
+    assert config_from_dict(raw).ui.snooze_minutes == (10, 20)
+
+    raw["ui"] = {"snooze_minutes": "10"}
+    with pytest.raises(ConfigError) as excinfo:
+        config_from_dict(raw)
+    assert excinfo.value.code == "config.snooze_minutes_not_list"
+
+    raw["ui"] = {"snooze_minutes": [0]}
+    with pytest.raises(ConfigError) as excinfo:
+        config_from_dict(raw)
+    assert excinfo.value.code == "config.snooze_minutes_positive"
+
+
+def test_default_config_round_trips_with_escalation_and_snooze():
+    config = config_from_dict(default_config_dict())
+    defaults = config.profiles["default"].defaults
+    assert defaults.escalation.enabled is False
+    assert config.ui.snooze_minutes == (5, 15, 30, 60)
+    assert config.ui.max_sessions == 4
+
+
+def test_ui_max_sessions_parsed_and_validated():
+    raw = _v2_dict()
+    raw["ui"] = {"max_sessions": 2}
+    assert config_from_dict(raw).ui.max_sessions == 2
+
+    raw["ui"] = {"max_sessions": 0}
+    with pytest.raises(ConfigError) as excinfo:
+        config_from_dict(raw)
+    assert excinfo.value.code == "config.max_sessions_range"
+
+    raw["ui"] = {"max_sessions": 99}
+    with pytest.raises(ConfigError) as excinfo:
+        config_from_dict(raw)
+    assert excinfo.value.code == "config.max_sessions_range"
 
 
 # -- text_watch (compare_options.advanced) ---------------------------------

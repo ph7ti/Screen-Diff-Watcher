@@ -2,8 +2,9 @@
 
 **English** · [Português (Brasil)](Home-pt-BR.md)
 
-Watches a **rectangular region (ROI) of a window** and notifies you when it changes — sound, popup, Telegram,
-webhook/HTTP POST, syslog or log — on **Windows and Linux**, without touching the watched application.
+Watches a **rectangular region (ROI) of a window** and notifies you when it changes — sound, popup,
+Telegram, webhook/HTTP POST, syslog, log, ntfy, e-mail (SMTP) or MQTT — on **Windows and Linux**,
+without touching the watched application.
 
 This wiki gathers the **usage and feature details**. The overview (what it does and does not do,
 platforms, prerequisites, quick start and build) is in the [README](../README.md).
@@ -13,11 +14,11 @@ platforms, prerequisites, quick start and build) is in the [README](../README.md
 | Page | What it covers |
 |---|---|
 | [Installation](Installation.md) | binaries (Inno Setup / `.deb`), source code, automatic Tesseract, autostart, app-data, `features` diagnostics |
-| [Usage (CLI)](CLI-Usage.md) | command reference, ROI selection, masks, calibration, profiles, robustness |
-| [GUI and tray](GUI-and-Tray.md) | the window, the buttons, arming, hover help, prints, tray |
+| [Usage (CLI)](CLI-Usage.md) | command reference, ROI selection, masks, calibration, profiles, robustness, selection lifecycle (create→edit→validate→run) |
+| [GUI and tray](GUI-and-Tray.md) | the window, the buttons, arming, hover help, prints, tray, snooze/mute/escalation, multiple ROIs |
 | [Configuration](Configuration.md) | `config.yaml` v2 (profiles, overrides), `state.json`, v1→v2 migration |
 | [Pseudo-human actions](Pseudo-Human-Actions.md) | steps, triggers, arming/rehearsal, limits, GUI editor, recorder, audit |
-| [Alerts](Alerts.md) | sound/popup/Telegram/log + webhook/HTTP POST/syslog, severity, cooldown, re-arm, `test-alert --list/--only` |
+| [Alerts](Alerts.md) | sound/popup/Telegram/log + webhook/HTTP POST/syslog/ntfy/SMTP/MQTT, snooze/mute + escalation, severity, cooldown, re-arm, `test-alert --list/--only` |
 | [Telegram setup](Telegram-Setup.md) | step by step: create the bot, get the chat id, set the token, edit the YAML and test |
 | [Evidence](Evidence.md) | baseline/change prints, retention, folders, toggle |
 | [Languages (i18n)](Languages.md) | catalogs, precedence, how to add a language |
@@ -38,11 +39,18 @@ screen-watch gui                                             # ...or use the GUI
 
 The GUI is the shortest path: **New Target (overlay)** → draw the ROI → **Start**.
 
+The full selection lifecycle is also available headless: `list-windows` → `select-manual` →
+`edit-selection NAME` → `validate-config --selections` → `run --selection NAME`.
+
 ## Points to note
 
 - An **occluded window** cannot be captured: capture reads pixels from the screen (an API limitation, not a bug).
 - **Wayland** is not supported on Linux; run on X11.
 - **Actions** are opt-in, disarmed by default and require the `input` extra (`pynput`).
+- **Snooze/Mute** silence the alerts for every session and persist in `state.json`; with escalation
+  enabled, an alert repeats until **Acknowledge**.
+- The GUI can monitor **multiple ROIs** at once (checkboxes in the selection list, up to
+  `ui.max_sessions`, default 4); the CLI `run` stays single-selection.
 - The **CLI and the log** are in fixed English; only the GUI goes through the language catalog (pt-BR/en-US).
 
 ## Repository documents

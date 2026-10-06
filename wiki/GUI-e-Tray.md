@@ -10,16 +10,17 @@ O painel superior é um **grid 2×2** (Seleções e Ações da sessão à esquer
 Detecção e alertas à direita), com o rodapé Status + Log num `QSplitter`:
 
 - **Seleções** (canto superior esquerdo): fileira de botões **Novo Target** / **Remover** /
-  **Recarregar** / **Ver local da seleção**, a legenda da ROI, a lista de
+  **Recarregar** / **Ver local da seleção**, a legenda da ROI, a lista com **checkboxes** de
   `app-data/selections/*.json` e o campo **Nome da seleção** + **Renomear**. Cada item mostra o
   **nome do aplicativo**, a **região monitorada** e o **modo** (ex.:
   `Seleção WhatsApp — Região 120,340 400x80 — advanced`); uma seleção com **nome** o exibe como
-  prefixo (`verificando download - Seleção …`). **Duplo clique reedita a região** (overlay);
-  **Enter inicia/para**.
+  prefixo (`verificando download - Seleção …`), e uma sessão ativa ganha prefixo `▶`.
+  **Duplo clique reedita a região** (overlay); **Enter inicia/para**.
 - **Monitoramento** (canto superior direito): **grid de duas colunas** — **Iniciar**/Idioma,
   **Parar**/**Re-armar baseline**, Modo/Perfil, **Armar Ações**/**Desarmar Ações**, **Armar por…**/
   **Minimizar para o tray** — mais o checkbox **Gravar prints (evidências)** e o status de arming.
-  **Ver local** agora fica na fileira das **Seleções** (saiu do Monitoramento).
+  **Iniciar** inicia todas as marcadas (nenhuma marcada = só a linha destacada) e **Parar** para
+  todas as sessões. **Ver local** agora fica na fileira das **Seleções** (saiu do Monitoramento).
 - **Ações da sessão (aplicam no próximo start)** (canto inferior esquerdo): checklist com as ações
   resolvidas, contador "N de M selecionadas" e a fileira horizontal de botões (**Nova ação…**,
   **Editar…**, **Remover Ação**, **Executar ação**).
@@ -29,8 +30,9 @@ Detecção e alertas à direita), com o rodapé Status + Log num `QSplitter`:
   alerta** (campo read-only com o trecho `file: "..."`; **Escolher…** para pré-visualizar,
   **Reproduzir** e **Copiar caminho** — o seletor **não persiste**). Depois de **Escolher…**, um
   popup aponta para o `config.yaml` e o perfil ativo, com **Copiar caminho e abrir YAML** /
-  **Só abrir o YAML** / **Fechar**. Trocar o modo para fora do `advanced` limpa o override.
-  Detalhes em [Alertas](Alertas.md) e nas [notas da v0.6.0](../doc/releases/v0.6.0.pt-BR.md).
+  **Só abrir o YAML** / **Fechar**. Trocar o modo para fora do `advanced` limpa o override. O grupo
+  também tem os controles **Soneca…**, **Silenciar/Reativar** e **Ciente** (veja abaixo). Detalhes em
+  [Alertas](Alertas.md) e nas [notas da v0.6.0](../doc/releases/v0.6.0.pt-BR.md).
 - **Rodapé** (`QSplitter`): o grupo **Status** com status/último resultado e o **Log**, e a coluna
   direita com **Prints** / **Testar alerta…** / **Abrir YAML**.
 
@@ -50,6 +52,19 @@ de arming só ficam ativos com uma sessão em execução (o arming é por sessã
 confunda com **Re-armar baseline** (mesma coluna): esse botão só recaptura o baseline da comparação
 e nada tem a ver com executar ações. `Esc` (hotkey `abort`) interrompe uma ação em andamento.
 Detalhes em [Ações pseudo-humanas](Acoes-Pseudo-Humanas.md).
+
+## Soneca, silenciar e escalação
+
+- **Soneca…** silencia a detecção por uma das durações de `ui.snooze_minutes` (padrão
+  5/15/30/60 minutos); **Silenciar**/**Reativar** silencia até você desfazer. As mesmas ações estão
+  no tray (submenu de soneca, silenciar/reativar, ciente).
+- **Ciente** fica habilitado enquanto uma sessão escala. Com a escalação ligada, um alerta `FIRED` em
+  `severity >= severity_min` repete na cadência do `cooldown_s` de cada canal até o ciente (ou um
+  re-arm manual do baseline); o baseline não avança nesse meio-tempo.
+- Um rótulo de status mostra o tempo restante da soneca/silêncio (e o estado da escalação) na tela.
+- A supressão é compartilhada por todas as sessões e persiste no `state.json` (`alerts_snooze_until`,
+  `alerts_muted`), então um `run` headless posterior a herda até a soneca expirar. Enquanto suprimida,
+  a mudança pendente volta a alertar quando a soneca expira ou o silêncio é desfeito.
 
 ## Ajuda no hover
 
@@ -101,16 +116,30 @@ O editor fica **bloqueado com a sessão rodando** e grava o JSON da seleção de
 máscaras efetivas vivem: `overrides.masks` se a chave já existe, senão `masks`, senão cria
 `overrides.masks` (que tem precedência). Máscaras típicas: relógio, spinner, cursor.
 
+## Múltiplas ROIs
+
+- A lista de seleções tem **checkboxes**: **Iniciar** inicia todas as marcadas (nenhuma marcada = só a
+  linha destacada). Linhas ativas ganham prefixo `▶` e o status agrega a contagem; com 2+ sessões,
+  logs e resultados são prefixados com `[seleção]`.
+- **Preview**, **Calibração** e as ações seguem a linha **destacada ativa** (senão a primeira ativa).
+- **Parar** para todas as sessões; **Remover** para apenas as sessões das seleções removidas.
+- `ui.max_sessions` (padrão 4, faixa 1..16) limita as sessões simultâneas. Iniciar uma seleção já
+  ativa ou exceder o limite é recusado com `runtime.session_already_running` / `runtime.session_limit`.
+- O tray oferece start/stop agregados e um submenu de start/stop por seleção.
+- O `run` do CLI continua monitorando uma única seleção (`--selection`); múltiplas ROIs são só na GUI.
+
 ## Preview
 
-Enquanto a sessão roda, o grupo **Monitoramento** mostra duas miniaturas reduzidas: o **baseline** e
-o **último frame capturado**. São cópias feitas fora do loop de captura (o buffer de imagem do loop
-nunca vai para o Qt) e somem quando a sessão para; nada é gravado.
+Enquanto uma sessão roda, o grupo **Monitoramento** mostra duas miniaturas reduzidas: o **baseline**
+e o **último frame capturado**, seguindo a linha destacada ativa (senão a primeira ativa). São
+cópias feitas fora do loop de captura (o buffer de imagem do loop nunca vai para o Qt) e somem
+quando a sessão para; nada é gravado.
 
 ## Calibração
 
 O botão **Calibração…** abre um gráfico ao vivo do **score** e do **limite** de **cada** comparação
-da sessão (não só as mudanças), com pontos coloridos por severidade. **Exportar CSV…** salva as
+da sessão seguida (linha destacada ativa, senão a primeira ativa; não só as mudanças), com pontos
+coloridos por severidade. **Exportar CSV…** salva as
 amostras (timestamp, modo, score, limite, severidade) para análise em planilha e **Limpar** esvazia a
 visão. Complementa o `compare-modes` do CLI. Os limites ficam em `defaults.compare_options` do perfil
 — veja [Configuração](Configuracao.md).
@@ -125,11 +154,13 @@ mouse…** para preencher `x`/`y`. Passo a passo em
 
 ## Tray
 
-O ícone na bandeja oferece: mostrar/ocultar, minimizar, iniciar/parar, armar/desarmar, seleção de
-perfil e sair. No GNOME pode não aparecer sem extensão de tray (a janela continua funcional).
+O ícone na bandeja oferece: mostrar/ocultar, minimizar, iniciar/parar (agregado, mais um submenu de
+iniciar/parar por seleção), armar/desarmar, seleção de perfil, soneca (submenu) / silenciar/reativar /
+ciente e sair. No GNOME pode não aparecer sem extensão de tray (a janela continua funcional).
 
 ## Como funciona por dentro
 
-O loop roda em thread separada; a GUI só recebe eventos/resultados por uma fila consumida por
-`QTimer` — callbacks de tray/hotkey nunca chamam Qt de dentro da thread do listener. O **Parar**
-encerra o loop e fecha o backend antes de sair.
+Cada sessão roda na própria thread, coordenadas pelo `SessionManager` (que substituiu o antigo
+`MonitorController`); a GUI só recebe eventos/resultados por uma fila consumida por `QTimer` —
+callbacks de tray/hotkey nunca chamam Qt de dentro da thread do listener. O **Parar** encerra os
+loops e fecha os backends antes de sair.

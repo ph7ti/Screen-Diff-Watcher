@@ -10,6 +10,7 @@ import enum
 import logging
 import time
 
+from screen_watch.alerts.gate import AlertGate
 from screen_watch.alerts.protocol import Notifier
 from screen_watch.capture.frame import Frame
 from screen_watch.compare.protocol import ComparisonResult
@@ -22,14 +23,18 @@ class DispatchOutcome(enum.Enum):
 
     FIRED = "fired"
     SUPPRESSED_COOLDOWN = "suppressed_cooldown"
+    SUPPRESSED_MANUAL = "suppressed_manual"
     BELOW_MIN = "below_min"
     NONE_ENABLED = "none_enabled"
     FAILED = "failed"
 
 
 class AlertChain:
-    def __init__(self, notifiers: list[Notifier]) -> None:
+    def __init__(self, notifiers: list[Notifier], gate: AlertGate | None = None) -> None:
         self.notifiers = notifiers
+        # Gate de snooze/mute (doc, secao 11.3): suprime sem tentar nenhum canal;
+        # o baseline fica pendente e o alerta volta quando o gate expirar.
+        self.gate = gate
         self._last_attempt: dict[str, float] = {}
         # Falhas do ultimo dispatch: `(uid, mensagem)`, para o CLI/GUI reportarem
         # o canal que falhou mesmo quando outro teve sucesso (o outcome seria FIRED).
@@ -38,6 +43,9 @@ class AlertChain:
     def dispatch(self, result: ComparisonResult, frame: Frame) -> DispatchOutcome:
         now = time.time()
         self.last_errors = []
+        if self.gate is not None and self.gate.active(now):
+            return DispatchOutcome.SUPPRESSED_MANUAL
+
         enabled = [n for n in self.notifiers if n.enabled]
         if not enabled:
             return DispatchOutcome.NONE_ENABLED

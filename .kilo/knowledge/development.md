@@ -1,6 +1,6 @@
 # Development — agent knowledge base
 
-Status: v0.8.0 · Scope: setup, quality gates, tests, CI, release, app-data
+Status: v0.9.0 · Scope: setup, quality gates, tests, CI, release, app-data
 
 Commands below were verified against the repository at v0.7.1. Build/release details are in
 `doc/01-Build_and_Release.md`; design rationale in `doc/00`.
@@ -14,7 +14,8 @@ python -m pip install -e ".[dev]"               # core + pytest/pytest-cov/ruff
 python -m pip install -e ".[input]"             # optional: pynput (actions, global hotkeys)
 python -m pip install -e ".[sound]"             # optional: simpleaudio (legacy; no 3.13 wheel)
 python -m pip install -e ".[ocr-preproc]"       # optional: opencv (OCR experiments)
-python -m pip install -e ".[logging]"           # optional: structlog (currently unused in src/)
+python -m pip install -e ".[mqtt]"               # optional: paho-mqtt (MQTT alert channel)
+python -m pip install -e ".[logging]"            # optional: structlog (currently unused in src/)
 python -m pip install -e ".[build]"             # optional: PyInstaller
 python -m pip install -e ".[dev,build,input]"   # what CI/release installs
 ```
@@ -90,11 +91,14 @@ clean-machine checklist `doc/01` §9, quick checklist §12.
   `~/Library/Application Support/screen_watch` (macOS), or the `SCREEN_WATCH_HOME` override.
 - Files: `config.yaml` (+ `config.yaml.bak`), `selections/`, `sounds/`, `logs/alerts.jsonl`,
   `logs/actions.jsonl`, `state.json`.
-- `state.json` keys: `last_selection`, `profile`, `language`, `action_selection`, `evidence_enabled`.
+- `state.json` keys: `last_selection`, `profile`, `language`, `action_selection`, `evidence_enabled`,
+  `alerts_muted`, `alerts_snooze_until` (snooze/mute gate, v0.9.0).
 - `save_config` is atomic and keeps a backup; `state.json` writes are atomic but disposable (no backup).
 
 ## Diagnostics
 
-`features` (environment diagnostics, `--json` for CI), `probe-dpi`, `show-paths`, `compare-modes`
-(calibration), `test-alert --list/--only ID`, `list-actions`. Full CLI reference: `wiki/CLI-Usage.md`
-and `README.md`.
+`features` (environment diagnostics, `--json` for CI; includes the `mqtt` extra probe), `probe-dpi`,
+`show-paths`, `compare-modes` (calibration), `test-alert --list/--only ID`, `list-actions`.
+Selection lifecycle (v0.9.0): `list-selections [--json]`, `remove-selection`, `rename-selection`,
+`edit-selection` (mode/ROI/masks/overrides). Full CLI reference: `wiki/CLI-Usage.md` and
+`README.md`.

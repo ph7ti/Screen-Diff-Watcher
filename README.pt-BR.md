@@ -237,19 +237,24 @@ GitHub Release. `workflow_dispatch` gera só os artefatos (sem release).
 
 **Implementado:** captura e ancoragem (Modelo B), modos de comparação (`light`/`default`/`advanced`)
 com pipeline e curto-circuito (`advanced` com gate de phash, bypassado pelo `text_watch`), alertas
-(som/popup/Telegram/log + webhook/HTTP POST/syslog) com cooldown/rearm e teste de envio, **som
+(som/popup/Telegram/**ntfy/SMTP/MQTT**/log + webhook/HTTP POST/syslog) com cooldown/rearm,
+**soneca/silenciar e escalação até o ciente**, e teste de envio, **som
 selecionável (MP3/M4A/OGG/FLAC…)** com **default empacotado `alert.mp3`** e o filtro **`text_watch`**
-(aparece/desaparece), **nome da seleção** (renomeia o arquivo pelo slug), **Ver local** (realce da ROI
-sem tocar nos pixels), **reedição da região por duplo clique** (Enter inicia/para) e a **janela em
-grid 2×2**, evidências, ações pseudo-humanas (com editor na GUI e gravador), agendador, perfis, CLI
+(aparece/desaparece), **nome da seleção** (renomeia o arquivo pelo slug), o **ciclo de vida completo
+das seleções no CLI** (incluindo o fluxo headless abaixo), **Ver local** (realce da ROI
+sem tocar nos pixels), **reedição da região por duplo clique** (Enter inicia/para), a **janela em
+grid 2×2** e **múltiplas ROIs simultâneas** (conjunto por checkbox, `ui.max_sessions`, status/tray
+agregados), evidências, ações pseudo-humanas (com editor na GUI e gravador), agendador, perfis, CLI
 completa, GUI + tray com i18n (pt-BR/en-US), empacotamento (Inno Setup e `.deb`) e CI/release por tag.
 
 **Validação manual pendente:** GUI/tray/overlay em 100/125/150% (doc §5.1, §9.5) e detalhes do
 bundle em máquina limpa (ícone, `StartupWMClass`, tamanho do pacote, aviso do SmartScreen) —
 checklist em [`doc/01`](doc/01-Build_e_Release.md) §9.
 
-**Radar:** seleção totalmente via CLI, sem overlay, ainda não está definida — avaliar quando
-houver demanda.
+**Fluxo headless:** a seleção inteira funciona sem overlay — `list-windows` → `select-manual` →
+`edit-selection` (modo/ROI/máscaras/overrides) → `validate-config --selections` → `run --selection` —
+e o ciclo de vida tem `list-selections [--json]`, `rename-selection` e `remove-selection` (detalhes na
+[wiki de CLI](wiki/Uso-CLI.md)).
 
 ## Limitações conhecidas (resumo)
 
@@ -282,7 +287,7 @@ escada de scripts e CI em [wiki/Desenvolvimento-Testes-e-CI.md](wiki/Desenvolvim
 | [**Wiki**](wiki/Home-pt-BR.md) | detalhes de uso e recursos: CLI, GUI, config, ações, alertas, evidências, idiomas, DPI, build |
 | [`doc/00-Documento_de_Arquitetura_e_Especificação.md`](doc/00-Documento_de_Arquitetura_e_Especificação.md) | arquitetura e especificação — **fonte única de verdade do design** |
 | [`doc/01-Build_e_Release.md`](doc/01-Build_e_Release.md) | pipeline de build e release dos instaladores |
-| [`doc/releases/`](doc/releases/v0.8.0.pt-BR.md) | notas de release por versão (arquivo de detalhe) |
+| [`doc/releases/`](doc/releases/v0.9.0.pt-BR.md) | notas de release por versão (arquivo de detalhe) |
 | [`CHANGELOG.md`](CHANGELOG.md) | mudanças por versão (semântico) |
 | [`README.md`](README.md) | este guia em inglês |
 

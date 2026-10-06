@@ -40,16 +40,34 @@ python -m screen_watch show-paths
 | `list-windows` | lists the windows: `handle`, state (`ok`/`minimized`), position/size and title |
 | `select --handle H [--name NAME] [--mode light|default|advanced]` | opens the **overlay**: drag with the left button; right button cancels. Writes the JSON to app-data |
 | `select-manual --handle H --roi X Y W H [--name NAME] [--title T] [--mode ...]` | writes the selection by coordinates, without the overlay |
-| `list-selections` | lists the selections (app name, region, mode; marks the last used one) |
+| `list-selections [--json]` | lists the selections (app name, region, mode; marks the last used one); `--json` prints one object per file for scripting |
+| `edit-selection NAME [--mode ...] [--roi X Y W H] [--mask X Y W H]... [--clear-masks] [--poll-interval-s S] [--rearm/--no-rearm] [--text-watch TEXT --text-expect appears\|disappears] [--clear-text-watch] [--clear-override KEY]` | edits the selection JSON without the overlay (mode, ROI, masks, poll interval, re-arm, text watch and overrides) |
+| `rename-selection OLD NAME` | renames a selection (display name + file slug, same rules as the GUI) |
+| `remove-selection NAME...` | deletes one or more selection JSON files (clears `state.json.last_selection` when it pointed to a removed one) |
 | `migrate-config [--path PATH] [--dry-run]` | converts a v1 YAML (`targets:`) into `selections/*.json` + v2 YAML |
 
 ```powershell
 python -m screen_watch list-windows
 python -m screen_watch select --handle 12345 --name painel
 python -m screen_watch select-manual --handle 12345 --roi 120 340 400 80 --name painel
-python -m screen_watch list-selections
+python -m screen_watch list-selections --json
+python -m screen_watch edit-selection painel --mode advanced --mask 10 10 40 20 \
+  --poll-interval-s 1.5 --text-watch "CONCLUÍDO" --text-expect appears
+python -m screen_watch edit-selection painel --roi 100 200 400 80   # re-anchors and clears the masks
+python -m screen_watch edit-selection painel --clear-masks --clear-override rearm
+python -m screen_watch rename-selection painel "painel erp"
+python -m screen_watch remove-selection painel antigo
 ```
 
+- `edit-selection` follows the GUI rules: `--mode` updates `overrides.mode` when the key exists (else
+  `mode`); `--roi X Y W H` re-anchors `origin_at_selection` and **clears both mask fields** (relative
+  to the old ROI); `--mask` is repeatable and replaces the effective masks; `--clear-masks` empties
+  both; `--poll-interval-s`/`--rearm`/`--no-rearm` write into `overrides`; `--clear-override` accepts
+  `mode`, `poll_interval_s`, `rearm`, `masks` and `text_watch`.
+- The JSON is written **atomically** and on error the file stays intact; passing no edit option exits
+  with code **2**.
+- `list-selections --json` prints one object per file: `file`, `name`, `label`, `window_handle`,
+  `roi_relative`, `mode`, `masks` (effective-mask count), `overrides` (keys) and `last`.
 - The default mode of selections is `advanced`; you can change it later in the GUI selector or through the
   JSON `overrides`.
 - The minimum accepted area is 10×10 logical pixels.
@@ -106,6 +124,22 @@ python -m screen_watch test-action --selection painel --armed    # actually exec
 python -m screen_watch compare-modes --selection painel --delay 5
 python -m screen_watch features --json
 ```
+
+## Headless flow
+
+The whole selection lifecycle works without the overlay — `list-windows` → `select-manual` →
+`edit-selection` → `validate-config --selections` → `run --selection`:
+
+```powershell
+python -m screen_watch list-windows
+python -m screen_watch select-manual --handle 123456 --roi 120 340 400 80 --name "painel erp"
+python -m screen_watch edit-selection painel-erp --mode advanced --mask 10 10 40 20 \
+  --poll-interval-s 1.5 --text-watch "CONCLUÍDO" --text-expect appears
+python -m screen_watch validate-config --selections
+python -m screen_watch run --selection painel-erp
+```
+
+This resolves the README "Radar" item.
 
 ## Masks of volatile regions
 

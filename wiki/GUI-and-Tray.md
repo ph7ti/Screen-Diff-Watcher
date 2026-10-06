@@ -11,15 +11,16 @@ The upper panel is a **2×2 grid** (Selections and Session actions on the left; 
 Detection and alerts on the right), with the Status + Log footer in a `QSplitter`:
 
 - **Selections** (top-left): **New Target** / **Remove** / **Reload** / **Highlight selection** button
-  row, the ROI legend, the list of `app-data/selections/*.json`, and the **Selection name** field +
-  **Rename**. Each list item shows the **application name**, the **monitored region** and the **mode**
-  (e.g. `Selection WhatsApp — Region 120,340 400x80 — advanced`); a selection with a **name** shows it
-  as a prefix (`verificando download - Selection …`). **Double-click re-edits the region** (overlay);
-  **Enter starts/stops**.
+  row, the ROI legend, the **checkbox list** of `app-data/selections/*.json`, and the **Selection name**
+  field + **Rename**. Each list item shows the **application name**, the **monitored region** and the
+  **mode** (e.g. `Selection WhatsApp — Region 120,340 400x80 — advanced`); a selection with a **name**
+  shows it as a prefix (`verificando download - Selection …`), and a running session gets a `▶` prefix.
+  **Double-click re-edits the region** (overlay); **Enter starts/stops**.
 - **Monitoring** (top-right): a **two-column grid** — **Start**/Language, **Stop**/**Re-arm baseline**,
   Mode/Profile, **Arm actions**/**Disarm actions**, **Arm for…**/**Minimize to tray** — plus the
-  **Record captures (evidence)** checkbox and the arming status. **Highlight selection** ("Ver local")
-  lives in the Selections row above (it moved out of Monitoring).
+  **Record captures (evidence)** checkbox and the arming status. **Start** starts every checked
+  selection (with none checked, only the highlighted row) and **Stop** stops every session.
+  **Highlight selection** ("Ver local") lives in the Selections row above (it moved out of Monitoring).
 - **Session actions (apply on next start)** (bottom-left): checklist with the resolved actions, the
   "N of M selected" counter and a horizontal button row (**New action…**, **Edit…**, **Remove Action**,
   **Run action**).
@@ -29,7 +30,8 @@ Detection and alerts on the right), with the Status + Log footer in a `QSplitter
   `file: "..."` snippet; **Choose…** to preview, **Play** and **Copy path** — the selector **does not
   persist**). After **Choose…** a popup points to `config.yaml` and the active profile, with
   **Copy path and open YAML** / **Open YAML only** / **Close**. Switching the mode away from
-  `advanced` clears the text-watch override. Details in [Alerts](Alerts.md) and the
+  `advanced` clears the text-watch override. The group also has the **Snooze…**, **Mute/Unmute** and
+  **Acknowledge** controls (see below). Details in [Alerts](Alerts.md) and the
   [v0.6.0 release notes](../doc/releases/v0.6.0.md).
 - **Footer** (`QSplitter`): the **Status** group with status/last result and the **Log**, and the
   right column with **Captures** / **Test alert…** / **Open YAML**.
@@ -49,6 +51,19 @@ buttons are only enabled with a running session (arming is per session and start
 confuse arming with **Re-arm baseline** (same column): that button only resets the comparison
 baseline and has nothing to do with executing actions. `Esc` (hotkey `abort`) interrupts an action
 in progress. Details in [Pseudo-human actions](Pseudo-Human-Actions.md).
+
+## Snooze, mute and escalation
+
+- **Snooze…** silences detection for one of the durations in `ui.snooze_minutes` (default
+  5/15/30/60 minutes); **Mute**/**Unmute** silences until you undo it. The same actions are in the
+  tray (snooze submenu, mute/unmute, acknowledge).
+- **Acknowledge** is enabled while a session escalates. With escalation enabled, a `FIRED` alert at
+  `severity >= severity_min` repeats at each channel's `cooldown_s` until you acknowledge (or re-arm
+  the baseline manually); the baseline does not advance meanwhile.
+- A status label shows the remaining snooze/mute time (and the escalation state) on screen.
+- The suppression is shared by every session and persists in `state.json` (`alerts_snooze_until`,
+  `alerts_muted`), so a later headless `run` inherits it until the snooze expires. While suppressed, a
+  pending change alerts again when the snooze expires or the mute is lifted.
 
 ## Hover help
 
@@ -100,16 +115,32 @@ while the session runs** and saves the selection JSON atomically where the effec
 `overrides.masks` if the key already exists, otherwise `masks`, otherwise it creates `overrides.masks`
 (which has precedence). Typical masks: clock, spinner, cursor.
 
+## Multiple ROIs
+
+- The selection list has **checkboxes**: **Start** starts every checked row (with none checked, only
+  the highlighted one). Running rows show a `▶` prefix and the status line aggregates the count; with
+  2+ sessions, log and result lines are prefixed with `[selection]`.
+- **Preview**, **Calibration** and the actions follow the **highlighted running** row (or the first
+  running one when the highlighted row is not running).
+- **Stop** stops every session; **Remove** stops only the sessions of the removed selections.
+- `ui.max_sessions` (default 4, range 1..16) caps the simultaneous sessions. Starting a selection that
+  is already running or exceeding the cap is refused with `runtime.session_already_running` /
+  `runtime.session_limit`.
+- The tray offers aggregated start/stop plus a per-selection start/stop submenu.
+- The CLI `run` still monitors a single selection (`--selection`); multiple ROIs are GUI-only.
+
 ## Preview
 
-While the session runs, the **Monitoring** group shows two downsampled thumbnails: the **baseline**
-and the **latest captured frame**. They are copies made off the capture loop (the loop's image buffer
-is never handed to Qt) and clear when the session stops; nothing is recorded.
+While a session runs, the **Monitoring** group shows two downsampled thumbnails: the **baseline** and
+the **latest captured frame**, following the highlighted running row (else the first running one).
+They are copies made off the capture loop (the loop's image buffer is never handed to Qt) and clear
+when the session stops; nothing is recorded.
 
 ## Calibration
 
 The **Calibration…** button opens a live chart of the **score** and the **threshold** for **every**
-comparison of the running session (not only the changes), with dots colored by severity. **Export
+comparison of the followed session (highlighted running row, else the first running; not only the
+changes), with dots colored by severity. **Export
 CSV…** saves the samples (timestamp, strategy, score, threshold, severity) for spreadsheet analysis
 and **Clear** empties the view. It complements the CLI `compare-modes`. Thresholds live in the
 profile `defaults.compare_options` — see [Configuration](Configuration.md).
@@ -124,11 +155,13 @@ button to fill `x`/`y`. Step by step in
 
 ## Tray
 
-The tray icon offers: show/hide, minimize, start/stop, arm/disarm, profile selection
-and quit. On GNOME it may not appear without a tray extension (the window keeps working).
+The tray icon offers: show/hide, minimize, start/stop (aggregated, plus a per-selection start/stop
+submenu), arm/disarm, profile selection, snooze (submenu) / mute/unmute / acknowledge and quit. On
+GNOME it may not appear without a tray extension (the window keeps working).
 
 ## How it works inside
 
-The loop runs in a separate thread; the GUI only receives events/results through a queue consumed by
-`QTimer` — tray/hotkey callbacks never call Qt from inside the listener thread. **Stop**
-ends the loop and closes the backend before exiting.
+Each session runs in its own thread, coordinated by `SessionManager` (which replaced the former
+`MonitorController`); the GUI only receives events/results through a queue consumed by `QTimer` —
+tray/hotkey callbacks never call Qt from inside the listener thread. **Stop** ends the loops and
+closes the backends before exiting.

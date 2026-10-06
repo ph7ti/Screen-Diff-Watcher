@@ -241,11 +241,14 @@ creates the GitHub Release. `workflow_dispatch` generates artifacts only (no rel
 
 **Implemented:** capture and anchoring (Model B), comparison modes (`light`/`default`/`advanced`)
 with pipeline and short-circuit (`advanced` gated by phash, bypassed by `text_watch`), alerts
-(sound/popup/Telegram/log + webhook/HTTP POST/syslog) with cooldown/re-arm and send test,
+(sound/popup/Telegram/**ntfy/SMTP/MQTT**/log + webhook/HTTP POST/syslog) with cooldown/re-arm,
+**snooze/mute and escalation until acknowledged**, and send test,
 **selectable sound (MP3/M4A/OGG/FLAC…)** with a **bundled `alert.mp3` default**, the
 **`text_watch`** filter (appears/disappears),
-**selection name** (renames the file to its slug), **Highlight** (ROI outline that never touches the
-ROI pixels), **double-click region re-edit** (Enter starts/stops) and the **2×2 window layout**,
+**selection name** (renames the file to its slug), the full **selection lifecycle in the CLI**
+(including the headless flow below), **Highlight** (ROI outline that never touches the
+ROI pixels), **double-click region re-edit** (Enter starts/stops), the **2×2 window layout** and
+**multiple simultaneous ROIs** (checkbox set, `ui.max_sessions`, aggregated status/tray),
 evidence, pseudo-human actions (with GUI editor and recorder), scheduler, profiles, full CLI,
 GUI + tray with i18n (pt-BR/en-US), packaging (Inno Setup and `.deb`) and tag-driven CI/release.
 
@@ -253,8 +256,10 @@ GUI + tray with i18n (pt-BR/en-US), packaging (Inno Setup and `.deb`) and tag-dr
 on a clean machine (icon, `StartupWMClass`, package size, SmartScreen warning) — checklist in
 [`doc/01`](doc/01-Build_and_Release.md) §9.
 
-**Radar:** a fully CLI-driven selection flow (no overlay) is not defined yet — revisit when there
-is demand.
+**Headless flow:** the whole selection lifecycle works without the overlay — `list-windows` →
+`select-manual` → `edit-selection` (mode/ROI/masks/overrides) → `validate-config --selections` →
+`run --selection` — plus `list-selections [--json]`, `rename-selection` and `remove-selection`
+(details in the [CLI wiki page](wiki/CLI-Usage.md)).
 
 ## Known limitations (summary)
 
@@ -288,7 +293,7 @@ Integration tests are opt-in (`TEST_REAL_CAPTURE`, `TEST_REAL_TELEGRAM`,
 | [**Wiki**](wiki/Home.md) | usage and feature details: CLI, GUI, config, actions, alerts, evidence, languages, DPI, build |
 | [`doc/00-Architecture_and_Specification.md`](doc/00-Architecture_and_Specification.md) | architecture and specification — **single source of truth for the design** |
 | [`doc/01-Build_and_Release.md`](doc/01-Build_and_Release.md) | installer build and release pipeline |
-| [`doc/releases/`](doc/releases/v0.8.0.md) | per-version release notes (detail file) |
+| [`doc/releases/`](doc/releases/v0.9.0.md) | per-version release notes (detail file) |
 | [`CHANGELOG.md`](CHANGELOG.md) | changes per version (semantic) |
 | [`README.pt-BR.md`](README.pt-BR.md) | este guia em português |
 

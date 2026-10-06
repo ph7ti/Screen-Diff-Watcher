@@ -283,6 +283,66 @@ def set_masks(selection: Selection, masks: Collection[Rect]) -> Selection:
     return replace(selection, overrides=updated)
 
 
+def clear_masks(selection: Selection) -> Selection:
+    """Zera as mascaras efetivas: limpa `selection.masks` e remove `overrides.masks`.
+
+    Usado pela reedicao de regiao (doc, secao 12.3) e pelo `--clear-masks` do CLI:
+    nenhuma mascara volta a valer por fallback. Para remover apenas o override
+    (voltando as `masks` de base), use `clear_override(selection, "masks")`.
+    """
+    overrides = selection.overrides
+    has_override = isinstance(overrides, dict) and "masks" in overrides
+    if not has_override and not selection.masks:
+        return selection
+    if has_override:
+        updated = dict(overrides)
+        updated.pop("masks", None)
+        return replace(selection, masks=(), overrides=updated or None)
+    return replace(selection, masks=())
+
+
+def set_mode_where_lives(selection: Selection, mode: str) -> Selection:
+    """Atualiza `overrides.mode` se a chave existir, senao `selection.mode`."""
+    overrides = selection.overrides
+    if isinstance(overrides, dict) and "mode" in overrides:
+        updated = dict(overrides)
+        updated["mode"] = mode
+        return replace(selection, overrides=updated)
+    return replace(selection, mode=mode)
+
+
+OVERRIDE_KEYS = ("mode", "poll_interval_s", "rearm", "masks", "text_watch")
+
+
+def set_override(selection: Selection, key: str, value: Any) -> Selection:
+    """Copia a selecao com `overrides[key] = value` (chave validada no CLI)."""
+    overrides = dict(selection.overrides or {})
+    overrides[key] = value
+    return replace(selection, overrides=overrides)
+
+
+def clear_override(selection: Selection, key: str) -> Selection:
+    """Remove uma chave de `overrides` (o valor do perfil volta a valer)."""
+    overrides = selection.overrides
+    if not isinstance(overrides, dict) or key not in overrides:
+        return selection
+    updated = dict(overrides)
+    updated.pop(key, None)
+    return replace(selection, overrides=updated or None)
+
+
+def forget_last_selection(file_name: str) -> None:
+    """Limpa `state.json:last_selection` quando ele aponta para `file_name` (best-effort)."""
+    from screen_watch.platform.paths import load_state, update_state  # noqa: PLC0415
+
+    try:
+        current = str(load_state().get("last_selection") or "")
+        if current and current.casefold() == file_name.casefold():
+            update_state(last_selection="")
+    except OSError:
+        pass
+
+
 def override_text_watch(selection: Selection) -> TextWatchOptions | None:
     """`overrides.text_watch` normalizado (None se ausente).
 
@@ -401,6 +461,7 @@ def build_target(
         alerts=overrides.get("alerts", profile.alerts),
         actions=actions,
         humanize=defaults.humanize,
+        escalation=overrides.get("escalation", defaults.escalation),
         schedule=schedule or ScheduleOptions(),
     )
 

@@ -72,7 +72,12 @@ Extras opcionais:
 | `pip install -e ".[input]"` | ações pseudo-humanas e hotkeys globais (`pynput`) |
 | `pip install -e ".[sound]"` | som via `simpleaudio` (sem wheel confiável no Python 3.13; opcional) |
 | `pip install -e ".[ocr-preproc]"` | experimentos de pré-processamento de OCR (`opencv-python`) |
+| `pip install -e ".[mqtt]"` | canal de alerta MQTT (`paho-mqtt`; não entra nos instaladores) |
 | `pip install -e ".[build]"` | gerar instaladores (`pyinstaller`) |
+
+Os canais **ntfy** e **SMTP** não precisam de extra (usam o `httpx` do núcleo e o `smtplib` da
+stdlib); só o **MQTT** exige o extra `mqtt`. As credenciais de todos os canais (Telegram, ntfy,
+SMTP, MQTT) vêm de **variáveis de ambiente**, nunca do YAML.
 
 Depois:
 
