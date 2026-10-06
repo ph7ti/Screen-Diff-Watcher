@@ -42,8 +42,11 @@ jobs:
           xvfb-run -a python -m pytest -q -m "not integration" --cov=screen_watch --cov-report=term-missing --cov-report=xml 2>&1 | tee pytest.log
           code=${PIPESTATUS[0]}
           if [ "$code" -ne 0 ]; then
-            # Anotacao publica: o log do job exige login, mas as anotacoes nao.
-            tail -n 30 pytest.log | sed 's/%/%25/g; s/\r$//' | while IFS= read -r line; do
+            # Log do job exige login; anotacoes sao publicas.
+            {
+              grep -E "^(FAILED|ERROR) " pytest.log | head -n 10
+              awk '/=+ FAILURES =+/{flag=1} flag{print; n++} n>=30{exit}' pytest.log
+            } | sed 's/%/%25/g; s/\r$//' | while IFS= read -r line; do
               echo "::error::$line"
             done
             exit "$code"
