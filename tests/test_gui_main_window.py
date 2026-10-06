@@ -20,6 +20,10 @@ from screen_watch.i18n import tr
 
 @pytest.fixture
 def main_window_cls():
+    # Em runners Linux sem as libs de sistema do Qt (`libEGL.so.1` etc.) o import
+    # do PyQt6 falha; nesse caso o teste e pulado (a cobertura fica no Windows).
+    pytest.importorskip("PyQt6.QtGui", reason="PyQt6 system libs unavailable")
+
     from screen_watch.gui.main_window import MainWindow
 
     return MainWindow
