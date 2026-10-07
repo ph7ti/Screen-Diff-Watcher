@@ -1,4 +1,4 @@
-# Screen Diff Watcher — Build e Release (instaladores Windows/Linux)
+# Screen Diff Watcher — Build e Release (instaladores Windows/Linux/macOS)
 
 [English](01-Build_and_Release.md) · **Português (Brasil)**
 
@@ -20,14 +20,17 @@ código-fonte ──PyInstaller(spec)──► dist/screen-watch/  (onedir: scre
                        scripts/build_release.py  ──►  dist/installers/
                                          │               ├─ build-info.json
    Windows: ISCC (Inno Setup)  ─────────┘               ├─ screen-diff-watcher_<v>_windows_x64_setup.exe
-   Linux:   dpkg-deb           ─────────────────────────└─ screen-watch_<v>_amd64.deb
+   Linux:   dpkg-deb           ─────────────────────────├─ screen-watch_<v>_amd64.deb
+   macOS:   PyInstaller BUNDLE + ditto ─────────────────└─ screen-diff-watcher_<v>_macos_<arch>.zip
 ```
 
 - `scripts/build_release.py` roda **no SO alvo** e recusa cross-build.
 - `packaging/screen-watch.spec`: 1 `Analysis` + 2 `EXE` (console e windowless) que compartilham
-  `PYZ`/`COLLECT`; empacota `screen_watch/assets/icons/`.
-- `dist/installers/build-info.json` é **gerado a cada build** (versão, SO, Python, capacidades
-  `pynput`/`cv2`). Não editar à mão.
+  `PYZ`/`COLLECT`; no macOS também monta o `Screen Diff Watcher.app` **sem assinatura** (`BUNDLE`,
+  GUI primeiro para ser o `CFBundleExecutable`, `pyobjus` do extra `macosx` para os popups), zipado
+  com `ditto`.
+- `dist/installers/build-info.json` é **gerado a cada build** (versão, SO, Python,
+  capacidades `pynput`/`cv2`; `arch` no macOS). Não editar à mão.
 - Os caminhos `build/` e `dist/` são ignorados pelo Git.
 
 ---
@@ -38,6 +41,7 @@ código-fonte ──PyInstaller(spec)──► dist/screen-watch/  (onedir: scre
 |---|---|
 | Windows | Python 3.13, `pip install -e ".[dev,build,input]"` e **Inno Setup 6** (`choco install innosetup -y`, ou instalar o app; o script também procura em `C:\Program Files (x86)\Inno Setup 6\ISCC.exe`) |
 | Linux (Debian/Ubuntu) | Python 3.13, `pip install -e ".[dev,build,input]"` e `dpkg-deb` (`sudo apt-get install -y dpkg-dev`) |
+| macOS (arm64) | Python 3.13 e `pip install -e ".[dev,build,input,macosx]"`; o `ditto` é do sistema (zip do `.app` sem assinatura) |
 
 Notas:
 - `build = ["pyinstaller>=6.11.1"]` — **obrigatório**: o PyInstaller só suporta Python 3.13 a partir
@@ -50,7 +54,7 @@ Notas:
 
 ## 3. Rotina após novos incrementos de código
 
-1. **Qualidade**: `ruff check .` e `python -m pytest -q -m "not integration"`.
+1. **Qualidade**: `ruff check .`, `python -m mypy` e `python -m pytest -q -m "not integration"`.
 2. **Subir a versão** (ver §4) — obrigatório antes de publicar.
 3. **Atualizar o pin do Tesseract** apenas quando quiser adotar um release novo (ver §5).
 4. **Regenerar o ícone** apenas se os PNGs de `src/screen_watch/assets/icons/` mudarem (ver §6).
@@ -67,7 +71,7 @@ A versão vive **apenas** em `src/screen_watch/__init__.py`; o `pyproject.toml` 
 
 ```python
 # src/screen_watch/__init__.py
-__version__ = "0.10.1"   # <- única fonte de verdade
+__version__ = "0.11.0"   # <- única fonte de verdade
 ```
 
 Confirme que metadados e atributo batem:
@@ -138,6 +142,13 @@ instala com `/VERYSILENT` e valida `tesseract --list-langs` (precisa conter `eng
 `TESSDATA_PREFIX`: o `compare/advanced.py` não passa `--tessdata-dir` e usa o `tessdata` do binário.
 No Linux o Tesseract vem do `Depends:` do `.deb` — nada a pinar.
 
+**Consentimento (v0.11.0)**: o instalador Windows só roda esse helper **com consentimento** — no
+fluxo interativo pergunta Sim/Não e explica que o Tesseract é opcional (`light`/`default` funcionam
+sem ele; só o `advanced` precisa); no modo silencioso (`/SILENT` ou `/VERYSILENT`) **não baixa por
+padrão**, apenas com `/TESSERACT=yes`. Falha do helper (offline, SHA256, instalação) mostra mensagem
+informativa e **nunca aborta o setup**; no modo silencioso a falha é silenciosa (sem diálogo, para
+não travar instalações desatendidas).
+
 ---
 
 ## 6. Regenerar o ícone (só se os PNGs mudarem)
@@ -165,13 +176,22 @@ python scripts/build_release.py --windows
 python scripts/build_release.py --linux
 ```
 
+**macOS (arm64)** (gera os binários + zip do `.app` sem assinatura):
+
+```bash
+python scripts/build_release.py --macos
+```
+
 Cada execução:
-1. valida a versão (§4) e os pré-requisitos (`ISCC.exe` / `dpkg-deb`);
-2. roda o PyInstaller com `packaging/screen-watch.spec` (`--clean --noconfirm`) → `dist/screen-watch/`;
+1. valida a versão (§4) e os pré-requisitos (`ISCC.exe` / `dpkg-deb`; `ditto` no macOS);
+2. roda o PyInstaller com `packaging/screen-watch.spec` (`--clean --noconfirm`) →
+   `dist/screen-watch/` (e `dist/Screen Diff Watcher.app` no macOS);
 3. escreve `dist/installers/build-info.json`;
 4. monta o instalador em `dist/installers/`.
 
 Rodar em SO errado (ex.: `--linux` no Windows) aborta com mensagem clara (sem cross-build).
+O zip do macOS **não é assinado nem notarizado**: documente o passo do Gatekeeper ("Abrir" pelo menu
+de contexto ou `xattr -d com.apple.quarantine "Screen Diff Watcher.app"`).
 
 ---
 
@@ -180,21 +200,22 @@ Rodar em SO errado (ex.: `--linux` no Windows) aborta com mensagem clara (sem cr
 Repositório: `https://github.com/ph7ti/Screen-Diff-Watcher`.
 
 - **PR / `workflow_dispatch` do CI**: o job `package` do `ci.yml` monta os instaladores **sem
-  publicar** (artefatos `installer-Windows` / `installer-Linux`) — pega quebra de empacotamento.
+  publicar** (artefatos `installer-Windows` / `installer-Linux` / `installer-macOS`) — pega quebra de
+  empacotamento (incluindo a compilação do Inno Setup e o `BUNDLE` do macOS).
 - **Release de teste**: `workflow_dispatch` em `release.yml` com `version` = valor de `__version__`
-  (ex.: `0.10.1-rc1`) gera **só artefatos de workflow**, sem release.
+  (ex.: `0.11.0-rc1`) gera **só artefatos de workflow**, sem release.
 - **Release final**: crie a tag e faça push:
 
 ```powershell
-git tag v0.10.1          # tag sem 'v' deve ser IGUAL a __version__
-git push origin v0.10.1
+git tag v0.11.0          # tag sem 'v' deve ser IGUAL a __version__
+git push origin v0.11.0
 ```
 
-O `release.yml` builda Windows (`windows-latest` + `choco install innosetup -y`) e Linux
-(`ubuntu-22.04`, que mantém a glibc mais antiga), gera `SHA256SUMS.txt` e cria o GitHub Release com
-`gh release create`. O job `linux` roda `Tests` com `xvfb-run`; quando o `pytest` falha, o workflow
-publica o bloco de falhas como **anotações públicas** (linhas `::error::`) — o log do job exige login,
-as anotações não.
+O `release.yml` builda Windows (`windows-latest` + `choco install innosetup -y`), Linux
+(`ubuntu-22.04`, que mantém a glibc mais antiga) e macOS (`macos-latest`, arm64, zip do `.app` sem
+assinatura), gera `SHA256SUMS.txt` e cria o GitHub Release com `gh release create`. O job `linux`
+roda `Tests` com `xvfb-run`; quando o `pytest` falha, o workflow publica o bloco de falhas como
+**anotações públicas** (linhas `::error::`) — o log do job exige login, as anotações não.
 
 ### Publicação da wiki (runbook manual)
 
@@ -212,7 +233,8 @@ git -C Screen-Diff-Watcher.wiki push origin master
 ```
 
 A publicação automática (workflow com o segredo `WIKI_PUSH_TOKEN`) fica adiada até o segredo existir.
-O CI (`ci.yml`) roda, em `ubuntu-latest`/`windows-latest` × Python 3.11/3.12/3.13, `ruff`,
+O CI (`ci.yml`) roda, em `ubuntu-latest`/`windows-latest` × Python 3.11/3.12/3.13 mais uma célula
+macOS (`macos-latest`/3.13, `QT_QPA_PLATFORM=offscreen`), `ruff`, `mypy` (só Linux/3.13),
 `validate-i18n` e `pytest` com `--cov=screen_watch`; o artefato `coverage-xml` vem da célula
 Linux/3.13. Assim como no workflow de release, um `pytest` do Linux que falha publica o bloco de
 falhas como anotações públicas `::error`; o `tests/test_gui_main_window.py` se auto-pula quando o
@@ -234,17 +256,27 @@ dist/screen-watch/screen-watch --help
 xvfb-run -a dist/screen-watch/screen-watch features --json
 ```
 
+```bash
+QT_QPA_PLATFORM=offscreen dist/screen-watch/screen-watch --help
+QT_QPA_PLATFORM=offscreen dist/screen-watch/screen-watch features --json
+```
+
 O `features --json` deve mostrar `frozen: true`, `input.available`, `tray.pystray`, backend de som,
 monitores e o Tesseract (caminho + idiomas). Compare com o ambiente de dev (`python -m screen_watch
 features`) — a diferença esperada é `frozen`.
 
 Validação manual (não automatizada):
 
-- **Windows, máquina limpa sem Tesseract**: instalar → Tesseract baixado/instalado; `features` mostra
-  `eng`+`por`; GUI abre; atalhos criados; opção "iniciar com o Windows" funciona; desinstalar remove
-  o app e **preserva** Tesseract e app-data.
+- **Windows, máquina limpa sem Tesseract**: instalar → prompt de consentimento; aceitar baixa e
+  instala o Tesseract (`features` mostra `eng`+`por`); recusar, ficar offline ou falhar o SHA256
+  mantém o setup funcionando (mensagem informativa); instalação silenciosa pula salvo
+  `/TESSERACT=yes`; a GUI abre; atalhos criados; o "iniciar com o Windows" funciona; desinstalar
+  remove o app e **preserva** Tesseract e app-data.
 - **Linux, container limpo**: `apt install ./screen-watch_<v>_amd64.deb` resolve as dependências
   (Tesseract junto); `screen-watch features --json` ok; `xvfb-run -a screen-diff-watcher-gui` abre.
+- **macOS (arm64), em hardware físico se possível**: descompactar o `.app`, "Abrir" pelo Gatekeeper,
+  permissões de Gravação de Tela + Acessibilidade, tray, som, `features --json`; o build é publicado
+  **sem assinatura** (sem notarização).
 - Ícone da janela/tray no bundle, `StartupWMClass` do `.desktop`, tamanho do pacote e aviso do
   SmartScreen (`.exe` sem assinatura — fora de escopo assinar).
 
@@ -283,10 +315,10 @@ alsa-utils`.
 
 ## 12. Checklist rápido (novo incremento)
 
-- [ ] `ruff check .` e `python -m pytest -q -m "not integration"` verdes.
+- [ ] `ruff check .`, `python -m mypy` e `python -m pytest -q -m "not integration"` verdes.
 - [ ] `__version__` atualizado (e nenhum `version` manual no `pyproject`).
 - [ ] (Se mudou) pin do Tesseract atualizado em `packaging/windows/tesseract.json`.
 - [ ] (Se mudou) `python packaging/make_ico.py`.
-- [ ] `python scripts/build_release.py --windows|--linux` e smoke do `features --json`.
+- [ ] `python scripts/build_release.py --windows|--linux|--macos` e smoke do `features --json`.
 - [ ] PR verde (job `package`) antes do merge.
 - [ ] Tag `vX.Y.Z` = `__version__` para publicar o release.

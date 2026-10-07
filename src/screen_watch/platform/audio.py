@@ -29,6 +29,7 @@ import subprocess
 import sys
 import threading
 from pathlib import Path
+from typing import Any
 
 from screen_watch.platform.paths import sounds_dir
 from screen_watch.resources import bundled_sounds_dir
@@ -61,7 +62,7 @@ _QT_FORMATS = ("wav", "mp3", "m4a", "aac", "ogg", "oga", "flac", "wma")
 
 # Player Qt criado no thread da GUI por `install_qt_player()`. O CLI nunca toca
 # em Qt: sem aplicacao Qt o proxy fica None e vale o miniaudio/legado.
-_qt_player: object | None = None
+_qt_player: Any = None
 
 
 def _external_players() -> tuple[tuple[str, ...], ...]:

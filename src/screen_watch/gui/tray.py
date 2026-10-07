@@ -132,7 +132,14 @@ def start_tray(
             ]
         )
         items.append(pystray.MenuItem(tr("tray.selection"), selection_menu))
-    items.extend([pystray.Menu.SEPARATOR, pystray.MenuItem(tr("tray.quit"), push_tray("quit"))])
+    items.extend(
+        [
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem(tr("tray.update"), push_tray("open_update")),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem(tr("tray.quit"), push_tray("quit")),
+        ]
+    )
     menu = pystray.Menu(*items)
     icon = pystray.Icon("screen_watch", _icon_image(), "Screen Diff Watcher", menu)
     thread = threading.Thread(target=icon.run, name="screen-watch-tray", daemon=True)

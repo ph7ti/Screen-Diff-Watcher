@@ -36,8 +36,9 @@ target estiver num monitor com escala. `probe-dpi` e `scripts/probe_dpi.py` most
 - **Múltiplas ROIs (só na GUI)**: cada sessão tem a própria thread, backend de captura e buffers de
   preview/calibração, e o modo `advanced` (OCR) multiplica a CPU por sessão. O `ui.max_sessions`
   (padrão 4, faixa 1..16) limita; o `run` do CLI monitora uma única seleção.
-- **macOS e ARM fora do build**: não há instalador nem validação; o build é Windows x64 + Linux
-  amd64.
+- **Validação do macOS pendente; ARM64 fora do build fora do macOS**: o `.app` arm64 do macOS é sem
+  assinatura e publicado sem validação em hardware (permissões/tray/áudio — checklist da v1.0.0);
+  o Linux segue amd64 e o Windows x64.
 - **Tray no GNOME**: pode não aparecer sem extensão de tray; a janela continua funcional.
 - **Som no Linux**: o CLI/`run` toca WAV/MP3/OGG/FLAC pelo `miniaudio` empacotado; a GUI depende dos
   plugins do GStreamer; formatos sem decoder (M4A/AAC no CLI) caem para um player externo

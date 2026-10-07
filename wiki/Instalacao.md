@@ -1,14 +1,15 @@
 # Instalação
 [English](Installation.md) · **Português (Brasil)**
 
-O Screen Diff Watcher roda em **Windows (x64)** e **Linux Debian/Ubuntu (amd64, X11)**. Há duas
-formas de instalar: pelos **binários** (instaladores) ou pelo **código-fonte**.
+O Screen Diff Watcher roda em **Windows (x64)** e **Linux Debian/Ubuntu (amd64, X11)** e, a partir
+da v0.11.0, no **macOS (arm64)** como `.app` sem assinatura. Há duas formas de instalar: pelos
+**binários** (instaladores) ou pelo **código-fonte**.
 
 | Plataforma | Formato | Observações |
 |---|---|---|
-| Windows x64 | `screen-diff-watcher_<versão>_windows_x64_setup.exe` (Inno Setup) | requer admin (per-machine); Tesseract baixado automaticamente (opcional) |
+| Windows x64 | `screen-diff-watcher_<versão>_windows_x64_setup.exe` (Inno Setup) | requer admin (per-machine); oferece o download opcional do Tesseract (pergunta antes; silencioso só com `/TESSERACT=yes`) |
 | Linux Debian/Ubuntu amd64 | `screen-watch_<versão>_amd64.deb` | requer X11; Wayland não captura |
-| macOS | — | sem instalador e não validado (o código tem caminhos básicos) |
+| macOS arm64 | `screen-diff-watcher_<versão>_macos_arm64.zip` | `.app` sem assinatura (sem notarização); **ainda não validado em hardware**; exige permissões de Gravação de Tela + Acessibilidade |
 
 ## Opção 1 — binários
 
@@ -23,10 +24,12 @@ Os instaladores são publicados no
    atalho na Área de Trabalho e **início automático com o Windows**.
 3. **SmartScreen**: como o `.exe` não é assinado, o Windows vai avisar — use "Mais informações" →
    "Executar assim mesmo". O antivírus pode fazer o mesmo. Assinatura de código está fora do escopo.
-4. **Tesseract automático**: se o Tesseract não estiver instalado, o instalador baixa o release
-   fixado do UB-Mannheim, **verifica o SHA256**, instala em silêncio e garante o `por.traineddata`
-   (o pacote já traz `eng`). Precisa de rede e admin; se o download/verificação falhar, ele **avisa e
+4. **Tesseract opcional**: o instalador pergunta antes de baixar (Sim/Não). Se o Tesseract não
+   estiver instalado e você aceitar, ele baixa o release fixado do UB-Mannheim, **verifica o
+   SHA256**, instala em silêncio e garante o `por.traineddata` (o pacote já traz `eng`). Precisa de
+   rede e admin; se você recusar, o download/verificação falhar ou estiver offline, ele **avisa e
    continua** — os modos `light`/`default` funcionam e o `advanced` acusa a falta com mensagem clara.
+   Instalação silenciosa (`/SILENT` ou `/VERYSILENT`) pula salvo `/TESSERACT=yes`.
    - **Offline**: instale o Tesseract manualmente
      (https://github.com/UB-Mannheim/tesseract/wiki) com os traineddata `por` e `eng`; o instalador
      detecta o binário e não baixa nada.
@@ -73,6 +76,7 @@ Extras opcionais:
 | `pip install -e ".[sound]"` | som via `simpleaudio` (sem wheel confiável no Python 3.13; opcional) |
 | `pip install -e ".[ocr-preproc]"` | experimentos de pré-processamento de OCR (`opencv-python`) |
 | `pip install -e ".[mqtt]"` | canal de alerta MQTT (`paho-mqtt`; não entra nos instaladores) |
+| `pip install -e ".[macosx]"` | popups no **macOS** (`pyobjus`; exigido pelo backend do plyer) |
 | `pip install -e ".[build]"` | gerar instaladores (`pyinstaller`) |
 
 Os canais **ntfy** e **SMTP** não precisam de extra (usam o `httpx` do núcleo e o `smtplib` da

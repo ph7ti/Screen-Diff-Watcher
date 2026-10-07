@@ -37,8 +37,9 @@ target window is on a monitor with scaling. `probe-dpi` and `scripts/probe_dpi.p
 - **Multiple ROIs (GUI only)**: each session is its own thread, capture backend and preview/calibration
   buffers, and `advanced` mode (OCR) multiplies CPU per session. `ui.max_sessions` (default 4, range
   1..16) caps it; the CLI `run` monitors a single selection.
-- **macOS and ARM out of the build**: there is no installer or validation; the build is Windows x64 + Linux
-  amd64.
+- **macOS validation pending; ARM64 out of the build outside macOS**: the macOS arm64 `.app` is
+  unsigned and published without hardware validation (permissions/tray/audio — v1.0.0 checklist);
+  Linux stays amd64 and Windows x64.
 - **Tray on GNOME**: may not appear without a tray extension; the window keeps working.
 - **Sound on Linux**: the CLI/`run` plays WAV/MP3/OGG/FLAC through the bundled `miniaudio`; the GUI
   depends on the GStreamer plugins; formats without a decoder (M4A/AAC in the CLI) fall back to an

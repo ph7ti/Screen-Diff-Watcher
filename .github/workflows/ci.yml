@@ -16,6 +16,10 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
         python: ["3.11", "3.12", "3.13"]
+        include:
+          # macOS entra so no 3.13 (runner arm64); offscreen na celula de testes.
+          - os: macos-latest
+            python: "3.13"
 
     steps:
       - uses: actions/checkout@v4
@@ -32,6 +36,10 @@ jobs:
 
       - name: Lint (ruff)
         run: ruff check .
+
+      - name: Type check (mypy)
+        if: runner.os == 'Linux' && matrix.python == '3.13'
+        run: python -m mypy
 
       - name: Validate i18n catalogs
         run: python -m screen_watch validate-i18n
@@ -53,7 +61,13 @@ jobs:
           fi
 
       - name: Tests (Windows)
-        if: runner.os != 'Linux'
+        if: runner.os == 'Windows'
+        run: python -m pytest -q -m "not integration" --cov=screen_watch --cov-report=term-missing --cov-report=xml
+
+      - name: Tests (macOS)
+        if: runner.os == 'macOS'
+        env:
+          QT_QPA_PLATFORM: offscreen
         run: python -m pytest -q -m "not integration" --cov=screen_watch --cov-report=term-missing --cov-report=xml
 
       - name: Upload coverage artifact
@@ -76,6 +90,8 @@ jobs:
             target: --linux
           - os: windows-latest
             target: --windows
+          - os: macos-latest
+            target: --macos
 
     steps:
       - uses: actions/checkout@v4
@@ -89,6 +105,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[build,input]"
+
+      - name: Install (macOS popup dependency)
+        if: runner.os == 'macOS'
+        run: pip install -e ".[macosx]"
 
       - name: Inno Setup
         if: runner.os == 'Windows'
@@ -108,6 +128,14 @@ jobs:
         run: |
           dist\screen-watch\screen-watch.exe --help
           dist\screen-watch\screen-watch.exe features --json
+
+      - name: Smoke (macOS)
+        if: runner.os == 'macOS'
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          dist/screen-watch/screen-watch --help
+          dist/screen-watch/screen-watch features --json
 
       - uses: actions/upload-artifact@v4
         with:

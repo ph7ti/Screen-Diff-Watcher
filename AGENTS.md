@@ -9,9 +9,9 @@ before any non-trivial task:
 
 ## Project
 
-Desktop app (Python 3.11+, Windows/Linux) that watches a **rectangular region (ROI) of a window**
-and alerts on visual changes. PyQt6 GUI + tray and a full CLI. Current version: **0.10.1**
-(`src/screen_watch/__init__.py`, single source; `pyproject.toml` is dynamic).
+Desktop app (Python 3.11+, Windows/Linux and macOS arm64) that watches a **rectangular region (ROI)
+of a window** and alerts on visual changes. PyQt6 GUI + tray and a full CLI. Current version:
+**0.11.0** (`src/screen_watch/__init__.py`, single source; `pyproject.toml` is dynamic).
 
 ## Source of truth
 
@@ -25,14 +25,15 @@ and alerts on visual changes. PyQt6 GUI + tray and a full CLI. Current version: 
 ## Quick start
 
 ```powershell
-python -m pip install -e ".[dev]"     # core + ruff/pytest/pytest-cov
-# optional extras: input (pynput), sound (simpleaudio), ocr-preproc, logging (structlog), build (PyInstaller)
+python -m pip install -e ".[dev]"     # core + ruff/pytest/pytest-cov/mypy
+# optional extras: input (pynput), sound (simpleaudio), ocr-preproc, mqtt, build (PyInstaller)
 ruff check .
+python -m mypy                        # core scope ([tool.mypy] in pyproject.toml)
 python -m pytest -q -m "not integration"
 python -m screen_watch validate-i18n
 python -m screen_watch gui
 python -m screen_watch run --selection <selection-file-slug>
-python scripts/build_release.py --windows   # or --linux; run on the target OS; tag vX.Y.Z == __version__
+python scripts/build_release.py --windows   # or --linux/--macos; target OS; tag vX.Y.Z == __version__
 ```
 
 Integration tests are opt-in and excluded from CI: `TEST_REAL_CAPTURE`; `TEST_REAL_TELEGRAM` +

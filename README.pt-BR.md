@@ -55,7 +55,8 @@ Roda no **Windows e no Linux**, capturando apenas pixels (não toca no aplicativ
 - **Não captura janelas ocluídas**: a captura lê **pixels da tela**; se outra janela cobrir a ROI,
   o conteúdo sobreposto entra na comparação. É limitação das APIs de captura, não um bug (doc §7.5).
 - **Não funciona em Wayland**: no Linux, rode em X11 — o app detecta e avisa.
-- **Não tem instalador para macOS nem para ARM** (o build é Windows x64 e Linux amd64).
+- **Não tem instalador para ARM64 fora do macOS** (o build é Windows x64, Linux amd64 e macOS
+  arm64; o `.app` do macOS é sem assinatura e ainda não validado em hardware).
 - **Não assina digitalmente os instaladores** — o SmartScreen vai avisar (assinatura fora de escopo).
 - **Não contorna DRM/anti-cheat** nem elevação (UAC).
 - **Não clica sozinho por padrão**: as ações exigem o extra `input` e precisam ser armadas.
@@ -116,9 +117,9 @@ extensível por `type`.
 
 | Plataforma | Como rodar | Status |
 |---|---|---|
-| **Windows (x64)** | instalador `.exe` (Inno Setup) ou código-fonte | suportado; o instalador baixa o Tesseract automaticamente (opcional) |
+| **Windows (x64)** | instalador `.exe` (Inno Setup) ou código-fonte | suportado; o instalador oferece o download opcional do Tesseract (pergunta antes; silencioso só com `/TESSERACT=yes`) |
 | **Linux Debian/Ubuntu (amd64, X11)** | pacote `.deb` ou código-fonte | suportado; Wayland não é suportado na captura |
-| **macOS** | somente código-fonte | **não validado** e sem instalador (fora do escopo do build) |
+| **macOS (arm64)** | zip do `.app` (sem assinatura) ou código-fonte | build publicado a partir da v0.11.0; **ainda não validado** em hardware (o Gatekeeper exige "Abrir" ou `xattr`) |
 
 Detalhes por plataforma: [wiki/Instalacao.md](wiki/Instalacao.md).
 
@@ -181,7 +182,8 @@ exemplo: `python -m screen_watch --language en-US gui`.
 
 - Nenhum para os modos `light`/`default`.
 - **Tesseract** no sistema (traineddata `por` + `eng`) para o modo `advanced` — no Windows o
-  instalador baixa sob demanda; no `.deb` ele já vem como dependência.
+  instalador oferece sob demanda (pergunta antes; instalação silenciosa só com `/TESSERACT=yes`);
+  no `.deb` ele já vem como dependência.
 - **Telegram** (opcional): token via variável de ambiente `TELEGRAM_BOT_TOKEN` (nunca no YAML) —
   passo a passo em [wiki/Configuracao-Telegram.md](wiki/Configuracao-Telegram.md).
 - **Ações e hotkeys globais** (opcional): extra `input` (`pynput`).
@@ -217,6 +219,10 @@ Baixe em [GitHub Releases](https://github.com/ph7ti/Screen-Diff-Watcher/releases
 - **Linux (Debian/Ubuntu amd64)**: `screen-watch_<versão>_amd64.deb`
   (`sudo apt install ./screen-watch_<versão>_amd64.deb`). O pacote declara `tesseract-ocr` +
   `tesseract-ocr-por` e as libs Qt6/X11.
+- **macOS (arm64)**: `screen-diff-watcher_<versão>_macos_arm64.zip` (`.app` sem assinatura).
+  Descompacte e abra; a primeira execução exige as permissões de **Gravação de Tela** (captura) e
+  **Acessibilidade** (popup/ações). O Gatekeeper bloqueia apps sem assinatura: clique com o botão
+  direito → **Abrir**, ou `xattr -d com.apple.quarantine "Screen Diff Watcher.app"`.
 
 ### Opção 2 — código-fonte
 
@@ -227,7 +233,7 @@ python -m pip install -e ".[dev]"
 python -m screen_watch --help
 ```
 
-Instalação detalhada (Tesseract automático, autostart no Linux, desinstalação, app-data,
+Instalação detalhada (Tesseract opcional, autostart no Linux, desinstalação, app-data,
 diagnóstico `features`): [wiki/Instalacao.md](wiki/Instalacao.md).
 
 ## Build dos instaladores
@@ -239,13 +245,14 @@ Guia completo: [`doc/01-Build_e_Release.md`](doc/01-Build_e_Release.md).
 python -m pip install -e ".[dev,build,input]"
 python scripts/build_release.py --windows   # no Windows (requer Inno Setup 6 / ISCC.exe)
 python scripts/build_release.py --linux     # no Linux (requer dpkg-deb)
+python scripts/build_release.py --macos     # no macOS (zip do .app sem assinatura via ditto)
 ```
 
 O script lê a versão de `screen_watch.__version__` (fonte única; o `pyproject.toml` é dinâmico),
 roda o PyInstaller e grava os artefatos + `build-info.json` em `dist/installers/`. Para publicar,
 crie a tag `vX.Y.Z` (igual à `__version__`) e faça push: o workflow
-`.github/workflows/release.yml` builda os dois instaladores, gera `SHA256SUMS.txt` e cria o
-GitHub Release. `workflow_dispatch` gera só os artefatos (sem release).
+`.github/workflows/release.yml` builda os instaladores (Windows/Linux/macOS), gera
+`SHA256SUMS.txt` e cria o GitHub Release. `workflow_dispatch` gera só os artefatos (sem release).
 
 ## Estado atual
 
@@ -259,12 +266,16 @@ das seleções no CLI** (incluindo o fluxo headless abaixo), **Ver local** (real
 sem tocar nos pixels), **reedição da região por duplo clique** (Enter inicia/para), a **janela em
 grid 2×2** e **múltiplas ROIs simultâneas** (conjunto por checkbox, `ui.max_sessions`, status/tray
 agregados), evidências, ações pseudo-humanas (com editor na GUI — incluindo os gatilhos de tempo da
-v0.10.0 — e gravador), agendador, perfis, CLI completa, GUI + tray com i18n (pt-BR/en-US),
-empacotamento (Inno Setup e `.deb`) e CI/release por tag.
+v0.10.0 — e gravador), agendador, perfis, CLI completa, GUI + tray com i18n (pt-BR/en-US), **checagem
+passiva de nova versão** (uma requisição anônima/dia ao GitHub, com cache; opt-out
+`ui.update_check`; só log + item no tray), empacotamento (Inno Setup com **Tesseract opcional e com
+consentimento**, `.deb` e o `.app` sem assinatura do macOS) e CI/release por tag. Os gates de
+desenvolvimento incluem **ruff** e **mypy** (escopo do núcleo).
 
 **Validação manual pendente:** GUI/tray/overlay em 100/125/150% (doc §5.1, §9.5) e detalhes do
-bundle em máquina limpa (ícone, `StartupWMClass`, tamanho do pacote, aviso do SmartScreen) —
-checklist em [`doc/01`](doc/01-Build_e_Release.md) §9.
+bundle em máquina limpa (ícone, `StartupWMClass`, tamanho do pacote, aviso do SmartScreen, fluxo de
+consentimento do Tesseract) — checklist em [`doc/01`](doc/01-Build_e_Release.md) §9. O `.app` do
+macOS é publicado sem assinatura e aguarda validação em hardware Apple.
 
 **Fluxo headless:** a seleção inteira funciona sem overlay — `list-windows` → `select-manual` →
 `edit-selection` (modo/ROI/máscaras/overrides) → `validate-config --selections` → `run --selection` —
@@ -273,8 +284,8 @@ e o ciclo de vida tem `list-selections [--json]`, `rename-selection` e `remove-s
 
 ## Limitações conhecidas (resumo)
 
-- **Wayland** não captura; **janela ocluída** compara o que estiver na frente; **ARM** e **macOS**
-  não fazem parte do build.
+- **Wayland** não captura; **janela ocluída** compara o que estiver na frente; **ARM64** fora do
+  build macOS arm64 e a **validação do macOS em hardware** estão pendentes (v1.0.0).
 - **Tray no GNOME** pode não aparecer sem extensão de tray (a janela continua funcional).
 - **Som no Linux** depende dos plugins do GStreamer (GUI) ou de um player externo (legado); no CLI, o
   `miniaudio` cobre WAV/MP3/OGG/FLAC — **M4A/AAC** precisa de um player como `ffplay`, senão o alerta
@@ -303,7 +314,7 @@ escada de scripts e CI em [wiki/Desenvolvimento-Testes-e-CI.md](wiki/Desenvolvim
 | [**Wiki**](wiki/Home-pt-BR.md) | detalhes de uso e recursos: CLI, GUI, config, ações, alertas, evidências, idiomas, DPI, build |
 | [`doc/00-Documento_de_Arquitetura_e_Especificação.md`](doc/00-Documento_de_Arquitetura_e_Especificação.md) | arquitetura e especificação — **fonte única de verdade do design** |
 | [`doc/01-Build_e_Release.md`](doc/01-Build_e_Release.md) | pipeline de build e release dos instaladores |
-| [`doc/releases/`](doc/releases/v0.10.1.pt-BR.md) | notas de release por versão (arquivo de detalhe) |
+| [`doc/releases/`](doc/releases/v0.11.0.pt-BR.md) | notas de release por versão (arquivo de detalhe) |
 | [`CHANGELOG.md`](CHANGELOG.md) | mudanças por versão (semântico) |
 | [`README.md`](README.md) | este guia em inglês |
 

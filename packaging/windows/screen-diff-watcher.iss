@@ -89,6 +89,27 @@ begin
   Result := ResultCode;
 end;
 
+{ Consentimento (v0.11.0): o Tesseract e opcional. Interativo pergunta Sim/Nao;
+  silencioso so baixa com /TESSERACT=yes (default: nao baixa). }
+function ShouldInstallTesseract(): Boolean;
+var
+  Answer: Integer;
+begin
+  if WizardSilent then
+  begin
+    Result := CompareText(ExpandConstant('{param:TESSERACT|no}'), 'yes') = 0;
+    Exit;
+  end;
+  Answer := MsgBox(
+    'O Tesseract OCR (opcional) nao foi encontrado neste computador.' + #13#10 + #13#10 +
+    'Ele habilita apenas o modo advanced (comparacao por texto); os modos light e default ' +
+    'funcionam sem ele.' + #13#10 + #13#10 +
+    'Deseja baixar e instalar o Tesseract agora? (requer internet; se falhar, a instalacao ' +
+    'do app continua normalmente)',
+    mbConfirmation, MB_YESNO);
+  Result := Answer = IDYES;
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   Code: Integer;
@@ -99,6 +120,10 @@ begin
     Exit;
   end;
   if TesseractPresent() then
+  begin
+    Exit;
+  end;
+  if not ShouldInstallTesseract() then
   begin
     Exit;
   end;
@@ -113,10 +138,15 @@ begin
   else
     Message := 'A instalacao automatica do Tesseract falhou.';
   end;
-  MsgBox(
-    Message + #13#10#13#10 +
-    'O app funciona nos modos light/default. O modo advanced (OCR) exige o Tesseract: ' +
-    'instale manualmente de https://github.com/UB-Mannheim/tesseract/wiki ' +
-    '(com os traineddata por e eng).',
-    mbInformation, MB_OK);
+  { Em modo silencioso nao ha dialogo: MsgBox nao e suprimido por /SILENT nem
+    /VERYSILENT, entao um alerta aqui travaria instalacoes desatendidas. }
+  if not WizardSilent then
+  begin
+    MsgBox(
+      Message + #13#10#13#10 +
+      'O app funciona nos modos light/default. O modo advanced (OCR) exige o Tesseract: ' +
+      'instale manualmente de https://github.com/UB-Mannheim/tesseract/wiki ' +
+      '(com os traineddata por e eng).',
+      mbInformation, MB_OK);
+  end;
 end;

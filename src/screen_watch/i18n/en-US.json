@@ -83,7 +83,10 @@
   "tray.acknowledge": "Acknowledge escalation",
   "tray.selection": "Selection",
   "tray.profile": "Profile",
+  "tray.update": "Updates…",
   "tray.quit": "Quit",
+
+  "update.available": "update available: {version} (open it from the tray menu)",
 
   "status.stopped": "stopped",
   "status.monitoring": "monitoring {name} ({mode})",

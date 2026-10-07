@@ -3,8 +3,8 @@
 **English** · [Português (Brasil)](Home-pt-BR.md)
 
 Watches a **rectangular region (ROI) of a window** and notifies you when it changes — sound, popup,
-Telegram, webhook/HTTP POST, syslog, log, ntfy, e-mail (SMTP) or MQTT — on **Windows and Linux**,
-without touching the watched application.
+Telegram, webhook/HTTP POST, syslog, log, ntfy, e-mail (SMTP) or MQTT — on **Windows, Linux and
+macOS (arm64, unsigned build)**, without touching the watched application.
 
 This wiki gathers the **usage and feature details**. The overview (what it does and does not do,
 platforms, prerequisites, quick start and build) is in the [README](../README.md).

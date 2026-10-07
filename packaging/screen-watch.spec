@@ -44,6 +44,8 @@ for module in ("pynput", "pystray", "plyer", "pywinctl", "pymonctl", "mss"):
 
 if sys.platform == "win32":
     hiddenimports += ["plyer.platforms.win.notification"]
+elif sys.platform == "darwin":
+    hiddenimports += ["plyer.platforms.macosx.notification"]
 else:
     hiddenimports += ["plyer.platforms.linux.notification", "Xlib.ext.randr"]
 
@@ -111,12 +113,24 @@ exe_gui = EXE(
     icon=icon,
 )
 
+# O BUNDLE do macOS usa o primeiro EXECUTABLE do COLLECT como CFBundleExecutable;
+# a GUI vem primeiro para o `.app` abrir a janela. Nos demais SOs a ordem e inócua.
 coll = COLLECT(
-    exe_cli,
     exe_gui,
+    exe_cli,
     a.binaries,
     a.datas,
     strip=False,
     upx=False,
     name="screen-watch",
 )
+
+if sys.platform == "darwin":
+    # Icone .icns e opcional: sem ele o bundle segue valido (nao bloqueia o build).
+    ICNS = PROJECT_ROOT / "packaging" / "icons" / "ScreenDiffWatcher.icns"
+    app = BUNDLE(
+        coll,
+        name="Screen Diff Watcher.app",
+        icon=str(ICNS) if ICNS.is_file() else None,
+        bundle_identifier="com.ph7ti.screendiffwatcher",
+    )

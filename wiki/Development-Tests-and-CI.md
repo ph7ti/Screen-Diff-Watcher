@@ -11,12 +11,13 @@ python -m pip install -e ".[dev]"     # core + ruff/pytest
 ```
 
 Extras that affect development: `input` (pynput — actions/hotkeys), `build` (pyinstaller),
-`sound`/`ocr-preproc`/`logging` (optional), `dev` (tests).
+`sound`/`ocr-preproc` (optional), `dev` (tests + ruff + mypy).
 
 ## Quality and tests
 
 ```powershell
 ruff check .
+python -m mypy                    # core scope ([tool.mypy] in pyproject.toml)
 python -m pytest                  # unit tests (default)
 python -m pytest -q -m "not integration"
 ```

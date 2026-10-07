@@ -1,6 +1,6 @@
 # Roadmap — agent knowledge base
 
-Status: v0.10.1 · Scope: prioritized backlog for v1.0.0
+Status: v0.11.0 · Scope: prioritized backlog for v1.0.0
 
 Rules:
 
@@ -64,22 +64,42 @@ Shipped as **0.10.0** (2026-10-06); details and evidence in `doc/releases/v0.10.
 - [x] GUI editor trigger selector, `list-actions` summary, one-off notice, recorder hint and i18n in
       both catalogs; tests with fake clocks — `doc/00` §12.5/§14/§17.
 
-## v1.0.0 — Stabilization + platforms
+## v0.11.0 — Update check, macOS, installer consent, housekeeping (done)
 
-Risks: platform scope creep; passive update check must stay opt-out/cached; typing and the unused
-`logging` extra are small but touch many files if done late.
+Shipped as **0.11.0** (2026-10-06); details and evidence in `doc/releases/v0.11.0.md` (EN) +
+`v0.11.0.pt-BR.md`, `CHANGELOG.md` and `doc/00` §1.4.
 
-1. **Manual validation** — execute and record the clean-install checklist (`doc/01` §9) and DPI
-   100/125/150% (`doc/00` §5.1); fix failures (patch v1.0.x if needed).
-2. **Passive update check** — GitHub releases via `httpx`, daily cache in `state.json`, no
-   auto-download, opt-out.
-   - Acceptance: passive, cached, opt-out; tests.
-   - `doc/00`: §3.8, §15.
-3. **Platforms** — macOS (validate paths/audio/capture; optional unsigned build job), ARM64
-   (PyInstaller target + `.deb` architecture) and a Wayland spike (xdg-desktop-portal) with the
-   decision recorded in `doc/00` (support or declare out of scope).
-   - `doc/00`: §3.2, §15.
-4. **Housekeeping** — use or remove the `logging` extra (structlog is unused in `src/`); gradual
-   typing (pyright/mypy) on core modules.
-   - Acceptance: decisions recorded in `doc/00`; `logging` resolved; typing scope/config defined and
-     green in CI.
+- [x] Passive update check (`src/screen_watch/updates.py`): at most one anonymous GitHub `GET`/day,
+  `state.json` cache (`update_check`, 24 h TTL, `notified_version`), opt-out `ui.update_check`,
+  GUI log + tray item opening the release — no popup, no download, daemon thread, CLI offline —
+  `doc/00` §3.8/§12.1/§12.4/§15.
+- [x] macOS arm64: CI cell (py3.13, `QT_QPA_PLATFORM=offscreen`), `build_release.py --macos`
+  (`.zip` via `ditto`), PyInstaller `BUNDLE` + `plyer.platforms.macosx.notification`, release job
+  publishes the unsigned `.app`; hardware validation deferred to v1.0.0 —
+  `doc/00` §1.1/§3.1/§5.3/§15.
+- [x] Wayland spike recorded: portal `org.freedesktop.portal.ScreenCast` + PipeWire evaluated and
+  **kept out of scope for the 1.x line** (frame stack/packaging, stream-vs-ROI anchoring model,
+  per-compositor consent); future backend behind `capture/backend.py`, no new dependencies now —
+  `doc/00` §3.2/§5.1.
+- [x] Windows installer: Tesseract **optional with consent** (interactive Yes/No; silent only with
+  `/TESSERACT=yes`; failure never aborts; pin/SHA256/uninstall preserved) — `doc/01` §5/§9.
+- [x] Housekeeping: unused `logging`/`structlog` extra removed (structlog rejected); **mypy**
+  dev-only with the core scope in `[tool.mypy]` + CI gate on Linux/3.13 — `doc/00` §3.1/§15.
+
+## v1.0.0 — Manual validation + closing
+
+Only what cannot be automated or delegated:
+
+1. **Manual validation (user, physical hardware)** — execute and record:
+   - clean-machine bundle checklist (`doc/01` §9): icon, `StartupWMClass`, package size, SmartScreen
+     and the **Tesseract consent flow** (accept/decline/offline/silent `/TESSERACT=yes`);
+   - GUI/tray/overlay and DPI at 100/125/150% (`doc/00` §5.1, §9.5);
+   - macOS on Apple hardware, if available: TCC permissions (Screen Recording/Accessibility), tray,
+     audio, first run of the unsigned `.app` (Gatekeeper).
+   Fix any failure as a PATCH before closing.
+2. **Close 1.0.0** — bump `__version__`, update docs/release notes, tag `v1.0.0` (publish only after
+   the validation above is recorded).
+
+Deferred follow-ups (not v1.0.0 blockers): multi-ROI in the CLI/headless flow; persistence of the
+monitored checkbox set; `alerts.jsonl` schema with channel/target/evidence path; Wayland backend
+(portal + PipeWire, post-1.0 — `doc/00` §3.2).

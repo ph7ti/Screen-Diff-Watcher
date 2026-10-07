@@ -136,9 +136,66 @@ jobs:
           name: linux-package
           path: dist/installers/*
 
+  macos:
+    name: macos app bundle (unsigned)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Guarda de versao
+        env:
+          REF_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+        run: |
+          python - <<'PY'
+          import os, sys
+          sys.path.insert(0, "src")
+          import screen_watch
+          expected = screen_watch.__version__
+          ref = os.environ["REF_VERSION"].strip()
+          if ref.startswith("v"):
+              ref = ref[1:]
+          if ref != expected:
+              print(f"::error::ref {ref!r} != screen_watch.__version__ {expected!r}")
+              raise SystemExit(1)
+          print(f"versao ok: {expected}")
+          PY
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,build,input,macosx]"
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest -q -m "not integration"
+
+      - name: Build installer
+        run: python scripts/build_release.py --macos
+
+      - name: Smoke
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          dist/screen-watch/screen-watch --help
+          dist/screen-watch/screen-watch features --json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-package
+          path: dist/installers/*
+
   release:
     name: publish release
-    needs: [windows, linux]
+    needs: [windows, linux, macos]
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     steps:
@@ -177,6 +234,6 @@ jobs:
             NOTES="$(git tag -l --format='%(contents)' "$TAG" 2>/dev/null || true)"
           fi
           if [ -z "$NOTES" ]; then
-            NOTES="Release $TAG. Instaladores: Windows (setup.exe) e Linux (.deb). Checksums em SHA256SUMS.txt."
+            NOTES="Release $TAG. Instaladores: Windows (setup.exe), Linux (.deb) e macOS (zip do .app sem assinatura). Checksums em SHA256SUMS.txt."
           fi
           gh release create "$TAG" artifacts/* --title "$TAG" --notes "$NOTES"

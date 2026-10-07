@@ -10,12 +10,13 @@ python -m pip install -e ".[dev]"     # núcleo + ruff/pytest
 ```
 
 Extras que afetam o desenvolvimento: `input` (pynput — ações/hotkeys), `build` (pyinstaller),
-`sound`/`ocr-preproc`/`logging` (opcionais), `dev` (testes).
+`sound`/`ocr-preproc` (opcionais), `dev` (testes + ruff + mypy).
 
 ## Qualidade e testes
 
 ```powershell
 ruff check .
+python -m mypy                    # escopo do núcleo ([tool.mypy] no pyproject.toml)
 python -m pytest                  # unitários (padrão)
 python -m pytest -q -m "not integration"
 ```

@@ -1,13 +1,15 @@
-"""Build de instaladores nativos: Windows (Inno Setup) e Linux (.deb).
+"""Build de instaladores nativos: Windows (Inno Setup), Linux (.deb) e macOS (.app zip).
 
 Uso::
 
     python scripts/build_release.py --windows
     python scripts/build_release.py --linux
+    python scripts/build_release.py --macos
 
 Roda **no SO alvo** (recusa cross-build). Requer o extra ``build`` (PyInstaller)
 e, no Linux, ``dpkg-deb`` (pacote ``dpkg-dev``). No Windows, o ``ISCC.exe`` do
-Inno Setup precisa estar no ``PATH`` (``choco install innosetup -y``).
+Inno Setup precisa estar no ``PATH`` (``choco install innosetup -y``). No macOS o
+``.app`` sai sem assinatura/notarizacao (zip via ``ditto``).
 
 Saidas: bundle PyInstaller em ``dist/screen-watch/`` e o instalador +
 ``build-info.json`` em ``dist/installers/``.
@@ -41,6 +43,9 @@ PACKAGE_ICONS = SRC_DIR / "screen_watch" / "assets" / "icons"
 
 # Nome do wrapper/entrada grafica no Linux (distinto do binario empacotado).
 LINUX_GUI_COMMAND = "screen-diff-watcher-gui"
+
+# Nome do bundle macOS (mesmo `name` do BUNDLE no spec).
+MACOS_APP_NAME = "Screen Diff Watcher.app"
 
 _CAPABILITY_MODULES = ("pynput", "cv2")
 
@@ -89,7 +94,7 @@ def detect_capabilities() -> dict[str, bool]:
     return {name: _has_module(name) for name in _CAPABILITY_MODULES}
 
 
-def write_build_info(version: str, target: str) -> Path:
+def write_build_info(version: str, target: str, *, arch: str | None = None) -> Path:
     INSTALLERS.mkdir(parents=True, exist_ok=True)
     info = {
         "app": APP_NAME,
@@ -100,6 +105,8 @@ def write_build_info(version: str, target: str) -> Path:
         "capabilities": detect_capabilities(),
         "spec": str(SPEC.relative_to(REPO_ROOT)),
     }
+    if arch:
+        info["arch"] = arch
     path = INSTALLERS / "build-info.json"
     path.write_text(json.dumps(info, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return path
@@ -252,6 +259,36 @@ def build_linux(version: str, dpkg_deb: str) -> Path:
     return output
 
 
+# -- macOS (.app zip, sem assinatura) --------------------------------------
+
+
+def build_macos(version: str, arch: str) -> Path:
+    """Zip do `.app` (ditto preserva symlinks/metadados do bundle)."""
+    if sys.platform != "darwin":
+        raise SystemExit("--macos so roda no macOS (nao ha cross-build).")
+    app_dir = DIST / MACOS_APP_NAME
+    if not app_dir.is_dir():
+        raise SystemExit(f"app bundle PyInstaller nao encontrado: {app_dir}")
+    INSTALLERS.mkdir(parents=True, exist_ok=True)
+    output = INSTALLERS / f"screen-diff-watcher_{version}_macos_{arch}.zip"
+    output.unlink(missing_ok=True)
+    # `ditto` e o zip canonico do macOS: preserva symlinks e atributos do bundle.
+    _run(
+        [
+            "/usr/bin/ditto",
+            "-c",
+            "-k",
+            "--sequesterRsrc",
+            "--keepParent",
+            str(app_dir),
+            str(output),
+        ]
+    )
+    if not output.is_file():
+        raise SystemExit(f"zip nao gerado: {output}")
+    return output
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -259,28 +296,42 @@ def main(argv: list[str] | None = None) -> int:
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--windows", action="store_true", help="gera o setup.exe (Inno Setup)")
     group.add_argument("--linux", action="store_true", help="gera o pacote .deb")
+    group.add_argument("--macos", action="store_true", help="gera o zip do .app (sem assinatura)")
     args = parser.parse_args(argv)
 
     version = resolve_version()
 
     # Recusa cross-build e valida os prerequisitos ANTES do PyInstaller.
+    arch: str | None = None
     if args.windows:
         if sys.platform != "win32":
             raise SystemExit("--windows so roda no Windows (nao ha cross-build).")
         iscc = find_iscc()
         dpkg_deb = None
         target = "windows"
-    else:
+    elif args.linux:
         if not sys.platform.startswith("linux"):
             raise SystemExit("--linux so roda no Linux (nao ha cross-build).")
         dpkg_deb = find_dpkg_deb()
         iscc = None
         target = "linux"
+    else:
+        if sys.platform != "darwin":
+            raise SystemExit("--macos so roda no macOS (nao ha cross-build).")
+        iscc = None
+        dpkg_deb = None
+        target = "macos"
+        arch = platform.machine() or "unknown"
     print(f"{APP_NAME} {version} - build {target}")
 
     run_pyinstaller()
-    info = write_build_info(version, target)
-    artifact = build_windows(version, iscc) if args.windows else build_linux(version, dpkg_deb)
+    info = write_build_info(version, target, arch=arch)
+    if args.windows:
+        artifact = build_windows(version, iscc)
+    elif args.linux:
+        artifact = build_linux(version, dpkg_deb)
+    else:
+        artifact = build_macos(version, arch or "unknown")
 
     print(f"build-info: {info}")
     print(f"artefato:   {artifact}")

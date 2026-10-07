@@ -15,7 +15,9 @@ import logging
 import sys
 from ctypes import wintypes
 from dataclasses import dataclass, replace
+from typing import Any
 
+pywinctl: Any
 try:
     import pywinctl
 except (Exception, SystemExit) as exc:
@@ -75,12 +77,12 @@ class WindowInfo:
     app_name: str = ""  # nome amigavel do app (estilo Gerenciador de Tarefas)
 
 
-def _flag(win: object, name: str) -> bool:
+def _flag(win: Any, name: str) -> bool:
     value = getattr(win, name, False)
     return bool(value() if callable(value) else value)
 
 
-def _to_info(win: object) -> WindowInfo:
+def _to_info(win: Any) -> WindowInfo:
     handle = win.getHandle()
     if isinstance(handle, str):
         try:
@@ -260,7 +262,7 @@ def _configure() -> None:
         log.warning("could not configure the Win32 window APIs")
 
 
-def _as_hwnd(handle: object) -> int | None:
+def _as_hwnd(handle: Any) -> int | None:
     if isinstance(handle, int):
         return handle or None
     try:

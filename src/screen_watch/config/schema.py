@@ -300,6 +300,8 @@ class UiOptions:
     max_sessions: int = 4
     # Idioma da GUI: "auto" (locale do SO) ou uma tag descoberta em i18n/*.json.
     language: str = "auto"
+    # Checagem passiva de nova versao (doc, secao 3.8; default ligada).
+    update_check: bool = True
 
     def hotkey(self, name: str, default: str = "") -> str:
         for key, value in self.hotkeys:

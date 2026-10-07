@@ -61,7 +61,9 @@ def list_monitor_scales() -> list[MonitorScale] | None:
     except Exception:
         return None
 
-    app = QApplication.instance() or QApplication([])
+    app = QApplication.instance()
+    if not isinstance(app, QApplication):
+        app = QApplication([])
     _QT_APP = app
     primary = app.primaryScreen()
 

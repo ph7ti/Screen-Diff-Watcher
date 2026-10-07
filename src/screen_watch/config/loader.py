@@ -823,6 +823,7 @@ def _parse_ui(raw: Any) -> UiOptions:
         snooze_minutes=snooze_minutes,
         max_sessions=max_sessions,
         language=language,
+        update_check=_as_bool(raw.get("update_check", True), "ui.update_check"),
     )
 
 
@@ -1201,6 +1202,7 @@ def _default_ui_dict() -> dict[str, Any]:
         "snooze_minutes": [5, 15, 30, 60],
         "max_sessions": 4,
         "language": "auto",
+        "update_check": True,
     }
 
 

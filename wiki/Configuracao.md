@@ -7,7 +7,7 @@
 |---|---|
 | `config.yaml` | config global: perfis (defaults/alertas/ações), `ui`, `schedule`, `evidence` |
 | `selections/<nome>.json` | seleções de ROI (uma por alvo), com `overrides` opcionais |
-| `state.json` | estado leve: `last_selection`, `profile`, `language`, `action_selection`, `evidence_enabled`, `alerts_muted`, `alerts_snooze_until` |
+| `state.json` | estado leve: `last_selection`, `profile`, `language`, `action_selection`, `evidence_enabled`, `alerts_muted`, `alerts_snooze_until`, `update_check` |
 | `logs/` | `alerts.jsonl` (alertas) e `actions.jsonl` (auditoria de ações) |
 
 Base: `%APPDATA%\screen_watch` (Windows), `~/.config/screen_watch` (Linux),
@@ -56,6 +56,7 @@ ui:
   snooze_minutes: [5, 15, 30, 60]  # menu Soneca da GUI/tray (minutos positivos)
   max_sessions: 4                  # sessões simultâneas na GUI (1..16)
   language: auto                 # auto | pt-BR | en-US | tag descoberta em i18n/*.json
+  update_check: true             # checagem passiva de release (1 GET/dia; opt-out)
 schedule: { enabled: false, days: [mon, tue, wed, thu, fri], windows: ["08:00-12:00"] }
 evidence: { enabled: false, dir: null, keep_per_target: 50, max_total_mb: 200,
             on_baseline: true, on_change: true, per_step: false }
@@ -72,6 +73,9 @@ evidence: { enabled: false, dir: null, keep_per_target: 50, max_total_mb: 200,
 - `ui.snooze_minutes` exige uma lista de inteiros positivos (`config.snooze_minutes_not_list`/
   `config.snooze_minutes_positive`); `ui.max_sessions` aceita 1..16 (`config.max_sessions_range`).
 - `ui.hotkeys.acknowledge` (Ciente) é opcional; sem ele o reconhecimento fica no botão/tray.
+- `ui.update_check` (default `true`) liga a **checagem passiva de release**: no máximo uma requisição
+  anônima/dia à API de releases do GitHub, com cache no `state.json`; mostra apenas uma linha no log
+  e um item no tray (sem popup, sem download) e pode ser desligado sem afetar o monitoramento.
 - O app regrava o YAML **sem preservar comentários**; a escrita é atômica (temp + `os.replace`) e
   deixa um backup `config.yaml.bak`.
 - Ajuste os limites (`light`/`default`) e o `advanced.similarity_threshold` com o `compare-modes` do
@@ -256,6 +260,7 @@ primeiro). Nomes duplicados no v1 também abortam.
 | `evidence_enabled` | toggle do checkbox "Gravar prints" (tem precedência sobre o YAML) |
 | `alerts_muted` | silêncio dos alertas (Silenciar/Reativar na GUI/tray) |
 | `alerts_snooze_until` | fim da soneca (epoch); expirado é ignorado no start |
+| `update_check` | cache da checagem passiva (`checked_at`/`latest`/`url`/`notified_version`) |
 
 O `state.json` é gravado de forma atômica e sem backup; é estado descartável (apagar não quebra).
 

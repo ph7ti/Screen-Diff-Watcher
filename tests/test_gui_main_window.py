@@ -11,11 +11,13 @@ que simulam a ausencia do Qt (`tests/test_gui_countdown.py`, `tests/test_display
 
 from __future__ import annotations
 
+import webbrowser
 from types import SimpleNamespace
 
 import pytest
 
 from screen_watch.i18n import tr
+from screen_watch.updates import RELEASES_PAGE
 
 
 @pytest.fixture
@@ -119,3 +121,52 @@ def test_acknowledge_noop_without_escalation(main_window_cls):
     main_window_cls._acknowledge(window)
 
     assert controller.acked == 0
+
+
+# -- checagem passiva de versao (v0.11.0) ------------------------------------
+
+
+def test_handle_update_sets_url_and_logs(main_window_cls):
+    lines: list[str] = []
+    window = SimpleNamespace(_update_url=None, _append=lines.append)
+
+    main_window_cls._handle_update(
+        window, {"tag": "v0.11.0", "url": "https://example.invalid/tag"}
+    )
+
+    assert window._update_url == "https://example.invalid/tag"
+    assert lines == [tr("update.available", version="v0.11.0")]
+
+
+def test_handle_update_ignores_empty_tag(main_window_cls):
+    lines: list[str] = []
+    window = SimpleNamespace(_update_url=None, _append=lines.append)
+
+    main_window_cls._handle_update(window, {"url": "https://example.invalid"})
+
+    assert window._update_url is None
+    assert lines == []
+
+
+def test_open_update_uses_release_url(main_window_cls, monkeypatch):
+    opened: list[str] = []
+    monkeypatch.setattr(webbrowser, "open", lambda url: opened.append(url) or True)
+    lines: list[str] = []
+    window = SimpleNamespace(_update_url="https://example.invalid/release", _append=lines.append)
+
+    main_window_cls._open_update(window)
+
+    assert opened == ["https://example.invalid/release"]
+    assert "https://example.invalid/release" in lines[-1]
+
+
+def test_open_update_falls_back_to_releases_page(main_window_cls, monkeypatch):
+    opened: list[str] = []
+    monkeypatch.setattr(webbrowser, "open", lambda url: opened.append(url) or False)
+    lines: list[str] = []
+    window = SimpleNamespace(_update_url=None, _append=lines.append)
+
+    main_window_cls._open_update(window)
+
+    assert opened == [RELEASES_PAGE]
+    assert "open manually" in lines[-1]

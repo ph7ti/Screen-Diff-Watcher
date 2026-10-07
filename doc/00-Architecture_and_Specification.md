@@ -4,7 +4,7 @@
 
 > **Purpose of this document**: to serve as the **single source of truth for the design** so that
 > another AI (or developer) can continue the project without having to reconstruct decisions, and to
-> record **what is implemented** (reference: v0.10.1). Every decision recorded here was made
+> record **what is implemented** (reference: v0.11.0). Every decision recorded here was made
 > deliberately; where there are alternatives, they are listed as "rejected" with the reason.
 >
 > **Maintenance rule**: do not replace a recorded decision with a "more modern" alternative
@@ -37,8 +37,9 @@ A **cross-platform Python desktop application** that:
 6. Offers a **GUI with tray** (PyQt6 + pystray) and a **full CLI**, with profiles, scheduler and i18n
    (pt-BR/en-US in the GUI; CLI and log in fixed English).
 
-**Build target platforms**: Windows (x64) and Linux Debian/Ubuntu (amd64, X11). macOS has code
-paths (audio/paths), but is **not a build or validation target** (§15).
+**Build target platforms**: Windows (x64), Linux Debian/Ubuntu (amd64, X11) and, from v0.11.0,
+macOS (arm64) as an **unsigned `.app` bundle** (Gatekeeper bypass required; manual validation
+pending — §15).
 
 ### 1.2 What the project is NOT
 
@@ -48,7 +49,8 @@ paths (audio/paths), but is **not a build or validation target** (§15).
 - It does not bypass DRM, anti-cheat or protected windows.
 - It does not depend on any proprietary cloud service: every remote channel (Telegram, ntfy, SMTP,
   MQTT, webhook) is optional and user-configured, with credentials in environment variables.
-- It does not support **Wayland** (§3.2) or **ARM**; it does not digitally sign the installers.
+- It does not support **Wayland** (§3.2) or **ARM64** outside the macOS arm64 build; it does not
+  digitally sign or notarize the installers (macOS shows the usual unsigned-app warning).
 - It is not a generic RPA: the actions are an opt-in and deliberate subsystem (§11.4).
 
 ### 1.3 Canonical use case
@@ -58,7 +60,7 @@ alert the user when that panel undergoes a visual change, without requiring the 
 looking at the screen. Natural extension: react to the change with a simple action (e.g., click
 "Refresh") when that is explicitly armed.
 
-### 1.4 Implementation status (v0.10.1)
+### 1.4 Implementation status (v0.11.0)
 
 Implemented and covered by tests: platform boundary, capture/anchoring (Model B), the three
 comparison modes, pipeline with short-circuit (`advanced` gated by phash and bypassed by
@@ -116,11 +118,26 @@ clicked at **logical** coordinates on scaled monitors (`ref: roi`/`window`/`scre
 off at the center of a 1920×1200 @ 125% screen). Capture, recorder and hand-typed coordinates were
 already physical and unchanged.
 
+**v0.11.0 additions**: passive **update check** (`updates.py`: at most one anonymous GitHub `GET` per
+day, `state.json` cache with 24 h TTL and `notified_version`, opt-out `ui.update_check`; GUI log line
++ tray item that opens the release — never a popup, never a download, never on the capture path)
+(§3.8/§12.1/§12.4/§15); **macOS arm64** build target (CI cell with `QT_QPA_PLATFORM=offscreen`,
+`build_release.py --macos` producing the `ditto` zip of a PyInstaller `BUNDLE`, release asset) —
+unsigned and pending hardware validation (§1.1/§3.1/§5.3/§15); the **Wayland spike** decision
+(portal `org.freedesktop.portal.ScreenCast` + PipeWire evaluated and kept out of scope for the 1.x
+line — §3.2/§5.1); the Windows installer now makes Tesseract **optional with consent** (interactive
+Yes/No; silent installs only with `/TESSERACT=yes`; failure never aborts — §3.8/§15); housekeeping:
+the unused `logging` extra was removed and **mypy** (dev-only, core scope, CI gate on Linux/3.13) is
+the typing gate (§3.1/§15).
+
 Pending **manual validation** items (not automatable in CI):
 
 - GUI/tray/overlay at 100/125/150% scales (§5.1, §9).
 - Bundle on a clean machine: window/tray icon, `StartupWMClass` of the `.desktop`, package size,
-  SmartScreen warning (signing out of scope). Checklist in [`doc/01`](01-Build_and_Release.md) §9.
+  SmartScreen warning (signing out of scope) and the **Tesseract consent flow** (accept/decline/
+  offline/silent `/TESSERACT=yes`). Checklist in [`doc/01`](01-Build_and_Release.md) §9.
+- macOS on physical hardware: TCC permissions (Screen Recording/Accessibility), tray, audio and the
+  first run of the unsigned `.app` (Gatekeeper); ARM64 outside macOS stays out of scope.
 
 ---
 
@@ -157,6 +174,16 @@ Each item below is a closed decision. Format: **Decision → Reason → Rejected
 - **Reason**: `Protocol`, `dataclass(frozen=True)`, modern `tomllib`/`typing`, mature `asyncio`;
   wide availability of bindings for capture, GUI and OCR. PyInstaller only gained
   Python 3.13 support starting with 6.11.1 (pin in the `build` extra).
+- **Targets (v0.11.0)**: Windows x64, Linux Debian/Ubuntu amd64 (X11) and macOS arm64 (unsigned,
+  PyInstaller `BUNDLE`; manual validation pending on physical hardware — the checklist covers the
+  Screen Recording/Accessibility TCC permissions).
+- **Typing (v0.11.0)**: **`mypy`**, dev-only (`dev` extra), with a **non-strict** config in
+  `pyproject.toml` (`ignore_missing_imports` for third-party stubs, no global `strict`). Initial
+  scope is the core without Qt: `capture/`, `compare/`, `config/`, `persistence/`, `platform/`,
+  `errors.py`, `naming.py`. CI gate: `python -m mypy` on the Linux/3.13 cell; the GUI/Qt modules
+  stay out of scope for now.
+- **Logging (v0.11.0)**: the stdlib `logging` is enough (fixed-English logs); the unused optional
+  `structlog` extra was **removed** and adopting structured logging is **rejected** for now.
 - **Rejected**: Python 3.9/3.10 (missing typing features used in the design); Rust/Go (integration
   cost with `mss`, `pywinctl`, Tesseract does not pay off for the scope).
 
@@ -177,9 +204,23 @@ Each item below is a closed decision. Format: **Decision → Reason → Rejected
     no need to use.
   - `dxcam` / `d3dshot` — Windows-specific with GPU; they break the cross-platform promise.
   - `Pillow.ImageGrab` — covers fewer cases than `mss` and brings no advantage.
-- **Known and accepted limitation**: `mss` **does not work on Wayland**. The project detects it
-  (`XDG_SESSION_TYPE=wayland`) and shuts down the `run` command with a clear warning (`is_wayland()`
-  in `platform/dpi.py`). **Do not implement a Wayland backend in the prototype** — it is out of scope.
+- **Known and accepted limitation — Wayland (spike, v0.11.0)**: `mss` **does not work on Wayland**;
+  the project detects it (`XDG_SESSION_TYPE=wayland`) and shuts down `run`/GUI with a clear warning
+  (`is_wayland()` in `platform/dpi.py`). The v0.11.0 spike evaluated the only supported route —
+  `org.freedesktop.portal.ScreenCast` (D-Bus) + **PipeWire** (`CreateSession` → `SelectSources` →
+  `Start` → `OpenPipeWireRemote`, per-session consent and restore tokens) — and **decided to keep
+  Wayland out of scope for the 1.x line**, reusing the current detection/warning, because:
+  - frame delivery requires the system PipeWire stack plus GStreamer/`gi` (`pipewiresrc`) or a
+    low-level libpipewire binding; no mature, wheel-installable, PyInstaller-friendly client exists
+    yet (the promising `pipewire-capture` is young and still needs libpipewire + the portal);
+  - the portal exposes **monitor or window streams**, not the project's
+    `(window, roi_relative)` anchoring model: window streams deliver content without screen
+    position, so Model B (§3.3) and the evidence semantics would need a redesign;
+  - consent per session/restore token and the per-compositor implementations (GNOME/KDE/wlroots
+    portals) add support surface with no CLI/headless equivalent.
+  A future backend (post-1.0, unscheduled) must live behind `capture/backend.py` as a separate
+  `ScreenCastBackend`, be opt-in and keep `mss` for X11. **Do not add portal/PipeWire dependencies
+  before that** (§15).
 
 ### 3.3 Window location and anchoring
 
@@ -339,13 +380,27 @@ Each item below is a closed decision. Format: **Decision → Reason → Rejected
 ### 3.8 Packaging
 
 - **Decision**: **PyInstaller**, per-platform build, with native installers:
-  **Inno Setup** (Windows) and **`.deb`** (Linux).
+  **Inno Setup** (Windows), **`.deb`** (Linux) and an unsigned **`.app` zip** (macOS, v0.11.0).
 - **Reason**: more mature, extensive documentation, works on the target OSes; native installers give
   shortcuts, uninstallation and declared dependencies.
 - **Implementation details**: **onedir** bundle with two executables (`screen-watch` console and
   `screen-watch-gui` windowless) that share `PYZ`/`COLLECT`; the script
   `scripts/build_release.py` runs **on the target OS** (no cross-build), reads the version from
   `screen_watch.__version__` and writes `dist/installers/`. Full guide: [`doc/01`](01-Build_and_Release.md).
+- **Passive update check (v0.11.0)**: `updates.py` performs at most **one anonymous `GET` per day**
+  to `https://api.github.com/repos/ph7ti/Screen-Diff-Watcher/releases/latest`
+  (`Accept: application/vnd.github+json`, 5 s timeout, **no token**), caches the result in
+  `state.json` (`update_check`, 24 h TTL — a failed attempt is cached too, so offline starts do not
+  re-poll) and only surfaces it as a GUI log line plus a tray item that opens the release
+  (**only `https` URLs on `github.com`** are opened) — **no popup, no download** and never on the
+  capture/loop path. The check runs once per GUI start in a daemon thread and is disabled with
+  `ui.update_check: false`; the cached `notified_version` avoids repeating the notice. The CLI stays
+  offline.
+- **Optional Tesseract on Windows (v0.11.0)**: the installer runs the pinned, SHA256-verified
+  helper **only with consent** — the interactive flow asks Yes/No and explains that `light`/`default`
+  work without it (only `advanced` needs it); silent installs (`/SILENT` or `/VERYSILENT`) skip it
+  unless `/TESSERACT=yes` is passed. Any helper failure warns and the setup continues; the
+  uninstaller preserves Tesseract.
 - **Rejected alternatives**:
   - Nuitka — faster, but more fragile builds and longer compilation time.
   - Briefcase — promising, but a smaller ecosystem for the chosen stack.
@@ -385,6 +440,7 @@ ScreenDiffWatcher/
 │       ├── app.py                 # orchestration: pipeline + chain + session + evidence
 │       ├── errors.py              # AppError/ConfigError + ERROR_CODES + render_error
 │       ├── naming.py              # slugify for selection file names (pure)
+│       ├── updates.py             # passive release check (pure parse + injectable fetch)
 │       ├── gui_main.py            # entry point of the windowless executable (GUI)
 │       ├── resources.py           # package resources (icons etc.)
 │       │
@@ -543,7 +599,7 @@ When starting `run`, the app checks each monitor, marks the suitable ones (`OK`,
 the target window is on a scaled monitor. `probe-dpi` and `scripts/probe_dpi.py` print the matrix.
 
 **Wayland**: if `is_wayland()` returns `True`, `run` displays a clear message and exits (code 2).
-Do not attempt to capture.
+Do not attempt to capture; the spike decision (portal + PipeWire out of scope for 1.x) is in §3.2.
 
 ### 5.2 Window wrapper (`platform/window.py`)
 
@@ -585,6 +641,13 @@ def is_window_active(handle: int) -> bool: ...  # action focus confirmation
 | `platform/audio.py` | single port for playing sound: `winsound` on Windows (with `MessageBeep()` when there is no WAV), external players on Linux/macOS (`paplay`/`aplay`/`ffplay`/`afplay`); `probe` for `features`. |
 | `platform/input.py` | `pynput` **imported on demand** (`input` extra); pure helpers `interpolate_points`/`make_rng` (testable without a display) for action humanization. |
 | `platform/shell.py` | `open_path()`: `os.startfile` on Windows, `open`/`xdg-open` on the others; returns `False` with `log.warning` when there is no association (the GUI shows "open manually: <path>"). |
+
+**macOS (v0.11.0)**: the paths/audio/shell branches existed since the early ports; the increment adds
+the **CI cell (macos-latest, py3.13, `QT_QPA_PLATFORM=offscreen`)** and an **unsigned `.app` bundle**
+(`BUNDLE` + `plyer.platforms.macosx.notification`); capture uses `mss` and therefore needs the
+**Screen Recording** TCC permission, popup/actions need Accessibility. Validation on physical Apple
+hardware (permissions, tray, audio) is a v1.0.0 checklist item; until then the build is published
+as-is (Gatekeeper requires "Open" from the context menu or `xattr -d com.apple.quarantine`).
 
 **Rule**: no other package may import `pynput`, `winsound`, `mss` or `pywinctl` directly.
 
@@ -1469,6 +1532,7 @@ ui:
              rearm: "<ctrl>+<alt>+r", abort: "<esc>" }
   arm_durations_min: [1, 5, 15, 30]
   language: auto                 # auto | pt-BR | en-US | tag discovered in i18n/*.json
+  update_check: true             # passive GitHub release check (1 GET/day; opt-out)
 schedule: { enabled: false, days: [mon, tue, wed, thu, fri], windows: ["08:00-12:00"] }
 evidence: { enabled: false, dir: null, keep_per_target: 50, max_total_mb: 200,
             on_baseline: true, on_change: true, per_step: false }
@@ -1490,6 +1554,8 @@ evidence: { enabled: false, dir: null, keep_per_target: 50, max_total_mb: 200,
 - `version` absent with `targets:` is the legacy v1: it loads for one version, with a warning, and is
   converted by `migrate-config` (`config.yaml.bak` backup, one JSON selection per target).
 - An unknown `ui.language` generates a warning and falls back to `auto` (not an error).
+- `ui.update_check` (default `true`) enables the passive release check (§3.8): best-effort, cached,
+  never blocking and never downloading anything.
 - `TargetConfig` remains the runtime's internal contract; the profile + the selection are resolved
   into it by `persistence.selection.build_target`.
 
@@ -1506,7 +1572,8 @@ Profiles also carry `actions:`; each action `when:` accepts `trigger: change|at|
 `schedule` names (`mon`..`sun`).
 `humanize` has no UI of its own: edit the YAML (the GUI creates actions, not humanization).
 `ui.snooze_minutes` lists the durations offered by the Snooze menu (GUI + tray); `ui.max_sessions`
-(default 4, range 1..16) limits the simultaneous GUI sessions (§3.5).
+(default 4, range 1..16) limits the simultaneous GUI sessions (§3.5); `ui.update_check` (default
+`true`) toggles the passive release check (§3.8).
 
 ### 12.3 Selection JSON and overrides
 
@@ -1572,10 +1639,13 @@ Base: `%APPDATA%\screen_watch` on Windows, `~/.config/screen_watch` on Linux,
 
 `state.json` stores `{"last_selection": "...", "profile": "...", "language": "...",
 "action_selection": {"<selection>": ["action-name", ...]}, "evidence_enabled": true|false,
-"alerts_muted": false, "alerts_snooze_until": 0.0}` and is updated on a successful `run`/GUI start
-(the `action_selection`, `evidence_enabled`, `alerts_muted` and `alerts_snooze_until` keys are
-optional and backward compatible). The two alert-gate keys feed `AlertGate` on the next GUI/`run`
-start (§11.3); an expired `alerts_snooze_until` is simply ignored.
+"alerts_muted": false, "alerts_snooze_until": 0.0, "update_check": {"checked_at": 0.0,
+"latest": "vX.Y.Z", "url": "https://...", "notified_version": "vX.Y.Z"}}` and is updated on a
+successful `run`/GUI start (the `action_selection`, `evidence_enabled`, `alerts_muted`,
+`alerts_snooze_until` and `update_check` keys are optional and backward compatible). The two
+alert-gate keys feed `AlertGate` on the next GUI/`run` start (§11.3); an expired
+`alerts_snooze_until` is simply ignored. The `update_check` cache feeds the passive release check
+(§3.8) and must be written through `update_state` (load-modify-write), never `save_state`.
 
 The YAML is rewritten atomically (temp + `os.replace`) with a `config.yaml.bak` backup **without
 preserving comments**; `state.json` is atomic, without backup; the selection JSON (`dump_selection`)
@@ -1749,7 +1819,7 @@ Pinned in `pyproject.toml`. Organized by layer (mandatory core):
 | GUI | `PyQt6` | overlay and main window |
 | Tray | `pystray` | tray icon |
 | Alerts | `plyer` | popup |
-| Alerts | `httpx` | Telegram |
+| Alerts | `httpx` | Telegram, ntfy, webhook/`http_post` and the passive update check |
 | Alerts | `miniaudio` | CLI/`run` sound playback (WAV/MP3/OGG/FLAC; the GUI uses the bundled Qt Multimedia) |
 | Config | `PyYAML` | config |
 
@@ -1760,20 +1830,29 @@ Pinned in `pyproject.toml`. Organized by layer (mandatory core):
 | `sound` | `simpleaudio>=1.0.4` | no reliable wheel on 3.13; it does **not** go into the bundle |
 | `input` | `pynput>=1.7` | pseudo-human actions and global hotkeys |
 | `ocr-preproc` | `opencv-python>=4.8` | OCR preprocessing experiments (not required) |
-| `logging` | `structlog>=24.1` | optional structured logging |
+| `macosx` | `pyobjus>=1.2` | Objective-C bridge for the plyer popup on macOS (v0.11.0; bundled in the `.app`) |
 | `mqtt` | `paho-mqtt>=2.1` | MQTT alert channel (v0.9.0); not bundled in the installers |
-| `dev` | `pytest>=8.0`, `pytest-cov>=5.0`, `ruff==0.16.9` | development and CI |
+| `dev` | `pytest>=8.0`, `pytest-cov>=5.0`, `ruff==0.16.9`, `mypy==2.4.0` | development, lint/typing gates and CI |
 | `build` | `pyinstaller>=6.11.1` | packaging (supports 3.13 from this version on) |
+
+The optional `logging` extra (`structlog`) was **removed in v0.11.0** (unused in `src/`; adopting
+structured logging is rejected — the stdlib `logging` stays, §3.1).
 
 **External requirements**:
 - **Tesseract** installed on the system (it does not come with `pytesseract`), with the `por` and
-  `eng` traineddata. On Windows the installer downloads a pinned release (with SHA256 verification),
-  and on the Linux `.deb` it becomes a `Depends:`. Path searchable via
-  `compare_options.advanced.tesseract_cmd`.
+  `eng` traineddata. On Windows the installer **offers** the pinned release (SHA256 verified) with a
+  consent prompt — silent installs only with `/TESSERACT=yes` — and on the Linux `.deb` it becomes a
+  `Depends:`. Path searchable via `compare_options.advanced.tesseract_cmd`.
 - **Sound on Linux**: the CLI/`run` uses the bundled `miniaudio`; for the legacy formats the GUI
   depends on the GStreamer plugins and an external player (`paplay`/`aplay`/`ffplay`) remains a
   fallback; in the `.deb`, `pulseaudio-utils` and `alsa-utils` come as `Recommends`.
 - **Linux**: X11 session (Wayland out of scope).
+- **macOS (v0.11.0)**: arm64 only, unsigned `.app` zip (no notarization); Tesseract via Homebrew or
+  `tesseract_cmd`; the first run needs **Screen Recording** (capture) and **Accessibility**
+  (popup/actions) permissions; manual validation on physical hardware is pending (v1.0.0).
+- **Network (optional)**: only the passive release check uses it (one anonymous GitHub API request
+  per day, cached; `ui.update_check: false` disables it). Capture, comparison and alerts never
+  require network unless a network channel (`telegram`/`ntfy`/`smtp`/`mqtt`/…) is configured.
 
 ---
 

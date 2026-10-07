@@ -871,6 +871,17 @@ def test_default_config_round_trips_with_escalation_and_snooze():
     assert defaults.escalation.enabled is False
     assert config.ui.snooze_minutes == (5, 15, 30, 60)
     assert config.ui.max_sessions == 4
+    assert config.ui.update_check is True
+
+
+def test_ui_update_check_parsed_and_opt_out():
+    raw = _v2_dict()
+    raw["ui"] = {"update_check": False}
+    assert config_from_dict(raw).ui.update_check is False
+
+    raw["ui"] = {"update_check": "yes"}
+    with pytest.raises(ConfigError):
+        config_from_dict(raw)
 
 
 def test_ui_max_sessions_parsed_and_validated():

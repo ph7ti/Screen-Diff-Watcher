@@ -2,8 +2,8 @@
 [English](Home.md) · **Português (Brasil)**
 
 Vigia uma **região retangular (ROI) de uma janela** e avisa quando ela muda — som, popup, Telegram,
-webhook/HTTP POST, syslog, log, ntfy, e-mail (SMTP) ou MQTT — no **Windows e no Linux**, sem tocar no
-aplicativo vigiado.
+webhook/HTTP POST, syslog, log, ntfy, e-mail (SMTP) ou MQTT — no **Windows, no Linux e no macOS
+(arm64, build sem assinatura)**, sem tocar no aplicativo vigiado.
 
 Esta wiki reúne os **detalhes de uso e recursos**. A visão geral (o que faz e o que não faz,
 plataformas, pré-requisitos, quick start e build) fica no [README](../README.pt-BR.md).

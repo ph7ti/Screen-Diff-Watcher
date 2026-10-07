@@ -291,13 +291,12 @@ def clear_masks(selection: Selection) -> Selection:
     (voltando as `masks` de base), use `clear_override(selection, "masks")`.
     """
     overrides = selection.overrides
-    has_override = isinstance(overrides, dict) and "masks" in overrides
-    if not has_override and not selection.masks:
-        return selection
-    if has_override:
+    if isinstance(overrides, dict) and "masks" in overrides:
         updated = dict(overrides)
         updated.pop("masks", None)
         return replace(selection, masks=(), overrides=updated or None)
+    if not selection.masks:
+        return selection
     return replace(selection, masks=())
 
 

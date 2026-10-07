@@ -83,7 +83,10 @@
   "tray.acknowledge": "Reconhecer escalação",
   "tray.selection": "Seleção",
   "tray.profile": "Perfil",
+  "tray.update": "Atualizações…",
   "tray.quit": "Sair",
+
+  "update.available": "atualização disponível: {version} (abra pelo menu da bandeja)",
 
   "status.stopped": "parado",
   "status.monitoring": "monitorando {name} ({mode})",

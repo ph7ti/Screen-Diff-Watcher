@@ -8,12 +8,12 @@ atende aos dois sem duplicar logica.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, NoReturn
 
 from screen_watch.errors import AppError
 
 
-def _fail(error: type[AppError], code: str, field: str, value: Any) -> None:
+def _fail(error: type[AppError], code: str, field: str, value: Any) -> NoReturn:
     raise error(code=code, params={"field": field, "value": value})
 
 

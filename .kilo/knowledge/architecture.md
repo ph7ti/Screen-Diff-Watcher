@@ -1,6 +1,6 @@
 # Architecture — agent knowledge base
 
-Status: v0.10.1 · Design SSoT: `doc/00-Architecture_and_Specification.md` (cite as `doc/00 §X`)
+Status: v0.11.0 · Design SSoT: `doc/00-Architecture_and_Specification.md` (cite as `doc/00 §X`)
 
 This page is a pointer summary. Every design decision stays in `doc/00`; do not restate or re-decide
 it here. Principles: `doc/00` §2. Decisions (ADR): §3. Pitfalls never to reintroduce: §14.
@@ -42,6 +42,8 @@ DPI: §5.1. Logical→physical: §9.5. Masks: §8. Config: §12. Glossary: §17.
 - `platform/` — the only OS boundary: `dpi.py` (`set_dpi_awareness()` first, `is_wayland()`), `window.py`, `paths.py` (app-data/state), `display.py`, `tesseract.py`, `audio.py`, `input.py`, `shell.py`.
 - `i18n/` — JSON catalogs pt-BR (fallback)/en-US, `tr()` resolution.
 - `errors.py`, `naming.py`, `resources.py`, `gui_main.py` — stable error codes/`AppError`, slugify, package resources, windowed entry point.
+- `updates.py` — passive release check: pure `parse_version`/`is_newer`, injectable `check_for_update`
+  (one GitHub `GET`/TTL, `state.json` cache), never raises; no Qt, network only inside `_fetch_latest`.
 
 ## Configuration summary (details `doc/00` §12)
 
@@ -49,15 +51,20 @@ DPI: §5.1. Logical→physical: §9.5. Masks: §8. Config: §12. Glossary: §17.
 - Selection JSON (v1/v2) with `overrides` that **replace** profile values; `persistence.selection.build_target` is the resolution/precedence point.
 - Writing: `save_config` writes atomically (temp + `os.replace`) and keeps `config.yaml.bak` via `shutil.copy2` (comments are not preserved); `dump_selection`/`state.json` are atomic without backup; callers must reload from disk before rewriting (`doc/00` §12.4).
 
-## Current state and known limitations (v0.10.1)
+## Current state and known limitations (v0.11.0)
 
 - Implemented: capture/anchoring (Model B), `light`/`default`/`advanced` + `text_watch`, alert channels (sound/popup/Telegram/ntfy/smtp/mqtt/log/webhook/http_post/syslog) with cooldown/re-arm, selectable sound + bundled `alert.mp3`, snooze/mute + escalation, evidence, actions + recorder, scheduler, profiles + v1→v2 migration, selection name/rename + headless CLI lifecycle (`remove`/`rename`/`edit-selection`, `list-selections --json`), GUI/tray with i18n, packaging and tag-driven release (`doc/00` §1.4).
 - **v0.8.0**: visual mask editor (atomic selection JSON, `overrides.masks` precedence), sound picker writes the active profile YAML (atomic + `.bak`, v1 refused), frame preview, alert history over `logs/alerts.jsonl` (best-effort evidence print), live calibration (score vs threshold, CSV), CI on py3.11/3.12/3.13 with coverage artifact + manual wiki runbook.
 - **v0.9.0**: ntfy/SMTP/MQTT channels (env-only secrets; MQTT is the optional `mqtt` extra), `AlertGate` snooze/mute in `state.json` + escalation until `acknowledge()`, CLI selection lifecycle/headless flow, and `SessionManager` with N concurrent GUI sessions (`ui.max_sessions`, default 4; CLI `run` stays single-selection).
 - **v0.9.1** (patch): fixes the GUI startup crash of 0.9.0 — `escalating` became a method in `SessionManager` but `main_window._update_gate_status`/`_acknowledge` still used property syntax; the `TypeError` inside the `QTimer` slot aborted the process (`0xC0000409`) on the first drain tick. Regression tests in `tests/test_gui_main_window.py` (Qt-free stubs).
 - **v0.10.0**: per-action **time triggers** (`when.trigger: change|at|every|after`): pure `actions/triggers.py` with injectable clocks, 60 s tolerance (`skipped -> missed`, no catch-up), `armed_since` phases, `ActionDispatcher.on_tick` on every post-baseline frame, `MonitorLoop` wait capped by `next_deadline_delay()`, GUI editor trigger selector, `list-actions` summary, one-off notice and recorder hint; both catalogs and fake-clock tests.
-- Wayland cannot capture (`mss`); occluded windows compare whatever is on screen; macOS is not validated; GNOME tray may need an extension; M4A/AAC in the CLI needs an external player (`ffplay`); ARM is not built.
-- Manual validation pending: GUI/tray/overlay (including multi-session and the v0.8.0/v0.9.0 widgets) at 100/125/150% and the clean-machine bundle checklist (`doc/01` §9).
+- **v0.11.0**: passive update check (`updates.py`, `ui.update_check`, GUI log + tray item; no popup/download), macOS arm64 CI cell + unsigned `.app` zip published (`build_release.py --macos`, PyInstaller `BUNDLE`), Wayland spike decision (portal + PipeWire **out of scope** for 1.x — `doc/00` §3.2), Windows installer with **optional/consented** Tesseract (`/TESSERACT=yes` for silent), `logging` extra removed and **mypy** dev-only with core scope in CI.
+- Wayland cannot capture (`mss`); the portal+PipeWire route was evaluated and stays out of scope for
+  1.x; occluded windows compare whatever is on screen; the macOS arm64 `.app` is published **unsigned
+  and not yet validated on hardware** (TCC permissions/tray/audio — v1.0.0 checklist); GNOME tray may
+  need an extension; M4A/AAC in the CLI needs an external player (`ffplay`); ARM64 outside macOS is
+  not built.
+- Manual validation pending (v1.0.0): GUI/tray/overlay (including multi-session and the v0.8.0/v0.9.0 widgets) at 100/125/150%, the clean-machine bundle checklist (`doc/01` §9, including the Tesseract consent flow) and macOS hardware (TCC/tray/audio).
 
 ## Release history (one line each)
 
@@ -76,6 +83,7 @@ GitHub releases: https://github.com/ph7ti/Screen-Diff-Watcher/releases
 - v0.9.1 — patch: GUI startup crash fix (`escalating()` method call) + Qt-free regression tests.
 - v0.10.0 — action scheduler: per-action time triggers (`at`/`every`/`after`), deadline-capped loop wait, GUI trigger editor, one-off notice, recorder hint.
 - v0.10.1 — patch: DPI fix in the GUI mouse locator and ROI highlight (Qt logical ↔ physical conversion at scale ≠ 100%).
+- v0.11.0 — passive update check, macOS arm64 build (unsigned `.app`), Wayland spike decision (out of scope), optional Tesseract with consent, `logging` extra removed, mypy core gate.
 
 Detailed notes: `doc/releases/vX.Y.Z.md` + `.pt-BR.md` (from v0.5.0 on); `CHANGELOG.md` is the
 semantic log (PT). Note: 0.7.1 was a deliberate PATCH despite the documented MINOR rule.

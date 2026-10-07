@@ -3,6 +3,68 @@
 Todas as mudanças relevantes deste projeto. Formato inspirado em "Keep a Changelog";
 versionamento semântico. Versão: `screen_watch.__version__` (fonte única).
 
+## [0.11.0] — 2026-10-06
+
+Notas: [`doc/releases/v0.11.0.md`](doc/releases/v0.11.0.md)
+([PT](doc/releases/v0.11.0.pt-BR.md)).
+
+### Adicionado
+
+- **Checagem passiva de nova versão**: `src/screen_watch/updates.py` faz no máximo um `GET` anônimo
+  por dia a `api.github.com/repos/ph7ti/Screen-Diff-Watcher/releases/latest` (`Accept:
+  application/vnd.github+json`, timeout de 5 s, sem token), guarda o resultado no `state.json`
+  (`update_check`: `checked_at`/`latest`/`url`/`notified_version`, TTL de 24 h) e avisa apenas com
+  uma linha no log da GUI + item no tray que abre o release — sem popup, sem download e nunca no
+  caminho de captura. Roda uma vez por start da GUI numa thread daemon; `ui.update_check: false`
+  desliga. `parse_version`/`is_newer` são puros e toleram `v`/sufixos (`doc/00` §3.8/§12.1/§12.4/§15).
+- **macOS arm64 (build não assinado)**: célula de CI `macos-latest`/3.13 com
+  `QT_QPA_PLATFORM=offscreen`, novo alvo `python scripts/build_release.py --macos` (zip via `ditto`
+  do `Screen Diff Watcher.app`; `build_info.json` com `target: macos` e `arch`), ramo `darwin` do
+  spec PyInstaller (`BUNDLE`, GUI como `CFBundleExecutable`, `plyer.platforms.macosx.notification`)
+  e job `macos` no release publicando `screen-diff-watcher_<versão>_macos_<arch>.zip` como asset. O
+  popup no macOS usa o novo extra `macosx` (`pyobjus`), instalado nos jobs de CI/release. Sem
+  assinatura/notarização; a validação em hardware físico (permissões TCC, tray, áudio) entra no
+  checklist da v1.0.0 (`doc/00` §1.1/§3.1/§5.3/§15).
+- **`mypy` no escopo do núcleo**: extra `dev` pinado (`mypy==2.4.0`), `[tool.mypy]` no
+  `pyproject.toml` (sem `strict`, `ignore_missing_imports`) cobrindo `capture/`, `compare/`,
+  `config/`, `persistence/`, `platform/`, `errors.py` e `naming.py`, e passo de CI na célula
+  Linux/3.13 (`doc/00` §3.1/§15). Correções de tipagem pontuais (`coerce.py`, `window.py`,
+  `display.py`, `audio.py`, `selection.py`) sem mudança de comportamento.
+
+### Alterado
+
+- **Instalador Windows — Tesseract opcional com consentimento**: se o Tesseract não estiver
+  presente, o fluxo interativo pergunta Sim/Não (deixando claro que `light`/`default` funcionam sem
+  ele e só o `advanced` precisa); no modo silencioso (`/SILENT`/`/VERYSILENT`) **não baixa por
+  padrão** — só com `/TESSERACT=yes`. Falha do helper (offline, SHA256, instalação) mostra mensagem
+  informativa e **nunca aborta** o setup; pin SHA256, `{app}\tools`, validação `eng`+`por` e
+  desinstalação que preserva o Tesseract seguem iguais (`doc/01` §5/§9; `doc/00` §3.8/§15).
+- **Decisão do spike de Wayland registrada**: a rota `org.freedesktop.portal.ScreenCast` + PipeWire
+  foi avaliada (consentimento por sessão/restore token, streams de monitor/janela) e **mantida fora
+  de escopo na linha 1.x**: o consumo de frames exige a pilha PipeWire + GStreamer/`gi` (ou
+  libpipewire) sem cliente maduro empacotável, e o portal não entrega a ROI ancorada do Modelo B. A
+  detecção/aviso atuais permanecem; um backend futuro ficaria atrás de `capture/backend.py`
+  (`doc/00` §3.2/§5.1).
+- **CI/release**: matriz de testes com célula macOS, passo `mypy` e job `package` de PR agora também
+  compila o bundle macOS; `release.yml` publica Windows/Linux/macOS.
+
+### Removido
+
+- **Extra `logging` (`structlog`)**: sem uso em `src/`; adotar log estruturado foi rejeitado — o
+  `logging` da stdlib permanece (`pyproject.toml`, `doc/00` §3.1/§15).
+
+### Notas
+
+- 770 testes unitários (26 novos em `tests/test_updates.py`, `test_config.py` e
+  `test_gui_main_window.py`); `ruff`, `mypy`, `validate-i18n` e a suíte verdes.
+- Tentativas de checagem que falham também respeitam o TTL de 24 h (nenhum polling offline) e só
+  URLs `https` em `github.com` são abertas pelo item do tray.
+- Bundle Windows reconstruído e smoke `features --json` ok com o spec alterado; a instalação real do
+  fluxo de consentimento do Tesseract e a validação do macOS ficam para o checklist manual da
+  v1.0.0.
+- Nenhuma dependência nova de runtime (`httpx` já era core); `mypy` é dev-only e `pyobjus` só entra
+  no build macOS (`macosx`).
+
 ## [0.10.1] — 2026-10-06
 
 ### Corrigido

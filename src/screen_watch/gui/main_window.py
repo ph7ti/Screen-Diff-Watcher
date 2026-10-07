@@ -7,6 +7,7 @@ via `QTimer`.
 
 from __future__ import annotations
 
+import threading
 from dataclasses import replace
 from pathlib import Path
 
@@ -95,6 +96,8 @@ class MainWindow(QMainWindow):
         self._watch_edit_stem: str | None = None
         # (dialog, widget) da calibracao ao vivo, enquanto o dialogo estiver aberto.
         self._calibration_dialog: tuple[QDialog, object] | None = None
+        # URL do release mais novo (checagem passiva); None = sem novidade ainda.
+        self._update_url: str | None = None
 
         self._timer = QTimer(self)
         self._timer.setInterval(POLL_MS)
@@ -103,6 +106,7 @@ class MainWindow(QMainWindow):
         self._build_ui()
         self._reload()
         self._start_hotkeys()
+        self._start_update_check()
         self._timer.start()
 
     # -- construcao --------------------------------------------------------
@@ -1647,6 +1651,22 @@ class MainWindow(QMainWindow):
         if self._hotkeys is None:
             self._append("global hotkeys unavailable (install the 'input' extra)")
 
+    def _start_update_check(self) -> None:
+        """Checagem passiva (doc 3.8): thread daemon, nunca bloqueia nem baixa nada."""
+        if self._config is not None and not self._config.legacy and not self._config.ui.update_check:
+            return
+        from screen_watch import __version__
+        from screen_watch.updates import check_for_update
+
+        events = self._controller.events
+
+        def worker() -> None:
+            status = check_for_update(__version__)
+            if status is not None:
+                events.put({"kind": "update", "tag": status.tag, "url": status.url})
+
+        threading.Thread(target=worker, name="screen-watch-update-check", daemon=True).start()
+
     def _remove(self) -> None:
         items = self.list.selectedItems()
         if not items:
@@ -1937,6 +1957,8 @@ class MainWindow(QMainWindow):
             self._handle_action_event(event.get("payload") or {}, self._session_tag(event))
         elif kind == "profile":
             self._select_profile(str(event.get("name") or ""))
+        elif kind == "update":
+            self._handle_update(event)
 
     def _handle_target(self, event: dict) -> None:
         """Start/stop individual vindo do menu do tray."""
@@ -2023,6 +2045,32 @@ class MainWindow(QMainWindow):
             parts.append(tr("arming.outside_schedule"))
         self.status.setToolTip(" — ".join(parts))
 
+    def _handle_update(self, event: dict) -> None:
+        """Resultado da checagem passiva: so log + item do tray (sem popup)."""
+        tag = str(event.get("tag") or "")
+        if not tag:
+            return
+        url = str(event.get("url") or "")
+        if url:
+            self._update_url = url
+        self._append(tr("update.available", version=tag))
+
+    def _open_update(self) -> None:
+        """Item do tray: abre o release encontrado (ou a lista de releases)."""
+        from screen_watch.updates import RELEASES_PAGE
+
+        url = self._update_url or RELEASES_PAGE
+        import webbrowser
+
+        try:
+            opened = webbrowser.open(url)
+        except Exception:  # pragma: no cover - depende do ambiente
+            opened = False
+        if opened:
+            self._append(f"opened releases page: {url}")
+        else:
+            self._append(f"open manually: {url}")
+
     def _handle_tray(self, action) -> None:
         if action == "toggle":
             self.setVisible(not self.isVisible())
@@ -2032,6 +2080,8 @@ class MainWindow(QMainWindow):
             self._start()
         elif action == "stop":
             self._stop()
+        elif action == "open_update":
+            self._open_update()
         elif action == "quit":
             self._quit()
 

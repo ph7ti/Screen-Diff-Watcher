@@ -8,7 +8,7 @@
 |---|---|
 | `config.yaml` | global config: profiles (defaults/alerts/actions), `ui`, `schedule`, `evidence` |
 | `selections/<name>.json` | ROI selections (one per target), with optional `overrides` |
-| `state.json` | lightweight state: `last_selection`, `profile`, `language`, `action_selection`, `evidence_enabled`, `alerts_muted`, `alerts_snooze_until` |
+| `state.json` | lightweight state: `last_selection`, `profile`, `language`, `action_selection`, `evidence_enabled`, `alerts_muted`, `alerts_snooze_until`, `update_check` |
 | `logs/` | `alerts.jsonl` (alerts) and `actions.jsonl` (actions audit) |
 
 Base: `%APPDATA%\screen_watch` (Windows), `~/.config/screen_watch` (Linux),
@@ -59,6 +59,7 @@ ui:
   snooze_minutes: [5, 15, 30, 60]  # durations of the Snooze menu (minutes)
   max_sessions: 4                  # simultaneous GUI sessions (1..16)
   language: auto                 # auto | pt-BR | en-US | tag discovered in i18n/*.json
+  update_check: true             # passive GitHub release check (1 GET/day; opt-out)
 schedule: { enabled: false, days: [mon, tue, wed, thu, fri], windows: ["08:00-12:00"] }
 evidence: { enabled: false, dir: null, keep_per_target: 50, max_total_mb: 200,
             on_baseline: true, on_change: true, per_step: false }
@@ -74,6 +75,9 @@ evidence: { enabled: false, dir: null, keep_per_target: 50, max_total_mb: 200,
 - An unknown `ui.language` generates a warning and falls back to `auto` (it is not an error).
 - `ui.snooze_minutes` is the list of positive durations (minutes) offered by the Snooze menu;
   `ui.max_sessions` (default 4, range 1..16) caps the simultaneous GUI sessions.
+- `ui.update_check` (default `true`) enables the **passive release check**: at most one anonymous
+  request per day to the GitHub releases API, cached in `state.json`; it only shows a log line and a
+  tray item (no popup, no download) and can be turned off without affecting monitoring.
 - The app rewrites the YAML **without preserving comments**; the write is atomic (temp + `os.replace`)
   and leaves a `config.yaml.bak` backup.
 - Tune the thresholds (`light`/`default`) and `advanced.similarity_threshold` with the CLI
@@ -256,6 +260,7 @@ it first). Duplicate names in v1 also abort.
 | `evidence_enabled` | toggle of the "Record captures" checkbox (takes precedence over the YAML) |
 | `alerts_muted` | mute from the GUI/tray (the next `run` inherits it) |
 | `alerts_snooze_until` | snooze deadline (epoch); an expired value is ignored on start |
+| `update_check` | passive release cache (`checked_at`/`latest`/`url`/`notified_version`) |
 
 `state.json` is written atomically and without backup; it is disposable state (deleting it does not break).
 
