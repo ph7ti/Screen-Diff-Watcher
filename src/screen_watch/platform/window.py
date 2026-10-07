@@ -33,6 +33,10 @@ log = logging.getLogger(__name__)
 
 IS_WINDOWS = sys.platform == "win32"
 
+# `ctypes.windll` so existe no Windows; o `getattr` evita erro do mypy no Linux
+# (os caminhos que usam `_WINDLL` continuam guardados por `IS_WINDOWS`).
+_WINDLL: Any = getattr(ctypes, "windll", None)
+
 
 def _require_pywinctl():
     """Devolve o modulo `pywinctl` ou explica a ausencia de ambiente grafico.
@@ -198,7 +202,7 @@ def _configure() -> None:
     if _configured or not IS_WINDOWS:
         return
     try:
-        user32 = ctypes.windll.user32
+        user32 = _WINDLL.user32
         user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
         user32.GetWindowThreadProcessId.restype = wintypes.DWORD
         user32.IsWindowVisible.argtypes = [wintypes.HWND]
@@ -215,7 +219,7 @@ def _configure() -> None:
             user32.GetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int]
             user32.GetWindowLongPtrW.restype = ctypes.c_ssize_t
 
-        kernel32 = ctypes.windll.kernel32
+        kernel32 = _WINDLL.kernel32
         kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
         kernel32.OpenProcess.restype = wintypes.HANDLE
         kernel32.QueryFullProcessImageNameW.argtypes = [
@@ -228,7 +232,7 @@ def _configure() -> None:
         kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
         kernel32.CloseHandle.restype = wintypes.BOOL
 
-        version = ctypes.windll.version
+        version = _WINDLL.version
         version.GetFileVersionInfoSizeW.argtypes = [
             wintypes.LPCWSTR,
             ctypes.POINTER(wintypes.DWORD),
@@ -249,7 +253,7 @@ def _configure() -> None:
         ]
         version.VerQueryValueW.restype = wintypes.BOOL
 
-        dwmapi = ctypes.windll.dwmapi
+        dwmapi = _WINDLL.dwmapi
         dwmapi.DwmGetWindowAttribute.argtypes = [
             wintypes.HWND,
             wintypes.DWORD,
@@ -309,14 +313,14 @@ def _is_app_window(info: WindowInfo) -> bool:
 
 def _is_visible(hwnd: int) -> bool:
     try:
-        return bool(ctypes.windll.user32.IsWindowVisible(wintypes.HWND(hwnd)))
+        return bool(_WINDLL.user32.IsWindowVisible(wintypes.HWND(hwnd)))
     except (AttributeError, OSError):
         return True
 
 
 def _is_tool_window(hwnd: int) -> bool:
     try:
-        user32 = ctypes.windll.user32
+        user32 = _WINDLL.user32
         getter = getattr(user32, "GetWindowLongPtrW", user32.GetWindowLongW)
         return bool(int(getter(wintypes.HWND(hwnd), _GWL_EXSTYLE)) & _WS_EX_TOOLWINDOW)
     except (AttributeError, OSError, ValueError):
@@ -326,7 +330,7 @@ def _is_tool_window(hwnd: int) -> bool:
 def _is_cloaked(hwnd: int) -> bool:
     try:
         value = ctypes.c_int(0)
-        ctypes.windll.dwmapi.DwmGetWindowAttribute(
+        _WINDLL.dwmapi.DwmGetWindowAttribute(
             wintypes.HWND(hwnd), _DWMWA_CLOAKED, ctypes.byref(value), ctypes.sizeof(value)
         )
         return value.value != 0
@@ -337,7 +341,7 @@ def _is_cloaked(hwnd: int) -> bool:
 def _class_name(hwnd: int) -> str:
     try:
         buffer = ctypes.create_unicode_buffer(256)
-        ctypes.windll.user32.GetClassNameW(wintypes.HWND(hwnd), buffer, len(buffer))
+        _WINDLL.user32.GetClassNameW(wintypes.HWND(hwnd), buffer, len(buffer))
         return buffer.value
     except (AttributeError, OSError):
         return ""
@@ -346,7 +350,7 @@ def _class_name(hwnd: int) -> str:
 def _window_pid(hwnd: int) -> int | None:
     try:
         pid = wintypes.DWORD(0)
-        ctypes.windll.user32.GetWindowThreadProcessId(wintypes.HWND(hwnd), ctypes.byref(pid))
+        _WINDLL.user32.GetWindowThreadProcessId(wintypes.HWND(hwnd), ctypes.byref(pid))
         return int(pid.value) or None
     except (AttributeError, OSError):
         return None
@@ -354,7 +358,7 @@ def _window_pid(hwnd: int) -> int | None:
 
 def _owner_window(hwnd: int) -> int | None:
     try:
-        owner = ctypes.windll.user32.GetWindow(wintypes.HWND(hwnd), _GW_OWNER)
+        owner = _WINDLL.user32.GetWindow(wintypes.HWND(hwnd), _GW_OWNER)
         return int(owner) if owner else None
     except (AttributeError, OSError):
         return None
@@ -363,7 +367,7 @@ def _owner_window(hwnd: int) -> int | None:
 def _is_root(hwnd: int) -> bool:
     """True se a janela e de nivel superior (nao e filha de outra)."""
     try:
-        root = ctypes.windll.user32.GetAncestor(wintypes.HWND(hwnd), _GA_ROOT)
+        root = _WINDLL.user32.GetAncestor(wintypes.HWND(hwnd), _GA_ROOT)
         return int(root) == hwnd
     except (AttributeError, OSError):
         return True
@@ -371,7 +375,7 @@ def _is_root(hwnd: int) -> bool:
 
 def _process_image_path(pid: int) -> str | None:
     try:
-        kernel32 = ctypes.windll.kernel32
+        kernel32 = _WINDLL.kernel32
         handle = kernel32.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
         if not handle:
             return None
@@ -400,7 +404,7 @@ def _file_description(exe: str) -> str:
 
 def _query_version_string(exe: str, key: str) -> str:
     try:
-        version = ctypes.windll.version
+        version = _WINDLL.version
         size = version.GetFileVersionInfoSizeW(exe, None)
         if not size:
             return ""

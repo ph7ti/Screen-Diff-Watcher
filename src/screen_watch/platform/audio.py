@@ -104,7 +104,7 @@ def _play_windows(path: str) -> bool:
         log.warning("winsound unavailable: %s", exc)
         return False
     try:
-        winsound.PlaySound(path, winsound.SND_FILENAME | winsound.SND_ASYNC)
+            winsound.PlaySound(path, winsound.SND_FILENAME | winsound.SND_ASYNC)  # type: ignore[attr-defined]
     except (OSError, RuntimeError) as exc:
         log.warning("winsound could not play %s: %s", path, exc)
         return False
@@ -327,11 +327,14 @@ def supported_formats() -> tuple[str, ...]:
 
 def backend_info() -> dict[str, object]:
     """Diagnostico do backend para o comando `features` (nao toca nada)."""
+    # Anotacao fora dos ramos: no mypy/Linux o ramo `win32` e inalcancavel e a
+    # inferencia do dict do ramo `else` ficaria estreita demais.
+    info: dict[str, object]
     if sys.platform == "win32":
         try:
             import winsound  # noqa: F401, PLC0415
 
-            info: dict[str, object] = {
+            info = {
                 "platform": sys.platform,
                 "backend": "winsound",
                 "available": True,
